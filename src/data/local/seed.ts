@@ -1,0 +1,472 @@
+// Fictional demo data only. No real systems, locations, incidents, or people.
+import type { DemoDatabase } from './storage';
+import { emptyDatabase } from './storage';
+import type { Incident, IncidentEvent, IncidentUpdate, Severity, IncidentStatus } from '../../domain/types';
+import { jerusalemYear } from '../../lib/time';
+
+const minutes = (n: number) => n * 60000;
+const hours = (n: number) => n * 3600000;
+
+export const DEMO_USERS = {
+  admin: 'u-admin',
+  manager: 'u-manager',
+  supervisor1: 'u-supervisor-1',
+  supervisor2: 'u-supervisor-2',
+  tech1: 'u-tech-1',
+  tech2: 'u-tech-2',
+  viewer: 'u-viewer',
+} as const;
+
+export function buildSeed(now: Date = new Date()): DemoDatabase {
+  const db = emptyDatabase();
+  const at = (offsetMs: number) => new Date(now.getTime() + offsetMs).toISOString();
+  const year = jerusalemYear(now);
+  const num = (n: number) => `${year}-${String(n).padStart(3, '0')}`;
+
+  db.seededAt = now.toISOString();
+
+  db.profiles = [
+    { id: DEMO_USERS.admin, fullName: 'אלון ברק (דמו)', role: 'system_admin', active: true, createdAt: at(-hours(24 * 90)) },
+    { id: DEMO_USERS.manager, fullName: 'דנה לוי (דמו)', role: 'professional_manager', active: true, createdAt: at(-hours(24 * 90)) },
+    { id: DEMO_USERS.supervisor1, fullName: 'יואב כהן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)) },
+    { id: DEMO_USERS.supervisor2, fullName: 'מאיה רוזן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)) },
+    { id: DEMO_USERS.tech1, fullName: 'עומר פרץ (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)) },
+    { id: DEMO_USERS.tech2, fullName: 'ליאור אדרי (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)) },
+    { id: DEMO_USERS.viewer, fullName: 'רוני שגיא (דמו)', role: 'viewer', active: true, createdAt: at(-hours(24 * 30)) },
+  ];
+
+  db.systems = [
+    { id: 'sys-alpha', name: 'מערכת אלפא', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-beta', name: 'מערכת בטא', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-gamma', name: 'מערכת גמא', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-pos-a', name: 'עמדה א׳', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-pos-b', name: 'עמדה ב׳', archived: true, createdAt: at(-hours(24 * 90)) },
+  ];
+
+  db.locations = [
+    { id: 'loc-1', name: 'אתר 1', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-2', name: 'אתר 2', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-3', name: 'אתר 3', archived: false, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-control', name: 'חדר בקרה ראשי', archived: false, createdAt: at(-hours(24 * 90)) },
+  ];
+
+  interface SeedIncident {
+    id: string;
+    n: number;
+    systemId: string;
+    locationId: string;
+    description: string;
+    severity: Severity;
+    status: IncidentStatus;
+    impact: string;
+    ownerUserId?: string;
+    ownerExternalName?: string;
+    createdOffset: number;
+    createdBy: string;
+    nextUpdateOffset?: number | null;
+    noDeadlineReason?: string;
+  }
+
+  const mk = (s: SeedIncident): Incident => ({
+    id: s.id,
+    number: num(s.n),
+    version: 1,
+    systemId: s.systemId,
+    locationId: s.locationId,
+    description: s.description,
+    severity: s.severity,
+    status: s.status,
+    operationalImpact: s.impact,
+    ownerUserId: s.ownerUserId ?? null,
+    ownerExternalName: s.ownerExternalName ?? null,
+    discoveredAt: at(s.createdOffset - minutes(10)),
+    createdAt: at(s.createdOffset),
+    createdBy: s.createdBy,
+    updatedAt: at(s.createdOffset),
+    updatedBy: s.createdBy,
+    lastUpdateAt: at(s.createdOffset),
+    nextUpdateDue: s.nextUpdateOffset === null ? null : at(s.nextUpdateOffset ?? hours(4)),
+    noDeadlineReason: s.noDeadlineReason ?? null,
+    reportedToOps: 'yes',
+    closedAt: null,
+    closedBy: null,
+    rootCause: null,
+    resolution: null,
+    readinessAtClose: null,
+    followUpNotes: null,
+    followUpRequired: false,
+    followUpCompletedAt: null,
+    followUpCompletedBy: null,
+    reopenCount: 0,
+  });
+
+  const ev = (
+    id: string,
+    incidentId: string,
+    type: IncidentEvent['type'],
+    actorId: string,
+    offset: number,
+    extra: Partial<IncidentEvent> = {},
+  ): IncidentEvent => ({
+    id,
+    incidentId,
+    type,
+    actorId,
+    actorLabel: null,
+    eventTime: at(offset),
+    serverTime: at(offset),
+    field: null,
+    oldValue: null,
+    newValue: null,
+    note: null,
+    refId: null,
+    createdAt: at(offset),
+    ...extra,
+  });
+
+  // 1. Critical, overdue, in progress
+  const inc1 = mk({
+    id: 'inc-1',
+    n: 1,
+    systemId: 'sys-alpha',
+    locationId: 'loc-1',
+    description: 'מערכת אלפא אינה מגיבה לפקודות הפעלה. בוצע ניסיון אתחול מרחוק ללא הצלחה. קוד שגיאה E-401 מופיע במסך הראשי.',
+    severity: 'critical',
+    status: 'in_progress',
+    impact: 'אין יכולת הפעלה מלאה של מערכת אלפא. נדרש מעקף ידני.',
+    ownerUserId: DEMO_USERS.tech1,
+    createdOffset: -hours(6),
+    createdBy: DEMO_USERS.supervisor1,
+    nextUpdateOffset: -minutes(45),
+  });
+  inc1.version = 3;
+  inc1.lastUpdateAt = at(-hours(2));
+  inc1.updatedAt = at(-hours(2));
+
+  // 2. High severity, in progress, not overdue
+  const inc2 = mk({
+    id: 'inc-2',
+    n: 2,
+    systemId: 'sys-beta',
+    locationId: 'loc-2',
+    description: 'תקשורת בין מערכת בטא לעמדת הבקרה מתנתקת לסירוגין, בממוצע פעם בשעה. ייתכן כשל בכבל או בממיר.',
+    severity: 'high',
+    status: 'in_progress',
+    impact: 'עיכוב בקבלת נתונים בעמדת הבקרה. עבודה ממשיכה במתכונת חלקית.',
+    ownerUserId: DEMO_USERS.tech2,
+    createdOffset: -hours(9),
+    createdBy: DEMO_USERS.supervisor2,
+    nextUpdateOffset: hours(2),
+  });
+  inc2.version = 2;
+  inc2.lastUpdateAt = at(-hours(3));
+  inc2.updatedAt = at(-hours(3));
+
+  // 3. Waiting for external party
+  const inc3 = mk({
+    id: 'inc-3',
+    n: 3,
+    systemId: 'sys-gamma',
+    locationId: 'loc-3',
+    description: 'רכיב הזנה במערכת גמא הפסיק לעבוד. נדרש רכיב חלופי מהספק. הוזמן טכנאי חיצוני.',
+    severity: 'medium',
+    status: 'waiting_external',
+    impact: 'מערכת גמא עובדת במצב גיבוי. אין פגיעה מיידית בפעילות.',
+    ownerExternalName: 'טכנאי מטעם ספק (חברת דוגמה בע״מ)',
+    createdOffset: -hours(30),
+    createdBy: DEMO_USERS.supervisor1,
+    nextUpdateOffset: hours(20),
+  });
+  inc3.version = 2;
+  inc3.lastUpdateAt = at(-hours(5));
+  inc3.updatedAt = at(-hours(5));
+
+  // 4. Monitoring
+  const inc4 = mk({
+    id: 'inc-4',
+    n: 4,
+    systemId: 'sys-pos-a',
+    locationId: 'loc-control',
+    description: 'בעמדה א׳ נצפתה התחממות קלה מעל הסף המומלץ. בוצע ניקוי פתחי אוורור והטמפרטורה התייצבה.',
+    severity: 'low',
+    status: 'monitoring',
+    impact: 'אין פגיעה תפקודית. במעקב טמפרטורה כל שעתיים.',
+    ownerUserId: DEMO_USERS.supervisor1,
+    createdOffset: -hours(20),
+    createdBy: DEMO_USERS.supervisor1,
+    nextUpdateOffset: hours(12),
+  });
+  inc4.version = 2;
+  inc4.lastUpdateAt = at(-hours(8));
+  inc4.updatedAt = at(-hours(8));
+
+  // 5. Closed with full readiness
+  const inc5 = mk({
+    id: 'inc-5',
+    n: 5,
+    systemId: 'sys-beta',
+    locationId: 'loc-1',
+    description: 'שגיאת תצורה לאחר עדכון גרסה במערכת בטא. המערכת לא עלתה לאחר האתחול.',
+    severity: 'high',
+    status: 'closed',
+    impact: 'מערכת בטא הושבתה לחלוטין למשך הטיפול.',
+    ownerUserId: DEMO_USERS.tech1,
+    createdOffset: -hours(50),
+    createdBy: DEMO_USERS.supervisor2,
+    nextUpdateOffset: null,
+    noDeadlineReason: 'התקלה נסגרה',
+  });
+  inc5.version = 3;
+  inc5.closedAt = at(-hours(44));
+  inc5.closedBy = DEMO_USERS.supervisor2;
+  inc5.rootCause = 'קובץ תצורה שגוי שהותקן במהלך עדכון הגרסה.';
+  inc5.resolution = 'שוחזר קובץ התצורה הקודם, בוצע אתחול מסודר ואומתה עליית המערכת.';
+  inc5.readinessAtClose = 'full';
+  inc5.lastUpdateAt = at(-hours(44));
+  inc5.updatedAt = at(-hours(44));
+  inc5.nextUpdateDue = null;
+
+  // 6. Closed with partial readiness, follow-up required
+  const inc6 = mk({
+    id: 'inc-6',
+    n: 6,
+    systemId: 'sys-alpha',
+    locationId: 'loc-2',
+    description: 'אנטנת משנה של מערכת אלפא באתר 2 ניזוקה. הותקן פתרון זמני עם רכיב חלופי בעל ביצועים מופחתים.',
+    severity: 'medium',
+    status: 'closed',
+    impact: 'טווח הקליטה מופחת בכ־20% עד להתקנת רכיב קבוע.',
+    ownerUserId: DEMO_USERS.tech2,
+    createdOffset: -hours(72),
+    createdBy: DEMO_USERS.manager,
+    nextUpdateOffset: null,
+    noDeadlineReason: 'התקלה נסגרה',
+  });
+  inc6.version = 3;
+  inc6.closedAt = at(-hours(60));
+  inc6.closedBy = DEMO_USERS.manager;
+  inc6.rootCause = 'נזק פיזי לרכיב האנטנה כתוצאה ממזג אוויר.';
+  inc6.resolution = 'הותקן רכיב חלופי זמני. הוזמן רכיב קבוע מהספק.';
+  inc6.readinessAtClose = 'partial';
+  inc6.followUpNotes = 'להתקין רכיב קבוע עם הגעתו מהספק ולאמת חזרה לביצועים מלאים.';
+  inc6.followUpRequired = true;
+  inc6.lastUpdateAt = at(-hours(60));
+  inc6.updatedAt = at(-hours(60));
+  inc6.nextUpdateDue = null;
+
+  // 7. Reopened incident
+  const inc7 = mk({
+    id: 'inc-7',
+    n: 7,
+    systemId: 'sys-gamma',
+    locationId: 'loc-control',
+    description: 'תצוגת הנתונים בחדר הבקרה קופאת מדי פעם ודורשת רענון ידני. טופל ונסגר, אך התופעה חזרה.',
+    severity: 'medium',
+    status: 'reopened',
+    impact: 'נדרש רענון ידני של התצוגה. עומס על צוות הבקרה.',
+    ownerUserId: DEMO_USERS.tech1,
+    createdOffset: -hours(96),
+    createdBy: DEMO_USERS.supervisor2,
+    nextUpdateOffset: hours(6),
+  });
+  inc7.version = 5;
+  inc7.reopenCount = 1;
+  inc7.lastUpdateAt = at(-hours(1));
+  inc7.updatedAt = at(-hours(1));
+
+  db.incidents = [inc1, inc2, inc3, inc4, inc5, inc6, inc7];
+  db.sequences[String(year)] = 7;
+
+  // --- updates & events ---
+  const updates: IncidentUpdate[] = [
+    {
+      id: 'upd-1a',
+      incidentId: 'inc-1',
+      authorId: DEMO_USERS.tech1,
+      eventTime: at(-hours(4)),
+      serverTime: at(-hours(4)),
+      actionsTaken: 'בוצעה בדיקת ספקי מתח וכבלי חיבור. הוחלף כבל חשוד בעמדת ההפעלה.',
+      findings: 'קוד השגיאה E-401 ממשיך להופיע גם לאחר החלפת הכבל.',
+      nextSteps: 'בדיקת כרטיס התקשורת הראשי מול תיעוד היצרן.',
+      createdAt: at(-hours(4)),
+    },
+    {
+      id: 'upd-1b',
+      incidentId: 'inc-1',
+      authorId: DEMO_USERS.tech1,
+      eventTime: at(-hours(2)),
+      serverTime: at(-hours(2)),
+      actionsTaken: 'פורק כרטיס התקשורת ונבדק חיבור פנימי. נמצא פין עקום בחיבור המרכזי.',
+      findings: 'ייתכן שהפין העקום הוא מקור התקלה. נדרש רכיב חלופי מהמלאי.',
+      nextSteps: 'איתור כרטיס חלופי והתקנתו.',
+      createdAt: at(-hours(2)),
+    },
+    {
+      id: 'upd-2a',
+      incidentId: 'inc-2',
+      authorId: DEMO_USERS.tech2,
+      eventTime: at(-hours(3)),
+      serverTime: at(-hours(3)),
+      actionsTaken: 'הוחלף ממיר התקשורת בעמדת הבקרה ובוצע ניטור של שעה.',
+      findings: 'מאז ההחלפה לא נצפו ניתוקים. ממשיכים בניטור.',
+      nextSteps: 'ניטור נוסף של 4 שעות לפני סגירה.',
+      createdAt: at(-hours(3)),
+    },
+    {
+      id: 'upd-7a',
+      incidentId: 'inc-7',
+      authorId: DEMO_USERS.tech1,
+      eventTime: at(-hours(1)),
+      serverTime: at(-hours(1)),
+      actionsTaken: 'נאספו קובצי יומן מהתצוגה לאחר הישנות התופעה.',
+      findings: 'הקפיאות מתרחשות בזמן ריענון נתונים אוטומטי בשעה עגולה.',
+      nextSteps: 'בדיקת תהליך הריענון האוטומטי מול הגדרות התצורה.',
+      createdAt: at(-hours(1)),
+    },
+  ];
+  db.incidentUpdates = updates;
+
+  db.incidentEvents = [
+    ev('ev-1-created', 'inc-1', 'created', DEMO_USERS.supervisor1, -hours(6), { note: 'פתיחת תקלה' }),
+    ev('ev-1-ack', 'inc-1', 'acknowledged', DEMO_USERS.supervisor1, -hours(6) + minutes(5)),
+    ev('ev-1-assign', 'inc-1', 'assignment_change', DEMO_USERS.supervisor1, -hours(6) + minutes(10), {
+      field: 'owner', oldValue: 'יואב כהן (דמו)', newValue: 'עומר פרץ (דמו)',
+    }),
+    ev('ev-1-upd-a', 'inc-1', 'update', DEMO_USERS.tech1, -hours(4), { refId: 'upd-1a' }),
+    ev('ev-1-upd-b', 'inc-1', 'update', DEMO_USERS.tech1, -hours(2), { refId: 'upd-1b' }),
+    ev('ev-2-created', 'inc-2', 'created', DEMO_USERS.supervisor2, -hours(9)),
+    ev('ev-2-upd-a', 'inc-2', 'update', DEMO_USERS.tech2, -hours(3), { refId: 'upd-2a' }),
+    ev('ev-3-created', 'inc-3', 'created', DEMO_USERS.supervisor1, -hours(30)),
+    ev('ev-3-status', 'inc-3', 'status_change', DEMO_USERS.supervisor1, -hours(5), {
+      field: 'status', oldValue: 'in_progress', newValue: 'waiting_external',
+      note: 'ממתינים להגעת טכנאי הספק עם רכיב חלופי.',
+    }),
+    ev('ev-4-created', 'inc-4', 'created', DEMO_USERS.supervisor1, -hours(20)),
+    ev('ev-4-status', 'inc-4', 'status_change', DEMO_USERS.supervisor1, -hours(8), {
+      field: 'status', oldValue: 'in_progress', newValue: 'monitoring',
+      note: 'הטמפרטורה התייצבה. מעקב כל שעתיים.',
+    }),
+    ev('ev-5-created', 'inc-5', 'created', DEMO_USERS.supervisor2, -hours(50)),
+    ev('ev-5-closed', 'inc-5', 'closed', DEMO_USERS.supervisor2, -hours(44), {
+      note: 'שוחזר קובץ תצורה קודם והמערכת חזרה לכשירות מלאה.',
+      newValue: 'full',
+    }),
+    ev('ev-6-created', 'inc-6', 'created', DEMO_USERS.manager, -hours(72)),
+    ev('ev-6-closed', 'inc-6', 'closed', DEMO_USERS.manager, -hours(60), {
+      note: 'הותקן פתרון זמני. נדרשות פעולות המשך להתקנת רכיב קבוע.',
+      newValue: 'partial',
+    }),
+    ev('ev-7-created', 'inc-7', 'created', DEMO_USERS.supervisor2, -hours(96)),
+    ev('ev-7-closed', 'inc-7', 'closed', DEMO_USERS.supervisor2, -hours(48), {
+      note: 'בוצע עדכון תוכנה לתצוגה והתופעה לא חזרה במשך יומיים.',
+      newValue: 'full',
+    }),
+    ev('ev-7-reopened', 'inc-7', 'reopened', DEMO_USERS.manager, -hours(3), {
+      note: 'התופעה חזרה: התצוגה קפאה פעמיים במשמרת האחרונה.',
+    }),
+    ev('ev-7-upd-a', 'inc-7', 'update', DEMO_USERS.tech1, -hours(1), { refId: 'upd-7a' }),
+  ];
+
+  // --- handovers ---
+  db.handovers = [
+    {
+      id: 'ho-accepted',
+      createdBy: DEMO_USERS.supervisor2,
+      createdAt: at(-hours(26)),
+      toUserId: DEMO_USERS.supervisor1,
+      generalNote: 'משמרת לילה שקטה יחסית. עיקר תשומת הלב לתקלה הקריטית במערכת אלפא.',
+      status: 'accepted',
+      acceptedAt: at(-hours(25)),
+      acceptedBy: DEMO_USERS.supervisor1,
+    },
+    {
+      id: 'ho-pending',
+      createdBy: DEMO_USERS.supervisor1,
+      createdAt: at(-hours(1)),
+      toUserId: DEMO_USERS.supervisor2,
+      generalNote: 'ממתינים לרכיב חלופי לתקלה הקריטית. טכנאי הספק אמור להגיע מחר בבוקר לתקלת מערכת גמא.',
+      status: 'pending',
+      acceptedAt: null,
+      acceptedBy: null,
+    },
+  ];
+
+  const snapItem = (
+    id: string,
+    handoverId: string,
+    inc: Incident,
+    note: string,
+    ownerLabel: string,
+    lastAction: string,
+    nextSteps: string,
+  ) => ({
+    id,
+    handoverId,
+    incidentId: inc.id,
+    note,
+    snapshotNumber: inc.number,
+    snapshotStatus: inc.status,
+    snapshotSeverity: inc.severity,
+    snapshotOwnerLabel: ownerLabel,
+    snapshotSystemName: db.systems.find((s) => s.id === inc.systemId)?.name ?? '',
+    snapshotLocationName: db.locations.find((l) => l.id === inc.locationId)?.name ?? '',
+    snapshotImpact: inc.operationalImpact,
+    snapshotLastAction: lastAction,
+    snapshotNextSteps: nextSteps,
+    snapshotNextUpdateDue: inc.nextUpdateDue,
+  });
+
+  db.handoverItems = [
+    snapItem('hoi-a1', 'ho-accepted', inc1, 'טכנאי ממתין לרכיב חלופי מהמלאי.', 'עומר פרץ (דמו)', 'נמצא פין עקום בכרטיס התקשורת.', 'איתור כרטיס חלופי והתקנתו.'),
+    snapItem('hoi-a2', 'ho-accepted', inc2, '', 'ליאור אדרי (דמו)', 'הוחלף ממיר תקשורת.', 'ניטור נוסף לפני סגירה.'),
+    snapItem('hoi-a3', 'ho-accepted', inc3, 'טכנאי ספק מוזמן.', 'טכנאי מטעם ספק (חברת דוגמה בע״מ)', 'הוזמן רכיב חלופי.', 'המתנה להגעת הטכנאי.'),
+    snapItem('hoi-p1', 'ho-pending', inc1, 'קריטית — נדרש עדכון מיידי בתחילת המשמרת.', 'עומר פרץ (דמו)', 'נמצא פין עקום בכרטיס התקשורת.', 'איתור כרטיס חלופי והתקנתו.'),
+    snapItem('hoi-p2', 'ho-pending', inc2, '', 'ליאור אדרי (דמו)', 'הוחלף ממיר תקשורת.', 'ניטור נוסף לפני סגירה.'),
+    snapItem('hoi-p3', 'ho-pending', inc3, '', 'טכנאי מטעם ספק (חברת דוגמה בע״מ)', 'הוזמן רכיב חלופי.', 'המתנה להגעת טכנאי הספק.'),
+    snapItem('hoi-p4', 'ho-pending', inc4, '', 'יואב כהן (דמו)', 'ניקוי פתחי אוורור.', 'מעקב טמפרטורה כל שעתיים.'),
+    snapItem('hoi-p5', 'ho-pending', inc6, 'סגורה בכשירות חלקית — ממתינים לרכיב קבוע.', 'ליאור אדרי (דמו)', 'הותקן רכיב זמני.', 'התקנת רכיב קבוע עם הגעתו.'),
+    snapItem('hoi-p6', 'ho-pending', inc7, 'נפתחה מחדש אתמול.', 'עומר פרץ (דמו)', 'נאספו קובצי יומן.', 'בדיקת תהליך הריענון האוטומטי.'),
+  ];
+
+  db.notifications = [
+    {
+      id: 'ntf-1',
+      userId: DEMO_USERS.supervisor2,
+      type: 'handover_pending',
+      incidentId: null,
+      handoverId: 'ho-pending',
+      text: 'העברת משמרת מיואב כהן (דמו) ממתינה לאישורך.',
+      read: false,
+      createdAt: at(-hours(1)),
+      dedupeKey: 'handover-ho-pending',
+    },
+    {
+      id: 'ntf-2',
+      userId: DEMO_USERS.tech1,
+      type: 'incident_assigned',
+      incidentId: 'inc-7',
+      handoverId: null,
+      text: `תקלה ${num(7)} הוקצתה אליך לאחר פתיחה מחדש.`,
+      read: false,
+      createdAt: at(-hours(3)),
+      dedupeKey: 'assign-inc-7-reopen',
+    },
+  ];
+
+  db.auditLogs = [
+    {
+      id: 'aud-seed-1',
+      actorId: null,
+      action: 'demo_seed',
+      entityType: 'database',
+      entityId: 'demo',
+      incidentNumber: null,
+      before: null,
+      after: JSON.stringify({ note: 'נתוני הדגמה פיקטיביים נטענו' }),
+      correlationId: null,
+      createdAt: now.toISOString(),
+    },
+  ];
+
+  return db;
+}

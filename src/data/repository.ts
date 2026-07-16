@@ -1,0 +1,148 @@
+// Repository abstraction. Implementations: LocalDemoRepository (demo mode, enforcing
+// backend rules in-process) and SupabaseRepository (production-ready data layer).
+import type {
+  AppNotification,
+  AuditLog,
+  Handover,
+  HandoverAddendum,
+  HandoverItem,
+  Incident,
+  IncidentEvent,
+  IncidentStatus,
+  IncidentUpdate,
+  LocationRecord,
+  Profile,
+  ReportedToOps,
+  Role,
+  Severity,
+  SystemRecord,
+} from '../domain/types';
+import type {
+  AssignIncidentInput,
+  CloseIncidentInput,
+  CorrectionInput,
+  CreateHandoverInput,
+  CreateIncidentInput,
+  ReopenIncidentInput,
+  TechnicianUpdateInput,
+  UpdateIncidentInput,
+} from '../domain/schemas';
+
+export type ErrorCode =
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'VALIDATION'
+  | 'CONFLICT' // optimistic concurrency: incident changed since page load
+  | 'INVALID_TRANSITION'
+  | 'SESSION_EXPIRED'
+  | 'NETWORK';
+
+/** Application error with a user-facing Hebrew message. */
+export class AppError extends Error {
+  code: ErrorCode;
+  constructor(code: ErrorCode, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'AppError';
+  }
+}
+
+export interface IncidentFilters {
+  search?: string;
+  status?: IncidentStatus[];
+  severity?: Severity[];
+  ownerUserId?: string;
+  systemId?: string;
+  locationId?: string;
+  overdueOnly?: boolean;
+  reportedToOps?: ReportedToOps;
+  createdFrom?: string; // ISO
+  createdTo?: string; // ISO
+  closedOnly?: boolean;
+  openOnly?: boolean;
+  readinessAtClose?: ('full' | 'partial' | 'none')[];
+  rootCauseText?: string;
+  resolutionText?: string;
+  followUpPending?: boolean;
+}
+
+export type IncidentSort = 'priority' | 'newest' | 'oldest' | 'next_update' | 'last_update';
+
+export interface AuditFilters {
+  actorId?: string;
+  action?: string;
+  incidentNumber?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface Session {
+  userId: string;
+  role: Role;
+}
+
+export interface ExportAuditInfo {
+  exportType: 'incident_pdf' | 'handover_pdf' | 'incidents_xlsx' | 'incidents_csv';
+  filtersDescription: string;
+}
+
+export interface Repository {
+  readonly mode: 'demo' | 'supabase';
+
+  // --- session / profiles ---
+  listProfiles(session: Session): Promise<Profile[]>;
+  getProfile(userId: string): Promise<Profile | null>;
+
+  // --- configuration ---
+  listSystems(): Promise<SystemRecord[]>;
+  listLocations(): Promise<LocationRecord[]>;
+  createSystem(session: Session, name: string): Promise<SystemRecord>;
+  renameSystem(session: Session, id: string, name: string): Promise<void>;
+  setSystemArchived(session: Session, id: string, archived: boolean): Promise<void>;
+  createLocation(session: Session, name: string): Promise<LocationRecord>;
+  renameLocation(session: Session, id: string, name: string): Promise<void>;
+  setLocationArchived(session: Session, id: string, archived: boolean): Promise<void>;
+
+  // --- users (admin) ---
+  createUser(session: Session, fullName: string, role: Role): Promise<Profile>;
+  setUserRole(session: Session, userId: string, role: Role): Promise<void>;
+  setUserActive(session: Session, userId: string, active: boolean): Promise<void>;
+
+  // --- incidents ---
+  listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;
+  getIncident(session: Session, id: string): Promise<Incident | null>;
+  getIncidentEvents(session: Session, incidentId: string): Promise<IncidentEvent[]>;
+  getIncidentUpdates(session: Session, incidentId: string): Promise<IncidentUpdate[]>;
+  createIncident(session: Session, input: CreateIncidentInput): Promise<Incident>;
+  acknowledgeIncident(session: Session, incidentId: string, expectedVersion: number): Promise<Incident>;
+  updateIncident(session: Session, incidentId: string, input: UpdateIncidentInput): Promise<Incident>;
+  technicianUpdate(session: Session, incidentId: string, input: TechnicianUpdateInput): Promise<Incident>;
+  assignIncident(session: Session, incidentId: string, input: AssignIncidentInput): Promise<Incident>;
+  closeIncident(session: Session, incidentId: string, input: CloseIncidentInput): Promise<Incident>;
+  reopenIncident(session: Session, incidentId: string, input: ReopenIncidentInput): Promise<Incident>;
+  addCorrection(session: Session, incidentId: string, input: CorrectionInput): Promise<void>;
+  completeFollowUp(session: Session, incidentId: string, note: string): Promise<Incident>;
+
+  // --- handovers ---
+  listHandovers(session: Session): Promise<Handover[]>;
+  getHandover(session: Session, id: string): Promise<{
+    handover: Handover;
+    items: HandoverItem[];
+    addenda: HandoverAddendum[];
+  } | null>;
+  createHandover(session: Session, input: CreateHandoverInput): Promise<Handover>;
+  acceptHandover(session: Session, handoverId: string): Promise<Handover>;
+  addHandoverAddendum(session: Session, handoverId: string, text: string): Promise<void>;
+
+  // --- notifications ---
+  listNotifications(session: Session): Promise<AppNotification[]>;
+  markNotificationRead(session: Session, id: string): Promise<void>;
+  markAllNotificationsRead(session: Session): Promise<void>;
+
+  // --- audit ---
+  listAuditLogs(session: Session, filters?: AuditFilters): Promise<AuditLog[]>;
+  recordExport(session: Session, info: ExportAuditInfo): Promise<void>;
+
+  /** Permission check that mirrors backend policy (used by UI and export layer). */
+  canExport(session: Session): Promise<boolean>;
+}
