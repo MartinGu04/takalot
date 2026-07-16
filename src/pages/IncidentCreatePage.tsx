@@ -114,7 +114,7 @@ export default function IncidentCreatePage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-bold">פתיחת תקלה</h1>
+      <h1 className="page-title">פתיחת תקלה</h1>
       <form
         className="mt-4 flex flex-col gap-4"
         onSubmit={(e) => {

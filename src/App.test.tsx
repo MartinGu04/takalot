@@ -13,7 +13,7 @@ beforeEach(() => {
 describe('RTL layout', () => {
   it('renders the document root as RTL Hebrew', async () => {
     render(<App />);
-    await screen.findByText('מעקב תקלות');
+    await screen.findByRole('heading', { name: 'Nexus' });
     expect(document.documentElement.getAttribute('dir')).toBe('rtl');
     expect(document.documentElement.getAttribute('lang')).toBe('he');
   });
@@ -33,6 +33,65 @@ describe('RTL layout', () => {
       expect.arrayContaining(['מצב נוכחי', 'תקלות', 'העברת משמרת', 'ארכיון']),
     );
     expect(links.length).toBeLessThanOrEqual(5); // 4 destinations + prominent create action
+  });
+
+  it('exposes the desktop sidebar as a "ניווט ראשי" navigation landmark with all destinations', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const loginButton = await screen.findByTestId('login-u-supervisor-1');
+    await user.click(loginButton);
+
+    const sidebarNav = await screen.findByRole('navigation', { name: 'ניווט ראשי' });
+    const links = within(sidebarNav).getAllByRole('link');
+    expect(links.map((l) => l.textContent)).toEqual(
+      expect.arrayContaining(['מצב נוכחי', 'תקלות', 'העברת משמרת', 'ארכיון']),
+    );
+  });
+});
+
+describe('branding', () => {
+  it('shows Nexus as the primary brand identity on the login screen', async () => {
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Nexus' });
+    expect(screen.getByTestId('brand-name').textContent).toContain('Nexus');
+    expect(screen.queryByRole('heading', { name: 'מעקב תקלות' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Takalot' })).not.toBeInTheDocument();
+  });
+
+  it('shows Nexus branding in the application shell after login, not the legacy product name', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const loginButton = await screen.findByTestId('login-u-supervisor-1');
+    await user.click(loginButton);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    const brandLinks = screen.getAllByTestId(/^brand-name/);
+    expect(brandLinks.length).toBeGreaterThan(0);
+    for (const link of brandLinks) {
+      expect(link.textContent).toContain('Nexus');
+    }
+    expect(screen.queryByText('מעקב תקלות', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('Takalot', { exact: false })).not.toBeInTheDocument();
+  });
+});
+
+describe('display-mode control', () => {
+  it('switches and persists the stored theme preference', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const loginButton = await screen.findByTestId('login-u-supervisor-1');
+    await user.click(loginButton);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    expect(localStorage.getItem('takalot-theme')).toBeNull(); // auto by default
+
+    const [toggle] = screen.getAllByTestId('theme-toggle');
+    await user.click(toggle);
+    const darkOption = await screen.findByRole('menuitemradio', { name: 'כהה' });
+    await user.click(darkOption);
+
+    expect(localStorage.getItem('takalot-theme')).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 });
 

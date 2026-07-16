@@ -96,7 +96,7 @@ export function CloseDialog({
               </Select>
             )}
           </Field>
-          <p className="text-sm text-neutral-500">משך תקלה משוער עד כה: {estimatedDuration}</p>
+          <p className="text-sm text-muted">משך תקלה משוער עד כה: {estimatedDuration}</p>
           {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={handleClose}>ביטול</Button>

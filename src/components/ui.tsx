@@ -24,7 +24,7 @@ type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
 const buttonStyles: Record<ButtonVariant, string> = {
   primary:
-    'bg-blue-700 text-white hover:bg-blue-800 disabled:bg-blue-300 dark:bg-blue-600 dark:hover:bg-blue-500 dark:disabled:bg-blue-900',
+    'bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300 dark:bg-brand-500 dark:hover:bg-brand-400 dark:disabled:bg-brand-900',
   secondary:
     'bg-white text-neutral-800 border border-neutral-300 hover:bg-neutral-50 dark:bg-neutral-800 dark:text-neutral-100 dark:border-neutral-600 dark:hover:bg-neutral-700',
   danger:
@@ -43,7 +43,7 @@ export function Button({
     <button
       type={type}
       className={cx(
-        'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed',
+        'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100',
         buttonStyles[variant],
         className,
       )}
@@ -54,7 +54,7 @@ export function Button({
 
 // ---------- Form fields ----------
 const inputBase =
-  'w-full min-h-11 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-blue-500 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 aria-[invalid=true]:border-red-500';
+  'w-full min-h-11 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-brand-500 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 aria-[invalid=true]:border-red-500';
 
 // forwardRef is required here: react-hook-form's register() attaches a ref to
 // read the DOM value at submit time, which is silently lost on plain function
@@ -95,12 +95,12 @@ export function Field({
   const errorId = `${id}-error`;
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+      <label htmlFor={id} className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
         {label}
         {required && <span className="text-red-600 dark:text-red-400"> *</span>}
       </label>
       {children({ id, 'aria-invalid': !!error, 'aria-describedby': error ? errorId : undefined })}
-      {hint && !error && <p className="text-xs text-neutral-500 dark:text-neutral-400">{hint}</p>}
+      {hint && !error && <p className="text-xs text-muted">{hint}</p>}
       {error && (
         <p id={errorId} role="alert" className="text-xs font-medium text-red-700 dark:text-red-400">
           {error}
@@ -116,7 +116,7 @@ export function Badge({
   children,
   className,
 }: {
-  color?: 'red' | 'orange' | 'green' | 'blue' | 'neutral';
+  color?: 'red' | 'orange' | 'green' | 'blue' | 'brand' | 'neutral';
   children: ReactNode;
   className?: string;
 }) {
@@ -127,6 +127,8 @@ export function Badge({
     green:
       'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200 border border-green-200 dark:border-green-800',
     blue: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800',
+    brand:
+      'bg-brand-100 text-brand-900 dark:bg-brand-950 dark:text-brand-200 border border-brand-200 dark:border-brand-800',
     neutral:
       'bg-neutral-100 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700',
   };
@@ -191,7 +193,7 @@ export function Dialog({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex animate-fade-in items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -202,7 +204,7 @@ export function Dialog({
         aria-modal="true"
         aria-label={title}
         className={cx(
-          'max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl dark:bg-neutral-900',
+          'max-h-[92dvh] w-full animate-scale-in overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl dark:bg-neutral-900',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
       >
@@ -212,7 +214,7 @@ export function Dialog({
             type="button"
             onClick={onClose}
             aria-label="סגירת החלון"
-            className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            className="rounded-lg p-2 text-muted hover:bg-neutral-100 dark:hover:bg-neutral-800"
           >
             ✕
           </button>
@@ -226,8 +228,8 @@ export function Dialog({
 // ---------- Spinner / loading ----------
 export function Spinner({ label = 'טוען…' }: { label?: string }) {
   return (
-    <div role="status" className="flex items-center justify-center gap-2 py-8 text-neutral-500">
-      <span className="inline-block size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-blue-600" />
+    <div role="status" className="flex items-center justify-center gap-2 py-8 text-muted">
+      <span className="inline-block size-5 animate-spin rounded-full border-2 border-neutral-300 border-t-brand-600 dark:border-neutral-700 dark:border-t-brand-400" />
       <span className="text-sm">{label}</span>
     </div>
   );
@@ -238,7 +240,7 @@ export function EmptyState({ title, subtitle }: { title: string; subtitle?: stri
   return (
     <div className="rounded-xl border border-dashed border-neutral-300 py-10 text-center dark:border-neutral-700">
       <p className="font-medium text-neutral-700 dark:text-neutral-300">{title}</p>
-      {subtitle && <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>}
+      {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
     </div>
   );
 }

@@ -60,7 +60,7 @@ export function Timeline({
     label ?? (id ? (profiles?.find((p) => p.id === id)?.fullName ?? 'משתמש') : 'המערכת');
 
   if (events.length === 0) {
-    return <p className="py-4 text-sm text-neutral-500">אין אירועים בציר הזמן.</p>;
+    return <p className="py-4 text-sm text-muted">אין אירועים בציר הזמן.</p>;
   }
 
   return (
@@ -94,7 +94,7 @@ export function Timeline({
                 <span className="text-sm text-neutral-600 dark:text-neutral-400">
                   {actorName(event.actorId, event.actorLabel)}
                 </span>
-                <span className="text-xs text-neutral-500">{formatDateTime(event.eventTime)}</span>
+                <span className="text-xs text-muted">{formatDateTime(event.eventTime)}</span>
                 {timesDiffer && (
                   <span className="text-xs text-neutral-400">
                     (נרשם בשרת: {formatDateTime(event.serverTime)})
@@ -141,12 +141,12 @@ export function Timeline({
                 </p>
               )}
               {event.type === 'correction' && event.refId && (
-                <p className="mt-0.5 text-xs text-neutral-500">מתייחס לרישום קודם (הרישום המקורי נשמר)</p>
+                <p className="mt-0.5 text-xs text-muted">מתייחס לרישום קודם (הרישום המקורי נשמר)</p>
               )}
               {onCorrect && CORRECTABLE_TYPES.has(event.type) && (event.actorId === currentUserId || canCorrectAny) && (
                 <button
                   type="button"
-                  className="mt-1 text-xs text-blue-700 hover:underline dark:text-blue-400"
+                  className="mt-1 text-xs text-brand-700 hover:underline dark:text-brand-400"
                   onClick={() =>
                     onCorrect(
                       event.type === 'update' && event.refId ? event.refId : event.id,

@@ -22,11 +22,11 @@ export default function HandoversPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">העברת משמרת</h1>
+        <h1 className="page-title">העברת משמרת</h1>
         {hasCapability(user.role, 'create_handover') && (
           <Link
             to="/handovers/new"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 dark:bg-blue-600"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 active:scale-[0.98] dark:bg-brand-500 dark:hover:bg-brand-400"
           >
             יצירת העברת משמרת
           </Link>
@@ -35,7 +35,7 @@ export default function HandoversPage() {
 
       {pendingForMe.length > 0 && (
         <section className="mt-4">
-          <h2 className="mb-2 text-sm font-bold text-orange-700 dark:text-orange-400">ממתינות לאישורך</h2>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-orange-700 dark:text-orange-400">ממתינות לאישורך</h2>
           <div className="flex flex-col gap-2">
             {pendingForMe.map((h) => (
               <Link
@@ -57,7 +57,7 @@ export default function HandoversPage() {
       )}
 
       <section className="mt-6">
-        <h2 className="mb-2 text-sm font-bold text-neutral-500">כל ההעברות</h2>
+        <h2 className="group-title mb-2">כל ההעברות</h2>
         {others.length === 0 && pendingForMe.length === 0 ? (
           <EmptyState title="אין עדיין העברות משמרת" />
         ) : (

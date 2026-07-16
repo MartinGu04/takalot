@@ -184,7 +184,7 @@ export default function AdminPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">ניהול</h1>
+      <h1 className="page-title">ניהול</h1>
       <div role="tablist" aria-label="לשוניות ניהול" className="mt-3 flex flex-wrap gap-1 border-b border-neutral-200 dark:border-neutral-700">
         {TABS.map((t) => (
           <button
@@ -193,8 +193,8 @@ export default function AdminPage() {
             aria-selected={tab === t.key}
             className={`min-h-11 rounded-t-lg px-3 py-2 text-sm font-medium ${
               tab === t.key
-                ? 'border-b-2 border-blue-700 text-blue-700 dark:border-blue-400 dark:text-blue-400'
-                : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+                ? 'border-b-2 border-brand-700 text-brand-700 dark:border-brand-400 dark:text-brand-400'
+                : 'text-muted hover:text-neutral-800 dark:hover:text-neutral-200'
             }`}
             onClick={() => setTab(t.key)}
           >

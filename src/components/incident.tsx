@@ -45,7 +45,7 @@ export function NextUpdateNote({ incident, now }: { incident: Incident; now: Dat
   if (incident.status === 'closed') return null;
   if (!incident.nextUpdateDue) {
     return (
-      <span className="text-sm text-neutral-500 dark:text-neutral-400">
+      <span className="text-sm text-muted">
         ללא צפי כרגע{incident.noDeadlineReason ? ` — ${incident.noDeadlineReason}` : ''}
       </span>
     );
@@ -91,12 +91,12 @@ export function IncidentCard({
       <div className="flex flex-wrap items-center gap-2">
         <Link
           to={`/incidents/${incident.id}`}
-          className="font-bold text-blue-700 hover:underline dark:text-blue-400"
+          className="font-bold text-brand-700 hover:underline dark:text-brand-400"
         >
           {incident.number}
         </Link>
         <span className="font-medium">{systemName}</span>
-        <span className="text-sm text-neutral-500">{locationName}</span>
+        <span className="text-sm text-muted">{locationName}</span>
         <span className="ms-auto flex gap-1.5">
           <SeverityBadge severity={incident.severity} />
           <StatusBadge status={incident.status} />
@@ -109,7 +109,7 @@ export function IncidentCard({
         <span className="text-neutral-600 dark:text-neutral-300">
           גורם מטפל: <strong>{ownerDisplay(incident, profiles)}</strong>
         </span>
-        <span className="text-neutral-500">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</span>
+        <span className="text-muted">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</span>
         <NextUpdateNote incident={incident} now={now} />
       </div>
       {incident.followUpRequired && !incident.followUpCompletedAt && (

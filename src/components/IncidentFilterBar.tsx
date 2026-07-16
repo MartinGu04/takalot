@@ -170,9 +170,9 @@ export function IncidentFilterBar({
         <div
           role="group"
           aria-label="מסננים פעילים"
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 dark:border-blue-900 dark:bg-blue-950/40"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 p-2.5 dark:border-brand-900 dark:bg-brand-950/40"
         >
-          <span className="text-xs font-semibold text-blue-900 dark:text-blue-200">מסננים פעילים:</span>
+          <span className="text-xs font-semibold text-brand-900 dark:text-brand-200">מסננים פעילים:</span>
           <div className="flex flex-wrap gap-1.5">
             {chips.map((c) => (
               <button
@@ -182,7 +182,7 @@ export function IncidentFilterBar({
                 aria-label={`הסרת סינון: ${c.label}`}
                 className="rounded-md"
               >
-                <Badge color="blue" className="gap-1 border-blue-400 font-medium dark:border-blue-700">
+                <Badge color="brand" className="gap-1 border-brand-400 font-medium dark:border-brand-700">
                   {c.label} <span aria-hidden>✕</span>
                 </Badge>
               </button>
@@ -190,7 +190,7 @@ export function IncidentFilterBar({
           </div>
           <button
             type="button"
-            className="text-xs font-medium text-blue-800 underline hover:text-blue-950 dark:text-blue-300 dark:hover:text-blue-100"
+            className="text-xs font-medium text-brand-800 underline hover:text-brand-950 dark:text-brand-300 dark:hover:text-brand-100"
             onClick={() =>
               onChange({
                 search: value.search,

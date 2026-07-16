@@ -119,7 +119,7 @@ export default function IncidentsPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">תקלות</h1>
+        <h1 className="page-title">תקלות</h1>
         <div className="flex items-center gap-2">
           <Select
             aria-label="מיון"
@@ -157,7 +157,7 @@ export default function IncidentsPage() {
         />
       </div>
 
-      <p className="mt-3 text-sm text-neutral-500">
+      <p className="mt-3 text-sm text-muted">
         {pageItems.total} תקלות תואמות
         {selected.size > 0 && ` · ${selected.size} נבחרו`}
       </p>
@@ -198,7 +198,7 @@ export default function IncidentsPage() {
           <Button variant="secondary" disabled={page <= 1} onClick={() => url.set('page', String(page - 1))}>
             הקודם
           </Button>
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-muted">
             עמוד {page} מתוך {Math.ceil(pageItems.total / PAGE_SIZE)}
           </span>
           <Button

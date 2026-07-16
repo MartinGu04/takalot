@@ -53,8 +53,8 @@ export default function HandoverCreatePage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-bold">יצירת העברת משמרת</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="page-title">יצירת העברת משמרת</h1>
+      <p className="mt-1 text-sm text-muted">
         ההעברה תכלול אוטומטית את כל התקלות הפתוחות ואת התקלות הסגורות עם כשירות לא מלאה.
       </p>
 
@@ -74,7 +74,7 @@ export default function HandoverCreatePage() {
         </Field>
       </div>
 
-      <h2 className="mt-6 mb-2 text-lg font-bold">תקלות בהעברה ({included.length})</h2>
+      <h2 className="section-title mt-6 mb-2">תקלות בהעברה ({included.length})</h2>
       <div className="flex flex-col gap-3">
         {included.map((i) => (
           <div key={i.id} className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">

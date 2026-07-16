@@ -35,7 +35,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 're
       >
         {value}
       </div>
-      <div className="text-xs text-neutral-500 dark:text-neutral-400">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
     </div>
   );
 }
@@ -52,7 +52,7 @@ function Section({
   if (incidents.length === 0) return null;
   return (
     <section className="mt-6">
-      <h2 className="mb-2 text-base font-bold">{title}</h2>
+      <h2 className="section-title mb-2">{title}</h2>
       <div className="flex flex-col gap-2">{incidents.map((i) => children(i))}</div>
     </section>
   );
@@ -121,7 +121,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">מצב נוכחי</h1>
+      <h1 className="page-title">מצב נוכחי</h1>
       <p className="mt-1 text-neutral-700 dark:text-neutral-300" data-testid="summary-sentence">
         {summarySentence(derived.open, derived.overdue)}
       </p>
@@ -154,11 +154,11 @@ export default function DashboardPage() {
 
       {derived.recentlyClosed.length > 0 && (
         <section className="mt-8">
-          <h2 className="mb-2 text-sm font-bold text-neutral-500">נסגרו לאחרונה</h2>
+          <h2 className="group-title mb-2">נסגרו לאחרונה</h2>
           <ul className="flex flex-col gap-1">
             {derived.recentlyClosed.map((i) => (
               <li key={i.id} className="text-sm">
-                <Link to={`/incidents/${i.id}`} className="text-blue-700 hover:underline dark:text-blue-400">
+                <Link to={`/incidents/${i.id}`} className="text-brand-700 hover:underline dark:text-brand-400">
                   {i.number}
                 </Link>{' '}
                 <span className="text-neutral-600 dark:text-neutral-300">

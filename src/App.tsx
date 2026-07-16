@@ -25,7 +25,7 @@ function Forbidden() {
   return (
     <div className="py-16 text-center">
       <h1 className="text-xl font-bold">אין הרשאה</h1>
-      <p className="mt-2 text-sm text-neutral-500">אין לך הרשאה לצפות בעמוד זה.</p>
+      <p className="mt-2 text-sm text-muted">אין לך הרשאה לצפות בעמוד זה.</p>
     </div>
   );
 }
@@ -34,7 +34,7 @@ function NotFound() {
   return (
     <div className="py-16 text-center">
       <h1 className="text-xl font-bold">העמוד לא נמצא</h1>
-      <p className="mt-2 text-sm text-neutral-500">ייתכן שהקישור שגוי או שהפריט הוסר.</p>
+      <p className="mt-2 text-sm text-muted">ייתכן שהקישור שגוי או שהפריט הוסר.</p>
     </div>
   );
 }

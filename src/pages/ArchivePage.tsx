@@ -81,7 +81,7 @@ export default function ArchivePage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">ארכיון תקלות סגורות</h1>
+        <h1 className="page-title">ארכיון תקלות סגורות</h1>
         {canExport && (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => exportMutation.mutate('xlsx')}>ייצוא XLSX</Button>
@@ -140,7 +140,7 @@ export default function ArchivePage() {
         </div>
       </div>
 
-      <p className="mt-3 text-sm text-neutral-500">{(incidents ?? []).length} תקלות סגורות תואמות</p>
+      <p className="mt-3 text-sm text-muted">{(incidents ?? []).length} תקלות סגורות תואמות</p>
 
       {(incidents ?? []).length === 0 ? (
         <div className="mt-4">
