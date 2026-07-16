@@ -34,11 +34,11 @@ function RoleSwitcher() {
   const { data: profiles } = useProfiles();
   if (!isDemoMode() || !user) return null;
   return (
-    <label className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-      <span className="hidden sm:inline">החלפת תפקיד (הדגמה):</span>
+    <label className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+      <span className="hidden lg:inline">החלפת תפקיד (הדגמה):</span>
       <select
         aria-label="החלפת משתמש הדגמה"
-        className="min-h-9 rounded-lg border border-orange-300 bg-orange-50 px-2 text-xs dark:border-orange-800 dark:bg-orange-950"
+        className="min-h-9 max-w-28 min-w-0 rounded-lg border border-orange-300 bg-orange-50 px-2 text-xs sm:max-w-40 dark:border-orange-800 dark:bg-orange-950"
         value={user.id}
         onChange={(e) => switchUser(e.target.value)}
         data-testid="demo-role-switcher"
@@ -171,9 +171,9 @@ function UserMenu() {
         <span className="flex size-8 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300">
           {user.fullName.charAt(0)}
         </span>
-        <span className="hidden text-right sm:block">
-          <span className="block font-medium leading-tight">{user.fullName}</span>
-          <span className="block text-xs leading-tight text-neutral-500">{roleLabels[user.role]}</span>
+        <span className="hidden max-w-28 text-right sm:block">
+          <span className="block truncate font-medium leading-tight">{user.fullName}</span>
+          <span className="block truncate text-xs leading-tight text-neutral-500">{roleLabels[user.role]}</span>
         </span>
       </button>
       {open && (
@@ -212,11 +212,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-col">
       <DemoBanner />
       <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2">
-          <Link to="/" className="text-lg font-bold">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-2">
+          <Link to="/" className="shrink-0 text-lg font-bold">
             {APP_NAME}
           </Link>
-          <nav aria-label="ניווט ראשי" className="hidden items-center gap-1 md:flex">
+          <nav aria-label="ניווט ראשי" className="hidden min-w-0 items-center gap-1 md:flex">
             {items.map((item) => (
               <NavLink
                 key={item.to}
@@ -234,7 +234,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               </NavLink>
             ))}
           </nav>
-          <div className="ms-auto flex items-center gap-1.5">
+          <div className="ms-auto flex min-w-0 flex-wrap items-center gap-1.5">
             {canCreate && (
               <Link
                 to="/incidents/new"

@@ -1,6 +1,7 @@
 import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord, ReportedToOps } from '../domain/types';
 import { severityLabels, statusLabels, reportedToOpsLabels } from '../domain/labels';
 import { Input, Select, Badge } from './ui';
+import { useDebouncedField } from '../lib/useDebouncedField';
 
 export interface FilterState {
   search: string;
@@ -42,6 +43,12 @@ export function IncidentFilterBar({
   statusOptions?: IncidentStatus[];
   extra?: React.ReactNode;
 }) {
+  // Debounced local draft: typing must never be interrupted by the
+  // URL/query round-trip that committing a search value triggers.
+  const [searchDraft, setSearchDraft] = useDebouncedField(value.search, (next) =>
+    onChange({ ...value, search: next }),
+  );
+
   const chips: { key: string; label: string; onRemove: () => void }[] = [];
   value.status.forEach((s) =>
     chips.push({ key: `s-${s}`, label: statusLabels[s], onRemove: () => onChange({ ...value, status: toggle(value.status, s) }) }),
@@ -76,8 +83,8 @@ export function IncidentFilterBar({
     <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
       <Input
         placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור או גורם מטפל…"
-        value={value.search}
-        onChange={(e) => onChange({ ...value, search: e.target.value })}
+        value={searchDraft}
+        onChange={(e) => setSearchDraft(e.target.value)}
         aria-label="חיפוש תקלות"
       />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

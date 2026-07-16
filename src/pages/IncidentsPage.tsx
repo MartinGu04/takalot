@@ -76,15 +76,21 @@ export default function IncidentsPage() {
   const locationName = (id: string) => locations?.find((l) => l.id === id)?.name ?? '—';
 
   const setFilters = (next: FilterState) => {
-    url.set('q', next.search);
-    url.set('status', next.status);
-    url.set('severity', next.severity);
-    url.set('owner', next.ownerUserId);
-    url.set('system', next.systemId);
-    url.set('location', next.locationId);
-    url.set('overdue', next.overdueOnly ? '1' : undefined);
-    url.set('ops', next.reportedToOps);
-    url.set('page', undefined);
+    // A single atomic update: calling url.set() once per key here would have
+    // each call compute its diff against the same not-yet-committed snapshot,
+    // so only the last call would ever actually stick (this was the root
+    // cause of severity/owner/etc. filters silently failing to apply).
+    url.setMany({
+      q: next.search,
+      status: next.status,
+      severity: next.severity,
+      owner: next.ownerUserId,
+      system: next.systemId,
+      location: next.locationId,
+      overdue: next.overdueOnly ? '1' : undefined,
+      ops: next.reportedToOps,
+      page: undefined,
+    });
   };
 
   const toggleSelect = (id: string) => {

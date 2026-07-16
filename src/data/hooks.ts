@@ -1,5 +1,5 @@
 // TanStack Query hooks over the repository abstraction.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepository } from './index';
 import { AppError, type AuditFilters, type IncidentFilters, type IncidentSort } from './repository';
 import { useAuth, useSession } from '../auth/AuthContext';
@@ -26,6 +26,13 @@ export function useIncidents(filters: IncidentFilters = {}, sort: IncidentSort =
     queryKey: ['incidents', filters, sort],
     queryFn: () => repo().listIncidents(session, filters, sort),
     refetchInterval: 60_000, // keep overdue states fresh while the page is open
+    // Every filter/search change produces a new query key. Without this, each
+    // one would be treated as a brand-new, uncached query — isLoading would
+    // flip true and the page's "if (isLoading) return <Spinner/>" branch would
+    // replace the whole tree (including the filter inputs) while it resolves,
+    // destroying and recreating the input DOM node and dropping focus.
+    // Keeping the previous page's data visible during the refetch avoids that.
+    placeholderData: keepPreviousData,
   });
 }
 
