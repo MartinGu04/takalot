@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
-import { IncidentFilterBar, type FilterState } from '../components/IncidentFilterBar';
+import { IncidentFilterBar, ALL_STATUSES, type FilterState } from '../components/IncidentFilterBar';
 import { IncidentCard } from '../components/incident';
 import { Button, EmptyState, ErrorState, Select, Spinner, useToast } from '../components/ui';
 import { useUrlState } from '../lib/useUrlState';
@@ -11,6 +11,12 @@ import type { IncidentSort } from '../data/repository';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
 
 const PAGE_SIZE = 20;
+
+// Closed incidents belong in the archive, never in the active incidents
+// list -- including closed incidents with incomplete readiness, which
+// surface instead in the dashboard's dedicated section. Reopened incidents
+// are not closed, so they remain active here.
+const ACTIVE_STATUS_OPTIONS = ALL_STATUSES.filter((s) => s !== 'closed');
 
 function filtersFromUrl(url: ReturnType<typeof useUrlState>): FilterState {
   return {
@@ -34,8 +40,13 @@ export default function IncidentsPage() {
   const toast = useToast();
   const session = useSession();
 
+  // The active incidents page always excludes closed incidents -- this is
+  // not a default a filter can override, it's what makes this page "active
+  // incidents" rather than "all incidents". Closed incidents (including ones
+  // with incomplete readiness) live in the archive and the dashboard's
+  // dedicated section, never here.
   const { data: incidents, isLoading, isError, refetch } = useIncidents(
-    { ...filters, openOnly: false },
+    { ...filters, openOnly: true },
     sort,
   );
   const { data: profiles } = useProfiles();
@@ -76,15 +87,21 @@ export default function IncidentsPage() {
   const locationName = (id: string) => locations?.find((l) => l.id === id)?.name ?? '—';
 
   const setFilters = (next: FilterState) => {
-    url.set('q', next.search);
-    url.set('status', next.status);
-    url.set('severity', next.severity);
-    url.set('owner', next.ownerUserId);
-    url.set('system', next.systemId);
-    url.set('location', next.locationId);
-    url.set('overdue', next.overdueOnly ? '1' : undefined);
-    url.set('ops', next.reportedToOps);
-    url.set('page', undefined);
+    // A single atomic update: calling url.set() once per key here would have
+    // each call compute its diff against the same not-yet-committed snapshot,
+    // so only the last call would ever actually stick (this was the root
+    // cause of severity/owner/etc. filters silently failing to apply).
+    url.setMany({
+      q: next.search,
+      status: next.status,
+      severity: next.severity,
+      owner: next.ownerUserId,
+      system: next.systemId,
+      location: next.locationId,
+      overdue: next.overdueOnly ? '1' : undefined,
+      ops: next.reportedToOps,
+      page: undefined,
+    });
   };
 
   const toggleSelect = (id: string) => {
@@ -130,7 +147,14 @@ export default function IncidentsPage() {
       </div>
 
       <div className="mt-3">
-        <IncidentFilterBar value={filters} onChange={setFilters} profiles={profiles} systems={systems} locations={locations} />
+        <IncidentFilterBar
+          value={filters}
+          onChange={setFilters}
+          profiles={profiles}
+          systems={systems}
+          locations={locations}
+          statusOptions={ACTIVE_STATUS_OPTIONS}
+        />
       </div>
 
       <p className="mt-3 text-sm text-neutral-500">

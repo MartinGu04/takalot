@@ -158,14 +158,25 @@ export function Dialog({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Read the latest onClose without making the effect below depend on its
+  // identity — onClose is typically a fresh closure on every render of the
+  // dialog's content (e.g. a handleClose defined inline in the caller), and
+  // depending on it directly would re-run this effect on every keystroke
+  // inside the dialog, re-focusing the first focusable element (the dialog's
+  // own close button, which is rendered before the form content) and
+  // yanking focus away from whatever field the user is actively typing in.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
-    // move focus into the dialog
+    // Move focus into the dialog once, when it opens — not on every
+    // re-render triggered by typing in its fields.
     const first = ref.current?.querySelector<HTMLElement>(
       'input, textarea, select, button, [tabindex]',
     );
@@ -174,7 +185,8 @@ export function Dialog({
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   if (!open) return null;
   return (

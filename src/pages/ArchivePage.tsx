@@ -5,6 +5,7 @@ import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
 import { Button, EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
 import { useUrlState } from '../lib/useUrlState';
+import { useDebouncedField } from '../lib/useDebouncedField';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
 import { readinessLabels } from '../domain/labels';
 import type { Readiness } from '../domain/types';
@@ -19,6 +20,16 @@ export default function ArchivePage() {
   const createdTo = url.get('to');
   const session = useSession();
   const toast = useToast();
+
+  // Debounced local drafts: typing must never be interrupted by the
+  // URL/query round-trip that committing a filter value triggers.
+  const [searchDraft, setSearchDraft] = useDebouncedField(search, (next) => url.set('q', next));
+  const [rootCauseDraft, setRootCauseDraft] = useDebouncedField(rootCauseText, (next) =>
+    url.set('rootCause', next),
+  );
+  const [resolutionDraft, setResolutionDraft] = useDebouncedField(resolutionText, (next) =>
+    url.set('resolution', next),
+  );
 
   const { data: incidents, isLoading, isError, refetch } = useIncidents(
     {
@@ -81,23 +92,50 @@ export default function ArchivePage() {
 
       <div className="mt-3 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
         <Input
-          placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור, גורם תקלה או פתרון…"
-          value={search}
-          onChange={(e) => url.set('q', e.target.value)}
+          placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור, סיבת התקלה או הפתרון שבוצע…"
+          value={searchDraft}
+          onChange={(e) => setSearchDraft(e.target.value)}
           aria-label="חיפוש בארכיון"
         />
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-          <Select aria-label="סינון לפי כשירות בסגירה" value={readiness ?? ''} onChange={(e) => url.set('readiness', e.target.value || undefined)}>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <Select
+            aria-label="סינון לפי כשירות בסגירה"
+            className="min-w-0"
+            value={readiness ?? ''}
+            onChange={(e) => url.set('readiness', e.target.value || undefined)}
+          >
             <option value="">כשירות בסגירה…</option>
             {Object.entries(readinessLabels).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
           </Select>
-          <Input placeholder="חיפוש בגורם התקלה…" value={rootCauseText} onChange={(e) => url.set('rootCause', e.target.value)} />
-          <Input placeholder="חיפוש בפתרון…" value={resolutionText} onChange={(e) => url.set('resolution', e.target.value)} />
-          <div className="flex gap-1">
-            <Input type="date" aria-label="מתאריך" value={createdFrom ?? ''} onChange={(e) => url.set('from', e.target.value)} />
-            <Input type="date" aria-label="עד תאריך" value={createdTo ?? ''} onChange={(e) => url.set('to', e.target.value)} />
+          <Input
+            className="min-w-0"
+            placeholder="חיפוש בסיבת התקלה…"
+            value={rootCauseDraft}
+            onChange={(e) => setRootCauseDraft(e.target.value)}
+          />
+          <Input
+            className="min-w-0"
+            placeholder="חיפוש בפתרון שבוצע…"
+            value={resolutionDraft}
+            onChange={(e) => setResolutionDraft(e.target.value)}
+          />
+          <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-1">
+            <Input
+              type="date"
+              className="min-w-0 flex-1 basis-32"
+              aria-label="מתאריך"
+              value={createdFrom ?? ''}
+              onChange={(e) => url.set('from', e.target.value)}
+            />
+            <Input
+              type="date"
+              className="min-w-0 flex-1 basis-32"
+              aria-label="עד תאריך"
+              value={createdTo ?? ''}
+              onChange={(e) => url.set('to', e.target.value)}
+            />
           </div>
         </div>
       </div>

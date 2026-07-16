@@ -67,7 +67,7 @@ export function CloseDialog({
     <Dialog open={open} onClose={handleClose} title="סגירת תקלה" wide>
       {!confirming ? (
         <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); proceedToConfirm(); }}>
-          <Field label="גורם התקלה" required>
+          <Field label="סיבת התקלה" required>
             {(a) => <Textarea {...a} rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)} maxLength={2000} />}
           </Field>
           <Field label="הפתרון שבוצע" required>

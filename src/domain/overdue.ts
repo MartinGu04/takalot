@@ -1,6 +1,6 @@
 // Overdue state is always calculated, never stored or manually selected.
-import type { Incident, Severity } from './types';
-import { SEVERITY_ORDER, isOpen } from './types';
+import type { Incident } from './types';
+import { isOpen } from './types';
 
 export function isOverdue(incident: Incident, now: Date): boolean {
   if (!isOpen(incident.status)) return false;
@@ -32,41 +32,36 @@ export function overdueText(incident: Incident, now: Date): string {
     : `העדכון באיחור של ${days} ימים`;
 }
 
-const severityRank = (s: Severity) => SEVERITY_ORDER.indexOf(s);
-
 /**
- * Dashboard priority sort:
- * 1. critical overdue, 2. high overdue, 3. other overdue,
- * 4. critical not overdue, 5. high not overdue,
- * 6. the rest by nearest next update.
+ * Default active-incident priority order:
+ * 1. critical/high overdue
+ * 2. other overdue (medium/low)
+ * 3. remaining critical/high (not overdue)
+ * 4. remaining active (medium/low, not overdue)
  */
 export function priorityRank(incident: Incident, now: Date): number {
   const overdue = isOverdue(incident, now);
-  const sev = incident.severity;
-  if (overdue && sev === 'critical') return 0;
-  if (overdue && sev === 'high') return 1;
-  if (overdue) return 2;
-  if (sev === 'critical') return 3;
-  if (sev === 'high') return 4;
-  return 5;
+  const highSeverity = incident.severity === 'critical' || incident.severity === 'high';
+  if (overdue && highSeverity) return 0;
+  if (overdue) return 1;
+  if (highSeverity) return 2;
+  return 3;
 }
 
+/**
+ * Sorts by the operational priority tier above; within a tier, newest
+ * discovery time first (falling back to newest creation time to break an
+ * exact tie). Opening/discovery time is only ever a tie-breaker inside an
+ * already-established severity/overdue tier -- never the sole ordering rule.
+ */
 export function sortByPriority(incidents: Incident[], now: Date): Incident[] {
   return [...incidents].sort((a, b) => {
     const ra = priorityRank(a, now);
     const rb = priorityRank(b, now);
     if (ra !== rb) return ra - rb;
-    if (ra <= 2) {
-      // among overdue: most overdue first, then severity
-      const oa = overdueMinutes(a, now);
-      const ob = overdueMinutes(b, now);
-      if (oa !== ob) return ob - oa;
-      return severityRank(a.severity) - severityRank(b.severity);
-    }
-    // among not overdue: nearest next update first; no deadline goes last
-    const da = a.nextUpdateDue ? new Date(a.nextUpdateDue).getTime() : Infinity;
-    const db = b.nextUpdateDue ? new Date(b.nextUpdateDue).getTime() : Infinity;
-    if (da !== db) return da - db;
-    return severityRank(a.severity) - severityRank(b.severity);
+    const da = new Date(a.discoveredAt).getTime();
+    const db = new Date(b.discoveredAt).getTime();
+    if (da !== db) return db - da;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 }

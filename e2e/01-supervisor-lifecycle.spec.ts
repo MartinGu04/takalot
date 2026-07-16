@@ -36,7 +36,7 @@ test('shift supervisor creates an incident, assigns a technician, adds an update
   // Close the incident through the dedicated closure flow.
   await page.getByRole('button', { name: 'סגירת תקלה' }).click();
   const closeDialog = page.getByRole('dialog', { name: 'סגירת תקלה' });
-  await closeDialog.getByLabel('גורם התקלה').fill('גורם התקלה שזוהה במהלך הבדיקה האוטומטית');
+  await closeDialog.getByLabel('סיבת התקלה').fill('סיבת התקלה שזוהתה במהלך הבדיקה האוטומטית');
   await closeDialog.getByLabel('הפתרון שבוצע').fill('הפתרון שבוצע לתיקון התקלה');
   await closeDialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
   await closeDialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();

@@ -49,7 +49,7 @@ export function buildIncidentPdf(
     pdf.sectionTitle('פרטי סגירה');
     pdf.field('שעת סגירה', formatDateTime(incident.closedAt));
     pdf.field('נסגר על ידי', name(incident.closedBy));
-    pdf.field('גורם התקלה', incident.rootCause ?? '');
+    pdf.field('סיבת התקלה', incident.rootCause ?? '');
     pdf.field('הפתרון שבוצע', incident.resolution ?? '');
     pdf.field('כשירות בסגירה', incident.readinessAtClose ? readinessLabels[incident.readinessAtClose] : '');
     pdf.field('משך התקלה', formatDuration(incident.discoveredAt, incident.closedAt ?? incident.createdAt));

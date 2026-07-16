@@ -833,7 +833,7 @@ export class LocalDemoRepository implements Repository {
 
     this.addEvent(incidentId, 'closed', actor.id, {
       newValue: input.readiness,
-      note: `גורם התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}${
+      note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}${
         incident.followUpNotes ? `\nפעולות המשך: ${incident.followUpNotes}` : ''
       }`,
     });

@@ -117,7 +117,7 @@ export type TechnicianUpdateInput = z.infer<typeof technicianUpdateSchema>;
 export const closeIncidentSchema = z
   .object({
     expectedVersion: z.number(),
-    rootCause: nonBlank(2000, 'גורם התקלה'),
+    rootCause: nonBlank(2000, 'סיבת התקלה'),
     resolution: nonBlank(4000, 'הפתרון שבוצע'),
     readiness: readinessSchema,
     followUpNotes: z.string().max(2000).optional().default(''),
