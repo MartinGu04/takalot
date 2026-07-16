@@ -92,7 +92,7 @@ export default function ArchivePage() {
 
       <div className="mt-3 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
         <Input
-          placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור, גורם תקלה או פתרון…"
+          placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור, סיבת התקלה או הפתרון שבוצע…"
           value={searchDraft}
           onChange={(e) => setSearchDraft(e.target.value)}
           aria-label="חיפוש בארכיון"
@@ -111,13 +111,13 @@ export default function ArchivePage() {
           </Select>
           <Input
             className="min-w-0"
-            placeholder="חיפוש בגורם התקלה…"
+            placeholder="חיפוש בסיבת התקלה…"
             value={rootCauseDraft}
             onChange={(e) => setRootCauseDraft(e.target.value)}
           />
           <Input
             className="min-w-0"
-            placeholder="חיפוש בפתרון…"
+            placeholder="חיפוש בפתרון שבוצע…"
             value={resolutionDraft}
             onChange={(e) => setResolutionDraft(e.target.value)}
           />

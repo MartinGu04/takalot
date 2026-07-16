@@ -210,7 +210,7 @@ export default function IncidentDetailPage() {
               <dt className="text-xs text-neutral-500">משך התקלה</dt>
               <dd>{formatDuration(incident.discoveredAt, incident.closedAt ?? incident.createdAt)}</dd>
             </div>
-            <div><dt className="text-xs text-neutral-500">גורם התקלה</dt><dd>{incident.rootCause}</dd></div>
+            <div><dt className="text-xs text-neutral-500">סיבת התקלה</dt><dd>{incident.rootCause}</dd></div>
             <div><dt className="text-xs text-neutral-500">הפתרון שבוצע</dt><dd>{incident.resolution}</dd></div>
             <div>
               <dt className="text-xs text-neutral-500">כשירות</dt>

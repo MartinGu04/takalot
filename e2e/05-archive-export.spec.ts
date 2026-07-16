@@ -13,7 +13,7 @@ test('authorized user filters archive results and exports XLSX/CSV', async ({ pa
   await page.goto('/archive');
   await expect(page.getByRole('heading', { name: 'ארכיון תקלות סגורות' })).toBeVisible();
 
-  await page.getByPlaceholder('חיפוש לפי מספר, מערכת, מיקום, תיאור, גורם תקלה או פתרון…').fill('2026-005');
+  await page.getByPlaceholder('חיפוש לפי מספר, מערכת, מיקום, תיאור, סיבת התקלה או הפתרון שבוצע…').fill('2026-005');
   await expect(page.getByRole('link', { name: /2026-005/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /2026-006/ })).toHaveCount(0);
 

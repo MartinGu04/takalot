@@ -414,6 +414,33 @@ describe('filter behavior', () => {
   });
 });
 
+describe('active incidents page semantics', () => {
+  it('openOnly excludes closed incidents but keeps reopened incidents', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const active = await repo.listIncidents(supervisor1, { openOnly: true });
+    const ids = active.map((i) => i.id);
+    // inc-5 and inc-6 are seeded as closed (inc-6 with incomplete readiness,
+    // which belongs only in the archive and the dashboard's dedicated
+    // section -- never in the active incidents list).
+    expect(ids).not.toContain('inc-5');
+    expect(ids).not.toContain('inc-6');
+    expect(active.every((i) => i.status !== 'closed')).toBe(true);
+    // inc-7 is seeded as reopened -- not closed, so it stays active.
+    expect(ids).toContain('inc-7');
+    expect(active.find((i) => i.id === 'inc-7')?.status).toBe('reopened');
+  });
+
+  it('applies the default operational priority order: critical/high overdue, other overdue, remaining critical/high, remaining active (newest discovery first within each tier)', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const active = await repo.listIncidents(supervisor1, { openOnly: true }, 'priority');
+    // inc-1: critical, overdue -> tier 1 (critical/high overdue)
+    // inc-2: high, not overdue -> tier 3 (remaining critical/high)
+    // inc-3, inc-4, inc-7: medium/low, not overdue -> tier 4 (remaining active),
+    //   ordered by newest discovery time first: inc-4 > inc-3 > inc-7
+    expect(active.map((i) => i.id)).toEqual(['inc-1', 'inc-2', 'inc-4', 'inc-3', 'inc-7']);
+  });
+});
+
 describe('export permission enforcement', () => {
   it('allows export for shift_supervisor and system_admin', async () => {
     const repo = newRepo({ now: FIXED_NOW });

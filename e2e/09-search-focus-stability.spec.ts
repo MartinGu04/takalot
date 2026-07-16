@@ -15,9 +15,12 @@ test('incidents list search accepts a full word without losing focus', async ({ 
   await expect(input).toHaveValue(WORD);
 
   // Filtering applies after the debounce window without further interaction.
+  // Only inc-2 (מערכת בטא) matches -- inc-5 is also מערכת בטא but closed,
+  // so it's excluded from the active incidents page by default.
   await page.waitForTimeout(500);
-  await expect(page.getByText('2 תקלות תואמות')).toBeVisible();
+  await expect(page.getByText('1 תקלות תואמות')).toBeVisible();
   await expect(page.getByRole('link', { name: /2026-002/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /2026-005/ })).toHaveCount(0);
 });
 
 test('archive search accepts a full word without losing focus', async ({ page }) => {
@@ -37,7 +40,7 @@ test('archive search accepts a full word without losing focus', async ({ page })
 test('archive root-cause search accepts a full word without losing focus', async ({ page }) => {
   await loginAs(page, DEMO_USERS.supervisor1);
   await page.goto('/archive');
-  const input = page.getByPlaceholder('חיפוש בגורם התקלה…');
+  const input = page.getByPlaceholder('חיפוש בסיבת התקלה…');
   await typeAndCheckFocus(page, input, 'רכיב');
   await expect(input).toHaveValue('רכיב');
   await page.waitForTimeout(500);
@@ -49,7 +52,7 @@ test('archive root-cause search accepts a full word without losing focus', async
 test('archive resolution search accepts a full word without losing focus', async ({ page }) => {
   await loginAs(page, DEMO_USERS.supervisor1);
   await page.goto('/archive');
-  const input = page.getByPlaceholder('חיפוש בפתרון…');
+  const input = page.getByPlaceholder('חיפוש בפתרון שבוצע…');
   await typeAndCheckFocus(page, input, 'רכיב');
   await expect(input).toHaveValue('רכיב');
   await page.waitForTimeout(500);
@@ -65,9 +68,9 @@ test('closure form root-cause and resolution fields accept a full word without l
   await page.getByRole('button', { name: 'סגירת תקלה' }).click();
   const dialog = page.getByRole('dialog', { name: 'סגירת תקלה' });
 
-  const rootCause = dialog.getByLabel('גורם התקלה');
-  await typeAndCheckFocus(page, rootCause, 'בדיקה של גורם התקלה בעברית');
-  await expect(rootCause).toHaveValue('בדיקה של גורם התקלה בעברית');
+  const rootCause = dialog.getByLabel('סיבת התקלה');
+  await typeAndCheckFocus(page, rootCause, 'בדיקה של סיבת התקלה בעברית');
+  await expect(rootCause).toHaveValue('בדיקה של סיבת התקלה בעברית');
 
   const resolution = dialog.getByLabel('הפתרון שבוצע');
   await typeAndCheckFocus(page, resolution, 'בדיקה של הפתרון שבוצע בעברית');

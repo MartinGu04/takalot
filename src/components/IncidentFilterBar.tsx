@@ -95,7 +95,7 @@ export function IncidentFilterBar({
             if (e.target.value) onChange({ ...value, severity: toggle(value.severity, e.target.value as Severity) });
           }}
         >
-          <option value="">חומרה…</option>
+          <option value="">הוספת חומרה…</option>
           {ALL_SEVERITIES.map((s) => (
             <option key={s} value={s} disabled={value.severity.includes(s)}>
               {severityLabels[s]}
@@ -109,7 +109,7 @@ export function IncidentFilterBar({
             if (e.target.value) onChange({ ...value, status: toggle(value.status, e.target.value as IncidentStatus) });
           }}
         >
-          <option value="">סטטוס…</option>
+          <option value="">הוספת סטטוס…</option>
           {statusOptions.map((s) => (
             <option key={s} value={s} disabled={value.status.includes(s)}>
               {statusLabels[s]}
@@ -167,17 +167,30 @@ export function IncidentFilterBar({
         {extra}
       </div>
       {chips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {chips.map((c) => (
-            <button key={c.key} type="button" onClick={c.onRemove} className="rounded-md">
-              <Badge color="blue" className="gap-1">
-                {c.label} <span aria-hidden>✕</span>
-              </Badge>
-            </button>
-          ))}
+        <div
+          role="group"
+          aria-label="מסננים פעילים"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 dark:border-blue-900 dark:bg-blue-950/40"
+        >
+          <span className="text-xs font-semibold text-blue-900 dark:text-blue-200">מסננים פעילים:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {chips.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={c.onRemove}
+                aria-label={`הסרת סינון: ${c.label}`}
+                className="rounded-md"
+              >
+                <Badge color="blue" className="gap-1 border-blue-400 font-medium dark:border-blue-700">
+                  {c.label} <span aria-hidden>✕</span>
+                </Badge>
+              </button>
+            ))}
+          </div>
           <button
             type="button"
-            className="text-xs text-neutral-500 underline"
+            className="text-xs font-medium text-blue-800 underline hover:text-blue-950 dark:text-blue-300 dark:hover:text-blue-100"
             onClick={() =>
               onChange({
                 search: value.search,

@@ -32,8 +32,8 @@ test('archive filter controls remain reachable (not clipped) at 1024px', async (
   // not hide filters merely to eliminate overflow.
   await expect(page.getByLabel('חיפוש בארכיון')).toBeVisible();
   await expect(page.getByLabel('סינון לפי כשירות בסגירה')).toBeVisible();
-  await expect(page.getByPlaceholder('חיפוש בגורם התקלה…')).toBeVisible();
-  await expect(page.getByPlaceholder('חיפוש בפתרון…')).toBeVisible();
+  await expect(page.getByPlaceholder('חיפוש בסיבת התקלה…')).toBeVisible();
+  await expect(page.getByPlaceholder('חיפוש בפתרון שבוצע…')).toBeVisible();
   await expect(page.getByLabel('מתאריך')).toBeVisible();
   await expect(page.getByLabel('עד תאריך')).toBeVisible();
 });

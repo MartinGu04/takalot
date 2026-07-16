@@ -338,7 +338,7 @@ begin
     raise exception 'invalid_transition: התקלה כבר סגורה';
   end if;
   if length(trim(coalesce(p_input->>'rootCause', ''))) = 0 or length(trim(coalesce(p_input->>'resolution', ''))) = 0 then
-    raise exception 'validation: גורם התקלה והפתרון הם שדות חובה';
+    raise exception 'validation: סיבת התקלה והפתרון שבוצע הם שדות חובה';
   end if;
   if v_readiness <> 'full' and v_follow_up is null then
     raise exception 'validation: בסגירה עם כשירות חלקית יש לפרט פעולות המשך';
@@ -356,7 +356,7 @@ begin
 
   insert into incident_events (incident_id, type, actor_id, new_value, note)
   values (p_incident_id, 'closed', auth.uid(), v_readiness::text,
-          'גורם התקלה: ' || v.root_cause || E'\nהפתרון שבוצע: ' || v.resolution ||
+          'סיבת התקלה: ' || v.root_cause || E'\nהפתרון שבוצע: ' || v.resolution ||
           coalesce(E'\nפעולות המשך: ' || v.follow_up_notes, ''));
   perform write_audit('incident_closed', 'incident', p_incident_id::text, v.number,
     null, jsonb_build_object('readiness', v_readiness));
