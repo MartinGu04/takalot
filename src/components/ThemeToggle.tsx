@@ -55,7 +55,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         aria-label={`מצב תצוגה: ${stateLabel}. לחיצה לפתיחת אפשרויות תצוגה`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`flex size-10 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800 ${className ?? ''}`}
+        className={`flex size-10 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover ${className ?? ''}`}
         data-testid="theme-toggle"
       >
         {dark ? <IconMoon className="size-5" /> : <IconSun className="size-5" />}
@@ -64,7 +64,7 @@ export function ThemeToggle({ className }: { className?: string }) {
         <div
           role="menu"
           aria-label="בחירת מצב תצוגה"
-          className="absolute start-0 z-50 mt-1 w-44 animate-scale-in rounded-xl border border-neutral-200 bg-white p-1.5 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          className="popover-panel absolute start-0 z-50 mt-1 w-44 animate-scale-in p-1.5"
         >
           {OPTIONS.map((opt) => {
             const selected = pref === opt.value;
@@ -78,7 +78,7 @@ export function ThemeToggle({ className }: { className?: string }) {
                 className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm ${
                   selected
                     ? 'bg-brand-50 font-medium text-brand-800 dark:bg-brand-950 dark:text-brand-200'
-                    : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800'
+                    : 'text-text-secondary hover:bg-surface-hover'
                 }`}
               >
                 {opt.icon({ className: 'size-4 shrink-0' })}

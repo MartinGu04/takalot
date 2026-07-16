@@ -33,7 +33,7 @@ function UsersTab() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+      <div className="mb-4 flex flex-wrap items-end gap-2 surface p-3">
         <Field label="שם מלא (משתמש הדגמה)">
           {(a) => <Input {...a} value={newName} onChange={(e) => setNewName(e.target.value)} />}
         </Field>
@@ -55,7 +55,7 @@ function UsersTab() {
       </div>
       <div className="flex flex-col gap-2">
         {(profiles ?? []).map((p) => (
-          <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+          <div key={p.id} className="flex flex-wrap items-center gap-2 surface p-3">
             <span className="font-medium">{p.fullName}</span>
             <Select
               className="w-auto"
@@ -99,7 +99,7 @@ function ConfigTab({ kind }: { kind: 'systems' | 'locations' }) {
 
   return (
     <div>
-      <div className="mb-4 flex items-end gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+      <div className="mb-4 flex items-end gap-2 surface p-3">
         <Field label={kind === 'systems' ? 'שם מערכת / עמדה חדשה' : 'שם מיקום חדש'}>
           {(a) => <Input {...a} value={name} onChange={(e) => setName(e.target.value)} />}
         </Field>
@@ -109,8 +109,8 @@ function ConfigTab({ kind }: { kind: 'systems' | 'locations' }) {
       </div>
       <div className="flex flex-col gap-2">
         {(data ?? []).map((r) => (
-          <div key={r.id} className="flex items-center gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
-            <span className={r.archived ? 'text-neutral-400 line-through' : 'font-medium'}>{r.name}</span>
+          <div key={r.id} className="flex items-center gap-2 surface p-3">
+            <span className={r.archived ? 'text-muted line-through' : 'font-medium'}>{r.name}</span>
             <Button
               variant="secondary"
               className="ms-auto"
@@ -143,9 +143,9 @@ function AuditTab() {
       ) : (logs ?? []).length === 0 ? (
         <EmptyState title="אין רישומי יומן התואמים לסינון" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-700">
+        <div className="overflow-x-auto surface">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-right dark:bg-neutral-800">
+            <thead className="bg-surface-active text-right">
               <tr>
                 <th className="p-2">זמן</th>
                 <th className="p-2">משתמש</th>
@@ -156,7 +156,7 @@ function AuditTab() {
             </thead>
             <tbody>
               {(logs ?? []).map((l) => (
-                <tr key={l.id} className="border-t border-neutral-100 dark:border-neutral-800">
+                <tr key={l.id} className="border-t border-hairline">
                   <td className="p-2 whitespace-nowrap">{formatDateTime(l.createdAt)}</td>
                   <td className="p-2">{name(l.actorId)}</td>
                   <td className="p-2">{l.action}</td>
@@ -185,7 +185,7 @@ export default function AdminPage() {
   return (
     <div>
       <h1 className="page-title">ניהול</h1>
-      <div role="tablist" aria-label="לשוניות ניהול" className="mt-3 flex flex-wrap gap-1 border-b border-neutral-200 dark:border-neutral-700">
+      <div role="tablist" aria-label="לשוניות ניהול" className="mt-3 flex flex-wrap gap-1 border-b border-hairline">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -194,7 +194,7 @@ export default function AdminPage() {
             className={`min-h-11 rounded-t-lg px-3 py-2 text-sm font-medium ${
               tab === t.key
                 ? 'border-b-2 border-brand-700 text-brand-700 dark:border-brand-400 dark:text-brand-400'
-                : 'text-muted hover:text-neutral-800 dark:hover:text-neutral-200'
+                : 'text-muted hover:text-text-primary'
             }`}
             onClick={() => setTab(t.key)}
           >

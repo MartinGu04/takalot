@@ -11,6 +11,7 @@ import { Sidebar } from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
 import { navItems } from './navItems';
 import { IconBell, IconLogOut, IconPlus } from './icons';
+import { NexusMark } from './NexusMark';
 
 function DemoBanner() {
   if (!isDemoMode()) return null;
@@ -21,17 +22,17 @@ function DemoBanner() {
   );
 }
 
-/** Demo-only role switcher. Rendered exclusively in demo mode. */
+/** Demo-only role switcher. Rendered exclusively in demo mode; kept compact and quiet, not visually dominant. */
 function RoleSwitcher() {
   const { user, switchUser } = useAuth();
   const { data: profiles } = useProfiles();
   if (!isDemoMode() || !user) return null;
   return (
-    <label className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
-      <span className="hidden lg:inline">החלפת תפקיד (הדגמה):</span>
+    <label className="flex min-w-0 items-center gap-1 text-xs text-muted">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-orange-500" />
       <select
         aria-label="החלפת משתמש הדגמה"
-        className="min-h-9 max-w-20 min-w-0 rounded-lg border border-orange-300 bg-orange-50 px-1.5 text-xs sm:max-w-40 dark:border-orange-800 dark:bg-orange-950"
+        className="min-h-9 max-w-20 min-w-0 rounded-lg border border-hairline bg-transparent px-1 text-xs text-text-secondary hover:bg-surface-hover sm:max-w-40"
         value={user.id}
         onChange={(e) => switchUser(e.target.value)}
         data-testid="demo-role-switcher"
@@ -76,7 +77,7 @@ function NotificationsMenu() {
       <button
         type="button"
         aria-label={`התראות${unread ? ` (${unread} שלא נקראו)` : ''}`}
-        className="relative flex size-10 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+        className="relative flex size-10 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover"
         onClick={() => setOpen((o) => !o)}
         data-testid="notifications-button"
       >
@@ -88,9 +89,9 @@ function NotificationsMenu() {
         )}
       </button>
       {open && (
-        <div className="absolute start-0 z-50 mt-1 max-h-96 w-80 animate-scale-in overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="popover-panel absolute start-0 z-50 mt-1 max-h-96 w-80 animate-scale-in overflow-y-auto p-2">
           <div className="flex items-center justify-between px-2 py-1">
-            <span className="text-sm font-bold">התראות</span>
+            <span className="card-title">התראות</span>
             {unread > 0 && (
               <button
                 type="button"
@@ -108,7 +109,7 @@ function NotificationsMenu() {
             <button
               key={n.id}
               type="button"
-              className={`block w-full rounded-lg px-2 py-2 text-right text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
+              className={`block w-full rounded-lg px-2 py-2 text-right text-sm hover:bg-surface-hover ${
                 n.read ? 'opacity-60' : 'font-medium'
               }`}
               onClick={() => {
@@ -149,7 +150,7 @@ function MobileUserMenu() {
     <div className="relative" ref={ref}>
       <button
         type="button"
-        className="flex size-10 items-center justify-center rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        className="flex size-10 items-center justify-center rounded-lg hover:bg-surface-hover"
         onClick={() => setOpen((o) => !o)}
         aria-label="תפריט משתמש"
       >
@@ -158,8 +159,8 @@ function MobileUserMenu() {
         </span>
       </button>
       {open && (
-        <div className="absolute start-0 z-50 mt-1 w-52 animate-scale-in rounded-xl border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
-          <p className="px-2 py-1 text-sm font-medium">
+        <div className="popover-panel absolute start-0 z-50 mt-1 w-52 animate-scale-in p-2">
+          <p className="px-2 py-1 text-sm font-medium text-text-primary">
             {user.fullName}
             <span className="block text-xs text-muted">{roleLabels[user.role]}</span>
           </p>
@@ -169,7 +170,7 @@ function MobileUserMenu() {
           </div>
           <button
             type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm text-red-700 hover:bg-neutral-100 dark:text-red-400 dark:hover:bg-neutral-800"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm text-red-700 hover:bg-surface-hover dark:text-red-400"
             onClick={logout}
           >
             <IconLogOut className="size-4" />
@@ -192,16 +193,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <Sidebar user={user} />
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
         <DemoBanner />
-        <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
+        <header className="sticky top-0 z-40 border-b border-hairline bg-surface/90 backdrop-blur-sm">
           <div className="flex items-center gap-2 px-4 py-2">
             <Link to="/" className="flex min-w-0 items-center gap-2 md:hidden" data-testid="brand-name-mobile">
-              <span
-                aria-hidden
-                className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-xs font-extrabold text-white dark:bg-brand-500"
-              >
-                N
-              </span>
-              <span className="truncate text-base font-extrabold tracking-tight">{APP_NAME}</span>
+              <NexusMark className="size-7" />
+              <span className="truncate text-base font-extrabold tracking-tight text-text-primary">{APP_NAME}</span>
             </Link>
             <div className="ms-auto flex min-w-0 items-center gap-1">
               <RoleSwitcher />
@@ -218,7 +214,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {/* Mobile bottom navigation (max 4 destinations) + prominent create action */}
         <nav
           aria-label="ניווט תחתון"
-          className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden dark:border-neutral-800 dark:bg-neutral-900"
+          className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-surface/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)] md:hidden"
         >
           <div className="relative flex">
             {items.slice(0, 4).map((item) => (
@@ -227,14 +223,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 to={item.to}
                 end={item.to === '/'}
                 className={({ isActive }) =>
-                  `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium ${
-                    isActive ? 'text-brand-700 dark:text-brand-400' : 'text-neutral-500'
+                  `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors ${
+                    isActive ? 'text-brand-700 dark:text-brand-400' : 'text-muted'
                   }`
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <item.icon className={`size-5 ${isActive ? 'text-brand-600 dark:text-brand-400' : ''}`} />
+                    <span
+                      className={`flex size-7 items-center justify-center rounded-lg ${isActive ? 'bg-brand-50 dark:bg-brand-950' : ''}`}
+                    >
+                      <item.icon className={`size-5 ${isActive ? 'text-brand-600 dark:text-brand-400' : ''}`} />
+                    </span>
                     {item.label}
                   </>
                 )}

@@ -34,7 +34,7 @@ export function CorrectionDialog({
           onSubmit(text.trim());
         }}
       >
-        <p className="text-sm text-neutral-600 dark:text-neutral-300">
+        <p className="text-sm text-secondary">
           מתקן: <strong>{refLabel}</strong>. הרישום המקורי יישאר בציר הזמן, והתיקון יתווסף כאירוע נפרד.
         </p>
         <Field label="תוכן התיקון" required error={error}>

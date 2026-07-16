@@ -172,7 +172,7 @@ export default function IncidentDetailPage() {
         </div>
       )}
 
-      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <dt className="text-xs text-muted">גורם מטפל נוכחי</dt>
@@ -202,7 +202,7 @@ export default function IncidentDetailPage() {
       </div>
 
       {isClosed && (
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
           <h2 className="section-title">סיכום סגירה</h2>
           <dl className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div><dt className="text-xs text-muted">שעת סגירה</dt><dd>{formatDateTime(incident.closedAt)}</dd></div>
@@ -223,7 +223,7 @@ export default function IncidentDetailPage() {
         </div>
       )}
 
-      <div className="sticky bottom-16 z-10 mt-4 flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white/95 p-3 backdrop-blur md:static md:bottom-auto dark:border-neutral-700 dark:bg-neutral-900/95">
+      <div className="surface sticky bottom-16 z-10 mt-4 flex flex-wrap gap-2 bg-surface/95 p-3 backdrop-blur md:static md:bottom-auto">
         {canAck && <Button onClick={() => ackMutation.mutate(undefined)} disabled={ackMutation.isPending}>אישור קבלה</Button>}
         {(canFullUpdate || canTechUpdate) && <Button onClick={() => setDialog('update')}>עדכון תקלה</Button>}
         {canAssign && <Button variant="secondary" onClick={() => setDialog('assign')}>שינוי גורם מטפל</Button>}

@@ -77,16 +77,16 @@ export default function HandoverCreatePage() {
       <h2 className="section-title mt-6 mb-2">תקלות בהעברה ({included.length})</h2>
       <div className="flex flex-col gap-3">
         {included.map((i) => (
-          <div key={i.id} className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+          <div key={i.id} className="surface p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold">{i.number}</span>
-              <span>{systems?.find((s) => s.id === i.systemId)?.name}</span>
+              <span className="font-bold text-text-primary">{i.number}</span>
+              <span className="text-text-primary">{systems?.find((s) => s.id === i.systemId)?.name}</span>
               <span className="ms-auto flex gap-1.5">
                 <SeverityBadge severity={i.severity} />
                 <StatusBadge status={i.status} />
               </span>
             </div>
-            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+            <p className="mt-1 text-sm text-secondary">
               {locations?.find((l) => l.id === i.locationId)?.name} · גורם מטפל: {ownerDisplay(i, profiles)}
             </p>
             <div className="mt-2">

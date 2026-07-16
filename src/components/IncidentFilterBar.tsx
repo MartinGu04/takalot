@@ -80,7 +80,7 @@ export function IncidentFilterBar({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="surface flex flex-col gap-3 p-3">
       <Input
         placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור או גורם מטפל…"
         value={searchDraft}
@@ -156,7 +156,7 @@ export function IncidentFilterBar({
           <option value="no">לא</option>
           <option value="not_required">לא נדרש</option>
         </Select>
-        <label className="flex items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm dark:border-neutral-600">
+        <label className="flex items-center gap-2 rounded-lg border border-hairline-strong px-3 text-sm">
           <input
             type="checkbox"
             checked={value.overdueOnly}

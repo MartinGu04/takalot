@@ -5,6 +5,7 @@ import { useSession } from '../auth/AuthContext';
 import { IncidentFilterBar, ALL_STATUSES, type FilterState } from '../components/IncidentFilterBar';
 import { IncidentCard } from '../components/incident';
 import { Button, EmptyState, ErrorState, Select, Spinner, useToast } from '../components/ui';
+import { ExportMenu } from '../components/ExportMenu';
 import { useUrlState } from '../lib/useUrlState';
 import type { IncidentStatus, Severity, ReportedToOps, Incident } from '../domain/types';
 import type { IncidentSort } from '../data/repository';
@@ -37,6 +38,7 @@ export default function IncidentsPage() {
   const sort = (url.get('sort') as IncidentSort) ?? 'priority';
   const page = Number(url.get('page') ?? '1');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const toast = useToast();
   const session = useSession();
 
@@ -135,12 +137,24 @@ export default function IncidentsPage() {
           </Select>
           {canExport && (
             <>
-              <Button variant="secondary" onClick={() => exportMutation.mutate('xlsx')}>
-                ייצוא XLSX
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSelectionMode((m) => !m);
+                  if (selectionMode) setSelected(new Set());
+                }}
+                aria-pressed={selectionMode}
+              >
+                {selectionMode ? 'סיום בחירה' : 'בחירה'}
               </Button>
-              <Button variant="secondary" onClick={() => exportMutation.mutate('csv')}>
-                ייצוא CSV
-              </Button>
+              <ExportMenu
+                disabled={exportMutation.isPending}
+                options={[
+                  { kind: 'xlsx', label: 'ייצוא XLSX' },
+                  { kind: 'csv', label: 'ייצוא CSV' },
+                ]}
+                onExport={(kind) => exportMutation.mutate(kind as 'xlsx' | 'csv')}
+              />
             </>
           )}
         </div>
@@ -169,16 +183,21 @@ export default function IncidentsPage() {
       ) : (
         <div className="mt-3 flex flex-col gap-2">
           {pageItems.rows.map((incident: Incident) => (
-            <div key={incident.id} className="flex items-start gap-2">
-              {canExport && (
+            <div key={incident.id} className="flex items-center gap-1">
+              <div
+                className={`flex shrink-0 items-center justify-center overflow-hidden transition-[width,opacity] duration-200 ${
+                  selectionMode && canExport ? 'w-9 opacity-100' : 'w-0 opacity-0'
+                }`}
+              >
                 <input
                   type="checkbox"
-                  className="mt-4 size-5"
+                  className="size-4.5 rounded accent-brand-600"
+                  tabIndex={selectionMode ? 0 : -1}
                   aria-label={`בחירת תקלה ${incident.number} לייצוא`}
                   checked={selected.has(incident.id)}
                   onChange={() => toggleSelect(incident.id)}
                 />
-              )}
+              </div>
               <div className="flex-1">
                 <IncidentCard
                   incident={incident}

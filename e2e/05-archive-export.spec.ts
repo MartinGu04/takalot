@@ -17,18 +17,21 @@ test('authorized user filters archive results and exports XLSX/CSV', async ({ pa
   await expect(page.getByRole('link', { name: /2026-005/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /2026-006/ })).toHaveCount(0);
 
+  // A single "ייצוא" control opens a popover with the format options.
+  await page.getByRole('button', { name: 'ייצוא', exact: true }).click();
   const [xlsxDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'ייצוא XLSX' }).click(),
+    page.getByRole('menuitem', { name: 'ייצוא XLSX' }).click(),
   ]);
   const xlsxPath = await xlsxDownload.path();
   expect(xlsxPath).toBeTruthy();
   const xlsxBytes = readFileSync(xlsxPath!);
   expect(xlsxBytes.slice(0, 2).toString()).toBe('PK'); // xlsx is a zip archive
 
+  await page.getByRole('button', { name: 'ייצוא', exact: true }).click();
   const [csvDownload] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'ייצוא CSV' }).click(),
+    page.getByRole('menuitem', { name: 'ייצוא CSV' }).click(),
   ]);
   const csvPath = await csvDownload.path();
   expect(csvPath).toBeTruthy();

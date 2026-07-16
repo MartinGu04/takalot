@@ -50,8 +50,15 @@ test('default ordering follows operational priority, not opening time alone', as
   // inc-1 (critical, overdue) must lead; inc-7 is the oldest incident by far
   // (created 96h ago) but is only medium severity and not overdue, so it
   // must not lead merely because it's the oldest.
+  //
+  // Each incident card is a single clickable link (number, system, badges,
+  // metadata all inside it), so its accessible text starts with — but isn't
+  // limited to — the incident number; extract the leading number token from
+  // each card in DOM order rather than requiring an isolated number-only link.
   const numbers = await page.locator('a[href^="/incidents/inc-"]').evaluateAll((els) =>
-    els.map((el) => el.textContent?.trim()).filter((t): t is string => !!t && /^\d{4}-\d{3}$/.test(t)),
+    els
+      .map((el) => el.textContent?.trim().match(/^\d{4}-\d{3}/)?.[0])
+      .filter((t): t is string => !!t),
   );
   expect(numbers[0]).toBe('2026-001');
   expect(numbers.indexOf('2026-007')).toBeGreaterThan(numbers.indexOf('2026-001'));

@@ -106,7 +106,7 @@ export function CloseDialog({
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-sm">אנא אשרו את פרטי הסגירה:</p>
-          <div className="rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800">
+          <div className="rounded-lg bg-surface-active p-3 text-sm">
             <p><strong>משך התקלה:</strong> {estimatedDuration}</p>
             <p className="mt-1"><strong>כשירות:</strong> {readinessLabels[readiness ?? 'full']}</p>
             {readiness !== 'full' && <p className="mt-1 text-orange-700 dark:text-orange-400">התקלה תסומן כ"כשירות לא מלאה" עד השלמת פעולות ההמשך.</p>}

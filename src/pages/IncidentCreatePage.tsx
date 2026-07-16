@@ -224,7 +224,7 @@ export default function IncidentCreatePage() {
           )}
         />
 
-        <div className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+        <div className="surface p-3">
           <label className="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" {...register('hasDeadline')} defaultChecked />
             יש צפי לעדכון הבא

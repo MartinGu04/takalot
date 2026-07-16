@@ -41,13 +41,13 @@ export default function HandoversPage() {
               <Link
                 key={h.id}
                 to={`/handovers/${h.id}`}
-                className="block rounded-xl border border-orange-300 bg-orange-50 p-3 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950 dark:hover:bg-orange-900"
+                className="block rounded-xl border border-orange-300 bg-orange-50 p-3 shadow-soft transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-elevated dark:border-orange-800 dark:bg-orange-950"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">מאת {name(h.createdBy)}</span>
+                  <span className="font-medium text-text-primary">מאת {name(h.createdBy)}</span>
                   <Badge color="orange">ממתינה לאישור</Badge>
                 </div>
-                <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                <p className="mt-1 text-sm text-secondary">
                   {formatRelative(h.createdAt)} · {formatDateTime(h.createdAt)}
                 </p>
               </Link>
@@ -66,15 +66,15 @@ export default function HandoversPage() {
               <Link
                 key={h.id}
                 to={`/handovers/${h.id}`}
-                className="block rounded-xl border border-neutral-200 bg-white p-3 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+                className="surface-interactive block p-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{name(h.createdBy)} ← {name(h.toUserId)}</span>
+                  <span className="font-medium text-text-primary">{name(h.createdBy)} ← {name(h.toUserId)}</span>
                   <Badge color={h.status === 'accepted' ? 'green' : 'orange'}>
                     {h.status === 'accepted' ? 'אושרה' : 'ממתינה'}
                   </Badge>
                 </div>
-                <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                <p className="mt-1 text-sm text-secondary">
                   {formatDateTime(h.createdAt)}
                   {h.acceptedAt && ` · אושרה ב-${formatDateTime(h.acceptedAt)}`}
                 </p>

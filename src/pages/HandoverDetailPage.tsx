@@ -53,7 +53,7 @@ export default function HandoverDetailPage() {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h1 className="page-title">העברת משמרת</h1>
-          <p className="text-neutral-600 dark:text-neutral-300">
+          <p className="text-secondary">
             {name(handover.createdBy)} ← {name(handover.toUserId)}
           </p>
         </div>
@@ -62,7 +62,7 @@ export default function HandoverDetailPage() {
         </Badge>
       </div>
 
-      <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-4 text-sm dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="surface mt-3 p-4 text-sm">
         <p>נוצרה: {formatDateTime(handover.createdAt)}</p>
         {handover.acceptedAt && <p>אושרה: {formatDateTime(handover.acceptedAt)} על ידי {name(handover.acceptedBy ?? '')}</p>}
         {handover.generalNote && <p className="mt-2 whitespace-pre-wrap">{handover.generalNote}</p>}
@@ -83,17 +83,17 @@ export default function HandoverDetailPage() {
           <Link
             key={item.id}
             to={`/incidents/${item.incidentId}`}
-            className="block rounded-xl border border-neutral-200 bg-white p-3 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+            className="surface-interactive block p-3"
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-brand-700 dark:text-brand-400">{item.snapshotNumber}</span>
-              <span>{item.snapshotSystemName}</span>
+              <span className="text-text-primary">{item.snapshotSystemName}</span>
               <span className="ms-auto flex gap-1.5">
                 <SeverityBadge severity={item.snapshotSeverity} />
                 <StatusBadge status={item.snapshotStatus} />
               </span>
             </div>
-            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">גורם מטפל: {item.snapshotOwnerLabel}</p>
+            <p className="mt-1 text-sm text-secondary">גורם מטפל: {item.snapshotOwnerLabel}</p>
             <p className="mt-1 text-sm">פעולה אחרונה: {item.snapshotLastAction || '—'}</p>
             <p className="text-sm">פעולת המשך: {item.snapshotNextSteps || '—'}</p>
             {item.note && <p className="mt-1 text-sm font-medium text-brand-800 dark:text-brand-300">הערת מסירה: {item.note}</p>}
@@ -105,7 +105,7 @@ export default function HandoverDetailPage() {
         <section className="mt-6">
           <h2 className="section-title mb-2">תוספות</h2>
           {addenda.map((a) => (
-            <div key={a.id} className="mb-2 rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800/60">
+            <div key={a.id} className="mb-2 rounded-lg bg-surface-active p-3 text-sm">
               <p className="text-xs text-muted">{name(a.authorId)} · {formatDateTime(a.createdAt)}</p>
               <p className="mt-1 whitespace-pre-wrap">{a.text}</p>
             </div>

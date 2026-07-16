@@ -187,7 +187,7 @@ export function UpdateDialog({
               onChangeInternal={setOwnerUserId}
               onChangeExternal={setOwnerExternalName}
             />
-            <div className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-700">
+            <div className="rounded-xl border border-hairline p-3">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input type="checkbox" checked={hasDeadline} onChange={(e) => setHasDeadline(e.target.checked)} />
                 יש צפי לעדכון הבא

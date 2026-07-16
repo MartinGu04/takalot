@@ -126,10 +126,74 @@ export function IconChevronDown(props: IconProps) {
   );
 }
 
+export function IconChevronLeft(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="m12.5 5-5 5 5 5" />
+    </svg>
+  );
+}
+
 export function IconCheck(props: IconProps) {
   return (
     <svg {...base(props)}>
       <path d="m4.5 10.5 3.5 3.5 7.5-8" />
+    </svg>
+  );
+}
+
+export function IconClock(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6v4.2l2.8 1.8" />
+    </svg>
+  );
+}
+
+export function IconFlag(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M5 3v14" />
+      <path d="M5 4c1.5-1 3.5-1 5 0s3.5 1 5 0v7c-1.5 1-3.5 1-5 0s-3.5-1-5 0Z" />
+    </svg>
+  );
+}
+
+export function IconBriefcase(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="2.5" y="6.5" width="15" height="9.5" rx="1.4" />
+      <path d="M7 6.5V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5v1.5" />
+      <path d="M2.5 10.8h15" />
+    </svg>
+  );
+}
+
+export function IconHeadset(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 11v-1a6 6 0 0 1 12 0v1" />
+      <rect x="2.7" y="10.5" width="3.3" height="5" rx="1.2" />
+      <rect x="14" y="10.5" width="3.3" height="5" rx="1.2" />
+      <path d="M15.5 15.5v.8a2 2 0 0 1-2 2h-2.3" />
+    </svg>
+  );
+}
+
+export function IconWrench(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12.5 3.8a3.6 3.6 0 0 0-4.7 4.3L3 12.9v2.6h2.6l4.8-4.8a3.6 3.6 0 0 0 4.3-4.7l-2.4 2.4-1.8-.6-.6-1.8 2.4-2.2Z" />
+    </svg>
+  );
+}
+
+export function IconEye(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M2 10s2.8-5 8-5 8 5 8 5-2.8 5-8 5-8-5-8-5Z" />
+      <circle cx="10" cy="10" r="2.3" />
     </svg>
   );
 }
