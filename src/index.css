@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: 'Heebo';
+  src: url('/fonts/Heebo-Regular.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: 'Heebo', system-ui, -apple-system, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+body {
+  @apply bg-neutral-100 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100;
+  min-height: 100dvh;
+}
+
+/* Calm, readable focus states everywhere */
+:focus-visible {
+  outline: 2px solid theme(--color-blue-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
