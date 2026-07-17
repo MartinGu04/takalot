@@ -3,7 +3,9 @@ import type { Incident } from '../../domain/types';
 import { closeIncidentSchema, type CloseIncidentInput } from '../../domain/schemas';
 import { readinessLabels, reportedToOpsLabels } from '../../domain/labels';
 import { formatDuration } from '../../lib/time';
-import { Dialog, Field, Select, Textarea, Button } from '../ui';
+import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
+import { OwnerField } from '../OwnerField';
+import { useProfiles } from '../../data/hooks';
 
 export function CloseDialog({
   open,
@@ -18,19 +20,30 @@ export function CloseDialog({
   onSubmit: (input: CloseIncidentInput) => void;
   submitting: boolean;
 }) {
+  const { data: profiles } = useProfiles();
   const [rootCause, setRootCause] = useState('');
   const [resolution, setResolution] = useState('');
   const [readiness, setReadiness] = useState<Incident['readinessAtClose']>('full');
   const [followUpNotes, setFollowUpNotes] = useState('');
+  const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
+  const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
+  const [ownerError, setOwnerError] = useState<string | undefined>();
   const [reportedToOps, setReportedToOps] = useState(incident.reportedToOps);
+  const [reportedToOpsRecipient, setReportedToOpsRecipient] = useState(incident.reportedToOpsRecipient ?? '');
   const [error, setError] = useState<string | undefined>();
   const [confirming, setConfirming] = useState(false);
+
+  const fullyReady = readiness === 'full';
 
   const handleClose = () => {
     setRootCause('');
     setResolution('');
     setReadiness('full');
     setFollowUpNotes('');
+    setOwnerUserId(incident.ownerUserId ?? '');
+    setOwnerExternalName(incident.ownerExternalName ?? '');
+    setOwnerError(undefined);
+    setReportedToOpsRecipient(incident.reportedToOpsRecipient ?? '');
     setConfirming(false);
     setError(undefined);
     onClose();
@@ -43,15 +56,22 @@ export function CloseDialog({
       resolution,
       readiness: readiness ?? 'full',
       followUpNotes,
+      ownerUserId: fullyReady ? null : ownerUserId || null,
+      ownerExternalName: fullyReady ? null : ownerExternalName || null,
       reportedToOps,
+      reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
     });
 
   const proceedToConfirm = () => {
     const parsed = parsedInput();
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message);
+      const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
+      const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId');
+      setOwnerError(ownerIssue?.message);
+      setError(otherIssue?.message);
       return;
     }
+    setOwnerError(undefined);
     setError(undefined);
     setConfirming(true);
   };
@@ -82,10 +102,25 @@ export function CloseDialog({
               </Select>
             )}
           </Field>
-          {readiness !== 'full' && (
-            <Field label="פעולות המשך" required hint="חובה לפרט כאשר הכשירות אינה מלאה">
-              {(a) => <Textarea {...a} value={followUpNotes} onChange={(e) => setFollowUpNotes(e.target.value)} maxLength={2000} />}
-            </Field>
+          {!fullyReady && (
+            <>
+              <Field label="פעולות המשך" required hint="חובה לפרט כאשר הכשירות אינה מלאה">
+                {(a) => <Textarea {...a} value={followUpNotes} onChange={(e) => setFollowUpNotes(e.target.value)} maxLength={2000} />}
+              </Field>
+              <div className="rounded-xl border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950/40">
+                <p className="mb-2 text-sm text-orange-900 dark:text-orange-200">
+                  התקלה תישאר פעילה עד להשלמת פעולות ההמשך — יש לקבוע גורם מטפל אחראי.
+                </p>
+                <OwnerField
+                  profiles={profiles}
+                  ownerUserId={ownerUserId}
+                  ownerExternalName={ownerExternalName}
+                  onChangeInternal={setOwnerUserId}
+                  onChangeExternal={setOwnerExternalName}
+                  error={ownerError}
+                />
+              </div>
+            </>
           )}
           <Field label="דווח למבצעים">
             {(a) => (
@@ -96,6 +131,19 @@ export function CloseDialog({
               </Select>
             )}
           </Field>
+          {reportedToOps === 'yes' && (
+            <Field label="למי דווח?" required>
+              {(a) => (
+                <Input
+                  {...a}
+                  value={reportedToOpsRecipient}
+                  onChange={(e) => setReportedToOpsRecipient(e.target.value)}
+                  placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
+                  maxLength={200}
+                />
+              )}
+            </Field>
+          )}
           <p className="text-sm text-muted">משך תקלה משוער עד כה: {estimatedDuration}</p>
           {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
@@ -105,16 +153,20 @@ export function CloseDialog({
         </form>
       ) : (
         <div className="flex flex-col gap-3">
-          <p className="text-sm">אנא אשרו את פרטי הסגירה:</p>
+          <p className="text-sm">{fullyReady ? 'אנא אשרו את פרטי הסגירה:' : 'אנא אשרו את הפרטים — התקלה תישאר פעילה:'}</p>
           <div className="rounded-lg bg-surface-active p-3 text-sm">
             <p><strong>משך התקלה:</strong> {estimatedDuration}</p>
             <p className="mt-1"><strong>כשירות:</strong> {readinessLabels[readiness ?? 'full']}</p>
-            {readiness !== 'full' && <p className="mt-1 text-orange-700 dark:text-orange-400">התקלה תסומן כ"כשירות לא מלאה" עד השלמת פעולות ההמשך.</p>}
+            {!fullyReady && (
+              <p className="mt-1 text-orange-700 dark:text-orange-400">
+                התקלה לא תיסגר — היא תסומן כ"כשירות חלקית" ותישאר בתקלות הפעילות עד השלמת פעולות ההמשך.
+              </p>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => setConfirming(false)}>חזרה לעריכה</Button>
             <Button type="button" variant="danger" disabled={submitting} onClick={confirm}>
-              {submitting ? 'סוגר…' : 'אישור סגירת תקלה'}
+              {submitting ? 'שומר…' : fullyReady ? 'אישור סגירת תקלה' : 'אישור ושמירה'}
             </Button>
           </div>
         </div>

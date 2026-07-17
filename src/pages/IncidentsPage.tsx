@@ -7,7 +7,7 @@ import { IncidentCard } from '../components/incident';
 import { Button, EmptyState, ErrorState, Select, Spinner, useToast } from '../components/ui';
 import { ExportMenu } from '../components/ExportMenu';
 import { useUrlState } from '../lib/useUrlState';
-import type { IncidentStatus, Severity, ReportedToOps, Incident } from '../domain/types';
+import type { IncidentStatus, Severity, Incident } from '../domain/types';
 import type { IncidentSort } from '../data/repository';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
 
@@ -28,7 +28,6 @@ function filtersFromUrl(url: ReturnType<typeof useUrlState>): FilterState {
     systemId: url.get('system'),
     locationId: url.get('location'),
     overdueOnly: url.get('overdue') === '1',
-    reportedToOps: url.get('ops') as ReportedToOps | undefined,
   };
 }
 
@@ -99,7 +98,6 @@ export default function IncidentsPage() {
       system: next.systemId,
       location: next.locationId,
       overdue: next.overdueOnly ? '1' : undefined,
-      ops: next.reportedToOps,
       page: undefined,
     });
   };

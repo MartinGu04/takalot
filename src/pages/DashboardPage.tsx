@@ -8,7 +8,7 @@ import { isOpen, type Incident } from '../domain/types';
 import { IncidentCard } from '../components/incident';
 import { EmptyState, ErrorState, Spinner } from '../components/ui';
 import { hasCapability } from '../domain/permissions';
-import { IconAlertTriangle, IconClock, IconFlag, IconPulse } from '../components/icons';
+import { IconAlertTriangle, IconClock, IconPulse } from '../components/icons';
 import { OpenIncidentsSummary } from '../components/OpenIncidentsSummary';
 import type { SVGProps } from 'react';
 
@@ -151,14 +151,11 @@ export default function DashboardPage() {
       ),
       now,
     );
-    const partialReadiness = all.filter(
-      (i) => i.status === 'closed' && i.followUpRequired && !i.followUpCompletedAt,
-    );
     const recentlyClosed = all
-      .filter((i) => i.status === 'closed' && !(i.followUpRequired && !i.followUpCompletedAt))
+      .filter((i) => i.status === 'closed')
       .sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? ''))
       .slice(0, 5);
-    return { open, overdue, critical, needsAttention, overdueRest, inProgress, waiting, partialReadiness, recentlyClosed };
+    return { open, overdue, critical, needsAttention, overdueRest, inProgress, waiting, recentlyClosed };
   }, [incidents, now.getTime()]);
 
   if (isLoading) return <Spinner label="טוען את התמונה העדכנית…" />;
@@ -199,7 +196,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {derived.open.length === 0 && derived.partialReadiness.length === 0 && (
+      {derived.open.length === 0 && (
         <div className="mt-6">
           <EmptyState
             title="אין תקלות פתוחות כרגע"
@@ -216,18 +213,6 @@ export default function DashboardPage() {
       <Section title="עדכונים באיחור" incidents={derived.overdueRest}>{card}</Section>
       <Section title="בטיפול" incidents={derived.inProgress}>{card}</Section>
       <Section title="ממתינות / במעקב" incidents={derived.waiting}>{card}</Section>
-
-      {derived.partialReadiness.length > 0 && (
-        <div className="mt-6 flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950/40">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
-            <IconFlag className="size-4.5" />
-          </span>
-          <p className="text-sm text-orange-900 dark:text-orange-200">
-            <strong>{derived.partialReadiness.length}</strong> תקלות סגורות עם כשירות לא מלאה ממתינות להשלמת פעולות המשך.
-          </p>
-        </div>
-      )}
-      <Section title="כשירות לא מלאה" incidents={derived.partialReadiness}>{card}</Section>
 
       {derived.recentlyClosed.length > 0 && (
         <section className="mt-8">

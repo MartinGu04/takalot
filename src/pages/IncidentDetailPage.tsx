@@ -192,7 +192,12 @@ export default function IncidentDetailPage() {
           </div>
           <div>
             <dt className="text-xs text-muted">דווח למבצעים</dt>
-            <dd>{reportedToOpsLabels[incident.reportedToOps]}</dd>
+            <dd>
+              {reportedToOpsLabels[incident.reportedToOps]}
+              {incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient && (
+                <span className="font-normal text-secondary"> — {incident.reportedToOpsRecipient}</span>
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-muted">תיאור</dt>

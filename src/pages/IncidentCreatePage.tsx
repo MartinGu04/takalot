@@ -27,6 +27,7 @@ type FormValues = {
   nextUpdateDue: string; // datetime-local
   noDeadlineReason: string;
   reportedToOps: CreateIncidentInput['reportedToOps'];
+  reportedToOpsRecipient: string;
 };
 
 function defaultValues(): FormValues {
@@ -45,6 +46,7 @@ function defaultValues(): FormValues {
     nextUpdateDue: isoToLocalInput(new Date(Date.now() + 4 * 3600_000).toISOString()),
     noDeadlineReason: '',
     reportedToOps: 'no',
+    reportedToOpsRecipient: '',
   };
 }
 
@@ -56,7 +58,7 @@ export default function IncidentCreatePage() {
   const { data: profiles } = useProfiles();
   const [submitted, setSubmitted] = useState(false);
 
-  const { register, handleSubmit, control, watch, formState, reset } = useForm<FormValues>({
+  const { register, handleSubmit, control, watch, formState, reset, setValue } = useForm<FormValues>({
     defaultValues: loadDraft<FormValues>(DRAFT_KEY) ?? defaultValues(),
   });
   const values = watch();
@@ -65,6 +67,7 @@ export default function IncidentCreatePage() {
 
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [deadlineError, setDeadlineError] = useState<string | undefined>();
+  const [recipientError, setRecipientError] = useState<string | undefined>();
   const [validationError, setValidationError] = useState<string | undefined>();
 
   const createMutation = useAppMutation(
@@ -81,6 +84,7 @@ export default function IncidentCreatePage() {
   const onSubmit = (form: FormValues) => {
     setOwnerError(undefined);
     setDeadlineError(undefined);
+    setRecipientError(undefined);
     setValidationError(undefined);
     const input: CreateIncidentInput = {
       systemId: form.systemId,
@@ -96,12 +100,14 @@ export default function IncidentCreatePage() {
       nextUpdateDue: form.hasDeadline ? localInputToIso(form.nextUpdateDue) : null,
       noDeadlineReason: form.hasDeadline ? null : form.noDeadlineReason,
       reportedToOps: form.reportedToOps,
+      reportedToOpsRecipient: form.reportedToOps === 'yes' ? form.reportedToOpsRecipient : null,
     };
     const parsed = createIncidentSchema.safeParse(input);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         if (issue.path[0] === 'ownerUserId') setOwnerError(issue.message);
         else if (issue.path[0] === 'nextUpdateDue') setDeadlineError(issue.message);
+        else if (issue.path[0] === 'reportedToOpsRecipient') setRecipientError(issue.message);
         else setValidationError(issue.message);
       }
       return;
@@ -246,13 +252,33 @@ export default function IncidentCreatePage() {
 
         <Field label="דווח למבצעים">
           {(a) => (
-            <Select {...a} {...register('reportedToOps')}>
+            <Select
+              {...a}
+              {...register('reportedToOps', {
+                onChange: (e) => {
+                  if (e.target.value !== 'yes') setValue('reportedToOpsRecipient', '');
+                },
+              })}
+            >
               {Object.entries(reportedToOpsLabels).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </Select>
           )}
         </Field>
+
+        {values.reportedToOps === 'yes' && (
+          <Field label="למי דווח?" required error={recipientError}>
+            {(a) => (
+              <Input
+                {...a}
+                {...register('reportedToOpsRecipient')}
+                placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
+                maxLength={200}
+              />
+            )}
+          </Field>
+        )}
 
         {validationError && (
           <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">

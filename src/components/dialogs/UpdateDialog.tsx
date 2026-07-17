@@ -52,6 +52,7 @@ export function UpdateDialog({
   );
   const [noDeadlineReason, setNoDeadlineReason] = useState(incident.noDeadlineReason ?? '');
   const [reportedToOps, setReportedToOps] = useState(incident.reportedToOps);
+  const [reportedToOpsRecipient, setReportedToOpsRecipient] = useState(incident.reportedToOpsRecipient ?? '');
   const [changeReason, setChangeReason] = useState('');
   const [error, setError] = useState<string | undefined>();
 
@@ -69,6 +70,7 @@ export function UpdateDialog({
     setNextUpdateDue(incident.nextUpdateDue ? isoToLocalInput(incident.nextUpdateDue) : isoToLocalInput(new Date(Date.now() + 4 * 3600_000).toISOString()));
     setNoDeadlineReason(incident.noDeadlineReason ?? '');
     setReportedToOps(incident.reportedToOps);
+    setReportedToOpsRecipient(incident.reportedToOpsRecipient ?? '');
     setChangeReason('');
     setError(undefined);
   };
@@ -89,6 +91,7 @@ export function UpdateDialog({
       nextUpdateDue: hasDeadline ? localInputToIso(nextUpdateDue) : null,
       noDeadlineReason: hasDeadline ? null : noDeadlineReason,
       reportedToOps,
+      reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
     };
   }
   function buildTechInput() {
@@ -208,13 +211,34 @@ export function UpdateDialog({
             </div>
             <Field label="דווח למבצעים">
               {(a) => (
-                <Select {...a} value={reportedToOps} onChange={(e) => setReportedToOps(e.target.value as Incident['reportedToOps'])}>
+                <Select
+                  {...a}
+                  value={reportedToOps}
+                  onChange={(e) => {
+                    const next = e.target.value as Incident['reportedToOps'];
+                    setReportedToOps(next);
+                    if (next !== 'yes') setReportedToOpsRecipient('');
+                  }}
+                >
                   {Object.entries(reportedToOpsLabels).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
                   ))}
                 </Select>
               )}
             </Field>
+            {reportedToOps === 'yes' && (
+              <Field label="למי דווח?" required>
+                {(a) => (
+                  <Input
+                    {...a}
+                    value={reportedToOpsRecipient}
+                    onChange={(e) => setReportedToOpsRecipient(e.target.value)}
+                    placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
+                    maxLength={200}
+                  />
+                )}
+              </Field>
+            )}
             {(status !== incident.status || severity !== incident.severity) && (
               <Field label="נימוק לשינוי (מומלץ)">
                 {(a) => <Input {...a} value={changeReason} onChange={(e) => setChangeReason(e.target.value)} />}

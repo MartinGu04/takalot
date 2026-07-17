@@ -68,6 +68,7 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     nextUpdateDue: null,
     noDeadlineReason: 'x',
     reportedToOps: 'no',
+    reportedToOpsRecipient: null,
     closedAt: null,
     closedBy: null,
     rootCause: null,

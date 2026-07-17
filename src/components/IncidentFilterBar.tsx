@@ -1,5 +1,5 @@
-import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord, ReportedToOps } from '../domain/types';
-import { severityLabels, statusLabels, reportedToOpsLabels } from '../domain/labels';
+import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord } from '../domain/types';
+import { severityLabels, statusLabels } from '../domain/labels';
 import { Input, Select, Badge } from './ui';
 import { useDebouncedField } from '../lib/useDebouncedField';
 
@@ -11,7 +11,6 @@ export interface FilterState {
   systemId?: string;
   locationId?: string;
   overdueOnly: boolean;
-  reportedToOps?: ReportedToOps;
   createdFrom?: string;
   createdTo?: string;
 }
@@ -70,13 +69,6 @@ export function IncidentFilterBar({
   }
   if (value.overdueOnly) {
     chips.push({ key: 'overdue', label: 'באיחור בלבד', onRemove: () => onChange({ ...value, overdueOnly: false }) });
-  }
-  if (value.reportedToOps) {
-    chips.push({
-      key: 'ops',
-      label: `דווח למבצעים: ${reportedToOpsLabels[value.reportedToOps]}`,
-      onRemove: () => onChange({ ...value, reportedToOps: undefined }),
-    });
   }
 
   return (
@@ -145,16 +137,6 @@ export function IncidentFilterBar({
           {locations?.map((l) => (
             <option key={l.id} value={l.id}>{l.name}{l.archived ? ' (בארכיון)' : ''}</option>
           ))}
-        </Select>
-        <Select
-          aria-label="סינון לפי דיווח למבצעים"
-          value={value.reportedToOps ?? ''}
-          onChange={(e) => onChange({ ...value, reportedToOps: (e.target.value || undefined) as ReportedToOps | undefined })}
-        >
-          <option value="">דווח למבצעים…</option>
-          <option value="yes">כן</option>
-          <option value="no">לא</option>
-          <option value="not_required">לא נדרש</option>
         </Select>
         <label className="flex items-center gap-2 rounded-lg border border-hairline-strong px-3 text-sm">
           <input

@@ -71,7 +71,7 @@ export default function HandoverDetailPage() {
       <div className="mt-4 flex flex-wrap gap-2">
         {canAccept && (
           <Button onClick={() => acceptMutation.mutate(handover.id)} disabled={acceptMutation.isPending}>
-            {acceptMutation.isPending ? 'מאשר…' : 'אישור קבלת המשמרת'}
+            {acceptMutation.isPending ? 'מאשר…' : 'קיבלתי את המשמרת'}
           </Button>
         )}
         {canExport && <Button variant="secondary" onClick={exportPdf}>ייצוא PDF</Button>}
