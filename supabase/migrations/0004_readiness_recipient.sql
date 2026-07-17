@@ -13,12 +13,22 @@ alter table incidents
   add column reported_to_ops_recipient text
     check (reported_to_ops_recipient is null or length(reported_to_ops_recipient) <= 200);
 
--- Recipient is only meaningful (and only ever written) when reported_to_ops = 'yes'.
+-- Recipient is only meaningful (and only ever written) when reported_to_ops = 'yes' --
+-- and, symmetrically, it is REQUIRED (non-null, non-blank) whenever reported_to_ops
+-- IS 'yes'. Together these two constraints make the relationship a hard bidirectional
+-- guarantee enforced by the database itself, not just by RPC application logic (RLS
+-- already blocks any direct table write that could bypass the RPCs, but this closes
+-- the loop even against a future bug in the RPC bodies themselves).
 alter table incidents
   add constraint incident_recipient_only_when_reported
     check (reported_to_ops = 'yes' or reported_to_ops_recipient is null);
+alter table incidents
+  add constraint incident_recipient_required_when_reported
+    check (reported_to_ops <> 'yes' or (
+      reported_to_ops_recipient is not null and length(trim(reported_to_ops_recipient)) > 0
+    ));
 
--- ===== 2. Closing requires full readiness =====
+-- ===== 2. Closing requires full readiness, and only closing writes closed_at =====
 -- incident_closure_complete (0001) already requires readiness_at_close to be
 -- set on close; this tightens it to require the value specifically be 'full'
 -- -- an incident with partial/no readiness can never be marked closed, at
@@ -26,6 +36,22 @@ alter table incidents
 alter table incidents
   add constraint incident_closed_requires_full_readiness
     check (status <> 'closed' or readiness_at_close = 'full');
+-- Symmetric guarantee in the other direction: closed_at can only ever be set
+-- while status is 'closed'. Combined with the constraint above, this makes
+-- "closed_at is set" and "status = closed and readiness_at_close = full"
+-- fully equivalent at the schema level -- a partial/no-readiness closure
+-- attempt cannot retain or write closed_at under any code path.
+alter table incidents
+  add constraint incident_closed_at_only_when_closed
+    check (closed_at is null or status = 'closed');
+-- Whenever follow-up is required (whether the incident is still active as
+-- partial_readiness, or historically closed-with-incomplete-readiness),
+-- follow_up_notes must be present. incident_partial_readiness_follow_up
+-- (0001) only fires when readiness_at_close is set, which an active
+-- partial_readiness incident deliberately never has -- this covers that case.
+alter table incidents
+  add constraint incident_follow_up_required_has_notes
+    check (not follow_up_required or follow_up_notes is not null);
 
 -- ===== 3. New event type for recipient changes =====
 alter type incident_event_type add value if not exists 'reported_to_ops_change';
@@ -211,6 +237,8 @@ declare
     then nullif(trim(coalesce(p_input->>'reportedToOpsRecipient', '')), '') else null end;
   v_old_status incident_status;
   v_owner_label text;
+  v_old_reported_ops reported_to_ops;
+  v_old_recipient text;
 begin
   if not is_operational_role() then
     raise exception 'permission: אין הרשאה לסגור תקלה';
@@ -219,6 +247,8 @@ begin
   if v.status = 'closed' then
     raise exception 'invalid_transition: התקלה כבר סגורה';
   end if;
+  v_old_reported_ops := v.reported_to_ops;
+  v_old_recipient := v.reported_to_ops_recipient;
   if length(trim(coalesce(p_input->>'rootCause', ''))) = 0 or length(trim(coalesce(p_input->>'resolution', ''))) = 0 then
     raise exception 'validation: סיבת התקלה והפתרון שבוצע הם שדות חובה';
   end if;
@@ -254,6 +284,12 @@ begin
             'סיבת התקלה: ' || v.root_cause || E'\nהפתרון שבוצע: ' || v.resolution);
     perform write_audit('incident_closed', 'incident', p_incident_id::text, v.number,
       null, jsonb_build_object('readiness', v_readiness));
+    if v_reported_ops <> v_old_reported_ops or v_recipient is distinct from v_old_recipient then
+      insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, note)
+      values (p_incident_id, 'reported_to_ops_change', auth.uid(), 'reported_to_ops_recipient',
+              v_old_recipient, v_recipient,
+              'דווח למבצעים: ' || v_reported_ops::text || coalesce(' (' || v_recipient || ')', ''));
+    end if;
   else
     -- Incomplete readiness: the incident stays active as "כשירות חלקית" --
     -- it is never marked closed while follow-up is still outstanding.
@@ -280,6 +316,12 @@ begin
             E'\nפעולות המשך: ' || v.follow_up_notes || E'\nגורם מטפל אחראי המשך: ' || v_owner_label);
     perform write_audit('incident_partial_readiness', 'incident', p_incident_id::text, v.number,
       null, jsonb_build_object('readiness', v_readiness));
+    if v_reported_ops <> v_old_reported_ops or v_recipient is distinct from v_old_recipient then
+      insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, note)
+      values (p_incident_id, 'reported_to_ops_change', auth.uid(), 'reported_to_ops_recipient',
+              v_old_recipient, v_recipient,
+              'דווח למבצעים: ' || v_reported_ops::text || coalesce(' (' || v_recipient || ')', ''));
+    end if;
   end if;
   return v;
 end;

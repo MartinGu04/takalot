@@ -838,6 +838,8 @@ export class LocalDemoRepository implements Repository {
     if (!fullyReady) this.validateOwner(input.ownerUserId ?? null);
 
     const ts = this.now().toISOString();
+    const oldReportedToOps = incident.reportedToOps;
+    const oldRecipient = incident.reportedToOpsRecipient;
     incident.rootCause = input.rootCause.trim();
     incident.resolution = input.resolution.trim();
     incident.followUpNotes = input.followUpNotes.trim() || null;
@@ -867,6 +869,14 @@ export class LocalDemoRepository implements Repository {
         incidentNumber: incident.number,
         after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
       });
+      if (incident.reportedToOps !== oldReportedToOps || incident.reportedToOpsRecipient !== oldRecipient) {
+        this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
+          field: 'reported_to_ops_recipient',
+          oldValue: oldRecipient,
+          newValue: incident.reportedToOpsRecipient,
+          note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+        });
+      }
     } else {
       // Incomplete readiness: the incident stays active as "כשירות חלקית" —
       // it is never marked closed while follow-up is still outstanding.
@@ -892,6 +902,14 @@ export class LocalDemoRepository implements Repository {
         incidentNumber: incident.number,
         after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
       });
+      if (incident.reportedToOps !== oldReportedToOps || incident.reportedToOpsRecipient !== oldRecipient) {
+        this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
+          field: 'reported_to_ops_recipient',
+          oldValue: oldRecipient,
+          newValue: incident.reportedToOpsRecipient,
+          note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+        });
+      }
     }
     this.persist();
     return { ...incident };
