@@ -43,6 +43,32 @@ const statToneStyles: Record<StatTone, { iconBg: string; iconColor: string; valu
   },
 };
 
+/** The single primary summary metric — visually larger than the secondary stats beside it. */
+function PrimaryStat({
+  icon: Icon,
+  label,
+  value,
+  className,
+}: {
+  icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
+  label: string;
+  value: number;
+  className?: string;
+}) {
+  return (
+    <div className={`surface flex items-center gap-4 p-4 sm:p-5 ${className ?? ''}`}>
+      <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-400">
+        <Icon className="size-7" />
+      </span>
+      <div className="min-w-0">
+        <div className="text-4xl font-extrabold leading-tight text-text-primary">{value}</div>
+        <div className="truncate text-sm font-medium text-secondary">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/** A secondary, compact summary stat. */
 function Stat({
   icon: Icon,
   label,
@@ -56,12 +82,12 @@ function Stat({
 }) {
   const t = statToneStyles[value > 0 ? tone : 'brand'];
   return (
-    <div className="surface flex items-center gap-3 p-3">
-      <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
-        <Icon className="size-5" />
+    <div className="surface flex items-center gap-2.5 p-3">
+      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${t.iconBg} ${t.iconColor}`}>
+        <Icon className="size-4.5" />
       </span>
       <div className="min-w-0">
-        <div className={`text-2xl font-extrabold leading-tight ${t.value}`}>{value}</div>
+        <div className={`text-xl font-extrabold leading-tight ${t.value}`}>{value}</div>
         <div className="truncate text-xs font-medium text-muted">{label}</div>
       </div>
     </div>
@@ -154,11 +180,12 @@ export default function DashboardPage() {
         {summarySentence(derived.open, derived.overdue)}
       </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat icon={IconPulse} label="תקלות פתוחות" value={derived.open.length} />
-        <Stat icon={IconAlertTriangle} label="קריטיות / גבוהות" value={derived.critical.length} tone="red" />
-        <Stat icon={IconClock} label="עדכונים באיחור" value={derived.overdue.length} tone="red" />
-        <Stat icon={IconFlag} label="כשירות לא מלאה" value={derived.partialReadiness.length} tone="orange" />
+      <div className="mt-4 flex flex-col gap-2.5 sm:grid sm:grid-cols-4">
+        <PrimaryStat icon={IconPulse} label="תקלות פתוחות" value={derived.open.length} className="sm:col-span-2" />
+        <div className="grid grid-cols-2 gap-2.5 sm:contents">
+          <Stat icon={IconAlertTriangle} label="קריטיות / גבוהות" value={derived.critical.length} tone="red" />
+          <Stat icon={IconClock} label="עדכונים באיחור" value={derived.overdue.length} tone="red" />
+        </div>
       </div>
 
       {derived.open.length === 0 && derived.partialReadiness.length === 0 && (
@@ -178,6 +205,17 @@ export default function DashboardPage() {
       <Section title="עדכונים באיחור" incidents={derived.overdueRest}>{card}</Section>
       <Section title="בטיפול" incidents={derived.inProgress}>{card}</Section>
       <Section title="ממתינות / במעקב" incidents={derived.waiting}>{card}</Section>
+
+      {derived.partialReadiness.length > 0 && (
+        <div className="mt-6 flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950/40">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">
+            <IconFlag className="size-4.5" />
+          </span>
+          <p className="text-sm text-orange-900 dark:text-orange-200">
+            <strong>{derived.partialReadiness.length}</strong> תקלות סגורות עם כשירות לא מלאה ממתינות להשלמת פעולות המשך.
+          </p>
+        </div>
+      )}
       <Section title="כשירות לא מלאה" incidents={derived.partialReadiness}>{card}</Section>
 
       {derived.recentlyClosed.length > 0 && (

@@ -163,14 +163,16 @@ body {
     @apply rounded-xl border border-hairline bg-surface shadow-elevated;
   }
   /* Clickable card: a touch more resting elevation than a static panel so it
-     already reads as "liftable", then lifts further + brand-tinted border on
-     hover, pressed feedback, visible keyboard focus. Only apply to elements
-     that are actually interactive (links/buttons), never to decorative ones. */
+     already reads as "liftable", then lifts further + a neutral, slightly
+     brighter border on hover (brand is reserved for nav/selected/primary
+     actions, never a generic hover state), pressed feedback, visible
+     keyboard focus. Only apply to elements that are actually interactive
+     (links/buttons), never to decorative ones. */
   .surface-interactive {
     @apply rounded-xl border border-hairline bg-surface shadow-card cursor-pointer transition-[transform,box-shadow,border-color,background-color] duration-200 ease-out;
   }
   .surface-interactive:hover {
-    @apply -translate-y-1 border-brand-200 bg-surface-hover shadow-elevated dark:border-brand-800;
+    @apply -translate-y-1 border-hairline-strong bg-surface-hover shadow-elevated;
   }
   .surface-interactive:active {
     @apply translate-y-0 scale-[0.994] bg-surface-active shadow-card;

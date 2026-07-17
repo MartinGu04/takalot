@@ -209,7 +209,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-4 md:pb-8">{children}</main>
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-4 md:pb-8">{children}</main>
 
         {/* Mobile bottom navigation (max 4 destinations) + prominent create action */}
         <nav
@@ -244,7 +244,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link
                 to="/incidents/new"
                 aria-label="פתיחת תקלה חדשה"
-                className="absolute -top-6 left-3 flex size-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg hover:bg-brand-700 active:scale-95 dark:bg-brand-500"
+                className="absolute -top-7 inset-x-0 mx-auto flex size-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-lg hover:bg-brand-700 active:scale-95 dark:bg-brand-500"
               >
                 <IconPlus className="size-6" />
               </Link>

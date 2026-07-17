@@ -65,6 +65,22 @@ export function NextUpdateNote({ incident, now }: { incident: Incident; now: Dat
   );
 }
 
+const severityValueColor: Record<Severity, string> = {
+  critical: 'text-red-700 dark:text-red-400',
+  high: 'text-orange-700 dark:text-orange-400',
+  medium: 'text-text-primary',
+  low: 'text-text-primary',
+};
+
+/** Labeled "label: value" field — value emphasized, label kept secondary. */
+function MetaField({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+  return (
+    <div className="text-sm text-secondary">
+      {label}: <span className={`font-semibold ${valueClassName ?? 'text-text-primary'}`}>{value}</span>
+    </div>
+  );
+}
+
 export function IncidentCard({
   incident,
   profiles,
@@ -79,6 +95,7 @@ export function IncidentCard({
   now: Date;
 }) {
   const overdue = isOverdue(incident, now);
+  const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
   return (
     <Link
       to={`/incidents/${incident.id}`}
@@ -91,19 +108,14 @@ export function IncidentCard({
         <span className="text-base font-extrabold text-brand-700 dark:text-brand-400">{incident.number}</span>
         <span className="font-semibold text-text-primary">{systemName}</span>
         <span className="text-sm text-muted">{locationName}</span>
-        <span className="ms-auto flex gap-1.5">
-          <SeverityBadge severity={incident.severity} />
-          <StatusBadge status={incident.status} />
-        </span>
       </div>
       <p className="mt-1.5 line-clamp-2 text-sm text-secondary">{incident.operationalImpact}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span className="text-secondary">
-          גורם מטפל: <span className="font-medium text-text-primary">{ownerDisplay(incident, profiles)}</span>
-        </span>
-        <span className="text-muted">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</span>
-        <NextUpdateNote incident={incident} now={now} />
+      <div className="mt-2.5 grid grid-cols-1 gap-1 sm:grid-cols-3 sm:gap-3">
+        <MetaField label="חומרה" value={severityLabels[incident.severity]} valueClassName={severityValueColor[incident.severity]} />
+        <MetaField label="סטטוס נוכחי" value={statusLabels[incident.status]} />
+        <MetaField label="גורם מטפל" value={hasOwner ? ownerDisplay(incident, profiles) : 'אין'} />
       </div>
+      <p className="mt-2 text-xs text-muted">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</p>
       {incident.followUpRequired && !incident.followUpCompletedAt && (
         <p className="mt-2 text-sm font-medium text-orange-700 dark:text-orange-400">
           נדרשות פעולות המשך — כשירות לא מלאה
