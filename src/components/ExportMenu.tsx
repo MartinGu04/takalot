@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { IconChevronDown } from './icons';
+import { FloatingPopover } from './FloatingPopover';
 
 export interface ExportOption {
   kind: string;
@@ -17,12 +18,14 @@ export function ExportMenu({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!anchorRef.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -36,8 +39,9 @@ export function ExportMenu({
   }, [open]);
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={anchorRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
@@ -48,8 +52,15 @@ export function ExportMenu({
         ייצוא
         <IconChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && (
-        <div role="menu" aria-label="אפשרויות ייצוא" className="popover-panel absolute end-0 z-50 mt-1 w-40 animate-scale-in p-1.5">
+      <FloatingPopover
+        anchorRef={anchorRef}
+        panelRef={panelRef}
+        open={open}
+        width={160}
+        align="end"
+        className="popover-panel z-50 animate-scale-in p-1.5"
+      >
+        <div role="menu" aria-label="אפשרויות ייצוא">
           {options.map((opt) => (
             <button
               key={opt.kind}
@@ -65,7 +76,7 @@ export function ExportMenu({
             </button>
           ))}
         </div>
-      )}
-    </div>
+      </FloatingPopover>
+    </>
   );
 }

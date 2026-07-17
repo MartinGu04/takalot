@@ -171,17 +171,38 @@ export function Dialog({
 
   useEffect(() => {
     if (!open) return;
+    const focusable = () =>
+      Array.from(
+        ref.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCloseRef.current();
+      if (e.key === 'Escape') {
+        onCloseRef.current();
+        return;
+      }
+      // Trap Tab focus inside the dialog so it never leaks to the page behind it.
+      if (e.key === 'Tab') {
+        const items = focusable();
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const activeIndex = items.indexOf(document.activeElement as HTMLElement);
+        if (e.shiftKey && (activeIndex === 0 || activeIndex === -1)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && activeIndex === items.length - 1) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
     // Move focus into the dialog once, when it opens — not on every
     // re-render triggered by typing in its fields.
-    const first = ref.current?.querySelector<HTMLElement>(
-      'input, textarea, select, button, [tabindex]',
-    );
-    first?.focus();
+    focusable()[0]?.focus();
     return () => {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';

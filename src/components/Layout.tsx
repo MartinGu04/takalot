@@ -12,6 +12,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { navItems } from './navItems';
 import { IconBell, IconLogOut, IconPlus } from './icons';
 import { NexusMark } from './NexusMark';
+import { FloatingPopover } from './FloatingPopover';
 
 function DemoBanner() {
   if (!isDemoMode()) return null;
@@ -52,7 +53,8 @@ function NotificationsMenu() {
   const { data: notifications } = useNotifications();
   const session = useSession();
   const navigate = useNavigate();
-  const ref = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const unread = (notifications ?? []).filter((n) => !n.read).length;
 
   const markRead = useAppMutation(
@@ -66,17 +68,28 @@ function NotificationsMenu() {
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!anchorRef.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
     };
     document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={anchorRef}
         type="button"
         aria-label={`התראות${unread ? ` (${unread} שלא נקראו)` : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="relative flex size-10 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover"
         onClick={() => setOpen((o) => !o)}
         data-testid="notifications-button"
@@ -88,46 +101,51 @@ function NotificationsMenu() {
           </span>
         )}
       </button>
-      {open && (
-        <div className="popover-panel absolute start-0 z-50 mt-1 max-h-96 w-80 animate-scale-in overflow-y-auto p-2">
-          <div className="flex items-center justify-between px-2 py-1">
-            <span className="card-title">התראות</span>
-            {unread > 0 && (
-              <button
-                type="button"
-                className="text-xs text-brand-700 hover:underline dark:text-brand-400"
-                onClick={() => markAll.mutate(undefined)}
-              >
-                סימון הכול כנקרא
-              </button>
-            )}
-          </div>
-          {(notifications ?? []).length === 0 && (
-            <p className="px-2 py-4 text-center text-sm text-muted">אין התראות.</p>
-          )}
-          {(notifications ?? []).slice(0, 30).map((n) => (
+      <FloatingPopover
+        anchorRef={anchorRef}
+        panelRef={panelRef}
+        open={open}
+        width={320}
+        maxHeight={384}
+        className="popover-panel z-50 animate-scale-in overflow-y-auto p-2"
+      >
+        <div className="flex items-center justify-between px-2 py-1">
+          <span className="card-title">התראות</span>
+          {unread > 0 && (
             <button
-              key={n.id}
               type="button"
-              className={`block w-full rounded-lg px-2 py-2 text-right text-sm hover:bg-surface-hover ${
-                n.read ? 'opacity-60' : 'font-medium'
-              }`}
-              onClick={() => {
-                if (!n.read) markRead.mutate(n.id);
-                setOpen(false);
-                if (n.incidentId) navigate(`/incidents/${n.incidentId}`);
-                else if (n.handoverId) navigate(`/handovers/${n.handoverId}`);
-              }}
+              className="text-xs text-brand-700 hover:underline dark:text-brand-400"
+              onClick={() => markAll.mutate(undefined)}
             >
-              <span className="block text-xs text-muted">
-                {notificationTypeLabels[n.type]} · {formatRelative(n.createdAt)}
-              </span>
-              {n.text}
+              סימון הכול כנקרא
             </button>
-          ))}
+          )}
         </div>
-      )}
-    </div>
+        {(notifications ?? []).length === 0 && (
+          <p className="px-2 py-4 text-center text-sm text-muted">אין התראות.</p>
+        )}
+        {(notifications ?? []).slice(0, 30).map((n) => (
+          <button
+            key={n.id}
+            type="button"
+            className={`block w-full rounded-lg px-2 py-2 text-right text-sm hover:bg-surface-hover ${
+              n.read ? 'opacity-60' : 'font-medium'
+            }`}
+            onClick={() => {
+              if (!n.read) markRead.mutate(n.id);
+              setOpen(false);
+              if (n.incidentId) navigate(`/incidents/${n.incidentId}`);
+              else if (n.handoverId) navigate(`/handovers/${n.handoverId}`);
+            }}
+          >
+            <span className="block text-xs text-muted">
+              {notificationTypeLabels[n.type]} · {formatRelative(n.createdAt)}
+            </span>
+            {n.text}
+          </button>
+        ))}
+      </FloatingPopover>
+    </>
   );
 }
 
@@ -135,50 +153,66 @@ function NotificationsMenu() {
 function MobileUserMenu() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!anchorRef.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
     };
     document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   if (!user) return null;
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={anchorRef}
         type="button"
         className="flex size-10 items-center justify-center rounded-lg hover:bg-surface-hover"
         onClick={() => setOpen((o) => !o)}
         aria-label="תפריט משתמש"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <span className="flex size-7 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200">
           {user.fullName.charAt(0)}
         </span>
       </button>
-      {open && (
-        <div className="popover-panel absolute start-0 z-50 mt-1 w-52 animate-scale-in p-2">
-          <p className="px-2 py-1 text-sm font-medium text-text-primary">
-            {user.fullName}
-            <span className="block text-xs text-muted">{roleLabels[user.role]}</span>
-          </p>
-          <div className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5">
-            <span className="text-sm text-muted">מצב תצוגה</span>
-            <ThemeToggle />
-          </div>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm text-red-700 hover:bg-surface-hover dark:text-red-400"
-            onClick={logout}
-          >
-            <IconLogOut className="size-4" />
-            התנתקות
-          </button>
+      <FloatingPopover
+        anchorRef={anchorRef}
+        panelRef={panelRef}
+        open={open}
+        width={208}
+        className="popover-panel z-50 animate-scale-in p-2"
+      >
+        <p className="px-2 py-1 text-sm font-medium text-text-primary">
+          {user.fullName}
+          <span className="block text-xs text-muted">{roleLabels[user.role]}</span>
+        </p>
+        <div className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5">
+          <span className="text-sm text-muted">מצב תצוגה</span>
+          <ThemeToggle />
         </div>
-      )}
-    </div>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm text-red-700 hover:bg-surface-hover dark:text-red-400"
+          onClick={logout}
+        >
+          <IconLogOut className="size-4" />
+          התנתקות
+        </button>
+      </FloatingPopover>
+    </>
   );
 }
 

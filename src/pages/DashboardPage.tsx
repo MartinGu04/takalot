@@ -1,5 +1,5 @@
 // "מצב נוכחי" — the operational picture at a glance.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useIncidents, useLocations, useProfiles, useSystems } from '../data/hooks';
 import { useAuth } from '../auth/AuthContext';
@@ -9,6 +9,7 @@ import { IncidentCard } from '../components/incident';
 import { EmptyState, ErrorState, Spinner } from '../components/ui';
 import { hasCapability } from '../domain/permissions';
 import { IconAlertTriangle, IconClock, IconFlag, IconPulse } from '../components/icons';
+import { OpenIncidentsSummary } from '../components/OpenIncidentsSummary';
 import type { SVGProps } from 'react';
 
 function summarySentence(open: Incident[], overdue: Incident[]): string {
@@ -43,20 +44,24 @@ const statToneStyles: Record<StatTone, { iconBg: string; iconColor: string; valu
   },
 };
 
-/** The single primary summary metric — visually larger than the secondary stats beside it. */
+/** The single primary summary metric — visually larger than the secondary stats beside it, and clickable. */
 function PrimaryStat({
   icon: Icon,
   label,
   value,
-  className,
+  onClick,
 }: {
   icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
   label: string;
   value: number;
-  className?: string;
+  onClick: () => void;
 }) {
   return (
-    <div className={`surface flex items-center gap-4 p-4 sm:p-5 ${className ?? ''}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className="surface-interactive flex min-w-0 items-center gap-4 p-4 text-right sm:p-5"
+    >
       <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-400">
         <Icon className="size-7" />
       </span>
@@ -64,7 +69,7 @@ function PrimaryStat({
         <div className="text-4xl font-extrabold leading-tight text-text-primary">{value}</div>
         <div className="truncate text-sm font-medium text-secondary">{label}</div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -82,7 +87,7 @@ function Stat({
 }) {
   const t = statToneStyles[value > 0 ? tone : 'brand'];
   return (
-    <div className="surface flex items-center gap-2.5 p-3">
+    <div className="surface flex min-w-0 items-center gap-2.5 p-3">
       <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${t.iconBg} ${t.iconColor}`}>
         <Icon className="size-4.5" />
       </span>
@@ -118,6 +123,7 @@ export default function DashboardPage() {
   const { data: profiles } = useProfiles();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
+  const [openSummaryOpen, setOpenSummaryOpen] = useState(false);
   const now = new Date();
 
   const derived = useMemo(() => {
@@ -180,8 +186,13 @@ export default function DashboardPage() {
         {summarySentence(derived.open, derived.overdue)}
       </p>
 
-      <div className="mt-4 flex flex-col gap-2.5 sm:grid sm:grid-cols-4">
-        <PrimaryStat icon={IconPulse} label="תקלות פתוחות" value={derived.open.length} className="sm:col-span-2" />
+      <div className="mt-4 flex flex-col gap-2.5 sm:grid sm:grid-cols-[4fr_3fr_3fr]">
+        <PrimaryStat
+          icon={IconPulse}
+          label="תקלות פתוחות"
+          value={derived.open.length}
+          onClick={() => setOpenSummaryOpen(true)}
+        />
         <div className="grid grid-cols-2 gap-2.5 sm:contents">
           <Stat icon={IconAlertTriangle} label="קריטיות / גבוהות" value={derived.critical.length} tone="red" />
           <Stat icon={IconClock} label="עדכונים באיחור" value={derived.overdue.length} tone="red" />
@@ -235,6 +246,14 @@ export default function DashboardPage() {
           </ul>
         </section>
       )}
+
+      <OpenIncidentsSummary
+        open={openSummaryOpen}
+        onClose={() => setOpenSummaryOpen(false)}
+        incidents={derived.open}
+        profiles={profiles}
+        systemName={systemName}
+      />
     </div>
   );
 }

@@ -15,7 +15,7 @@ export function Sidebar({ user }: { user: Profile }) {
   const canCreate = hasCapability(user.role, 'create_incident');
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-e border-hairline bg-surface md:flex">
+    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-e border-hairline bg-surface md:flex">
       <Link to="/" className="flex items-center gap-2.5 px-4 pt-5 pb-4" data-testid="brand-name">
         <NexusMark className="size-9" />
         <span className="text-lg font-extrabold tracking-tight text-text-primary">{APP_NAME}</span>
@@ -33,7 +33,7 @@ export function Sidebar({ user }: { user: Profile }) {
         </div>
       )}
 
-      <nav aria-label="ניווט ראשי" className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-2.5">
+      <nav aria-label="ניווט ראשי" className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2.5">
         {items.map((item) => (
           <NavLink
             key={item.to}

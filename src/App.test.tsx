@@ -85,13 +85,18 @@ describe('display-mode control', () => {
 
     expect(localStorage.getItem('takalot-theme')).toBeNull(); // auto by default
 
+    // A single direct toggle now — no dropdown/menu.
     const [toggle] = screen.getAllByTestId('theme-toggle');
+    expect(toggle).toHaveAttribute('aria-label', 'מעבר למצב תצוגה כהה');
     await user.click(toggle);
-    const darkOption = await screen.findByRole('menuitemradio', { name: 'כהה' });
-    await user.click(darkOption);
 
     expect(localStorage.getItem('takalot-theme')).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
+    expect(toggle).toHaveAttribute('aria-label', 'מעבר למצב תצוגה בהיר');
+
+    await user.click(toggle);
+    expect(localStorage.getItem('takalot-theme')).toBe('light');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 });
 

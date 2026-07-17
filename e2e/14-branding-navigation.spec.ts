@@ -46,28 +46,32 @@ test('desktop sidebar is hidden at mobile width and the bottom nav takes over', 
 test.describe('display-mode control', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  test('switches to dark, shows the current state, and persists across reload', async ({ page }) => {
+  test('is a single direct toggle (no dropdown) that switches and persists across reload', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
     await expect(page.locator('html')).not.toHaveClass(/dark/);
 
     const toggle = page.getByTestId('theme-toggle').first();
+    await expect(toggle).toHaveAttribute('aria-label', 'מעבר למצב תצוגה כהה');
     await toggle.click();
-    await page.getByRole('menuitemradio', { name: 'כהה' }).click();
 
+    // Direct toggle: clicking applies the change immediately, no menu ever appears.
+    await expect(page.getByRole('menu')).toHaveCount(0);
     await expect(page.locator('html')).toHaveClass(/dark/);
     expect(await page.evaluate(() => localStorage.getItem('takalot-theme'))).toBe('dark');
+    await expect(toggle).toHaveAttribute('aria-label', 'מעבר למצב תצוגה בהיר');
 
     await page.reload();
     await expect(page.locator('html')).toHaveClass(/dark/);
   });
 
-  test('is keyboard operable', async ({ page }) => {
+  test('is keyboard operable and causes no layout shift', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
+    const bodyWidthBefore = await page.evaluate(() => document.body.getBoundingClientRect().height);
     const toggle = page.getByTestId('theme-toggle').first();
     await toggle.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('menu', { name: 'בחירת מצב תצוגה' })).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('menu', { name: 'בחירת מצב תצוגה' })).toBeHidden();
+    await expect(page.locator('html')).toHaveClass(/dark/);
+    const bodyWidthAfter = await page.evaluate(() => document.body.getBoundingClientRect().height);
+    expect(bodyWidthAfter).toBe(bodyWidthBefore);
   });
 });
