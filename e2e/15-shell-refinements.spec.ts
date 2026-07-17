@@ -22,6 +22,15 @@ test.describe('sticky desktop sidebar', () => {
   test('stays fixed in place while the incidents list scrolls', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
     await page.goto('/incidents');
+    // Wait for the (async) incidents list to actually finish loading before
+    // measuring or scrolling -- otherwise the page is still exactly
+    // viewport-height (nothing to scroll yet) at the moment the wheel event
+    // fires, and since a wheel delta is a one-shot event rather than a
+    // queued/replayed one, that scroll is simply lost even once the list
+    // renders moments later. This was the real root cause of this test's
+    // flakiness, not a sidebar-positioning bug.
+    await expect(page.getByRole('link', { name: /2026-/ }).first()).toBeVisible();
+
     // Measure the brand link at the top of the sidebar shell (not the nav
     // list within it, which sits lower down under the brand/CTA rows).
     const brand = page.getByTestId('brand-name');

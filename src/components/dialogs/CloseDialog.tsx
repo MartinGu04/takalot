@@ -124,7 +124,15 @@ export function CloseDialog({
           )}
           <Field label="דווח למבצעים">
             {(a) => (
-              <Select {...a} value={reportedToOps} onChange={(e) => setReportedToOps(e.target.value as Incident['reportedToOps'])}>
+              <Select
+                {...a}
+                value={reportedToOps}
+                onChange={(e) => {
+                  const next = e.target.value as Incident['reportedToOps'];
+                  setReportedToOps(next);
+                  if (next !== 'yes') setReportedToOpsRecipient('');
+                }}
+              >
                 {Object.entries(reportedToOpsLabels).map(([k, v]) => (
                   <option key={k} value={k}>{v}</option>
                 ))}
