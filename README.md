@@ -19,36 +19,56 @@ with two implementations:
   (localStorage), but *enforces the same rules a real backend would*:
   permissions, status transitions, optimistic concurrency, atomic incident
   numbering, and an append-only audit log. It is not a UI convenience layer.
-- **Supabase repository** (`src/data/supabase`) — wired to the SQL schema in
-  `supabase/migrations/`, ready to connect. Not exercised against a live
-  project in this build (no credentials were available).
+- **Supabase repository** (`src/data/supabase`) — the production data layer:
+  real Google authentication (Supabase Auth) and the hosted database, via the
+  SQL schema, RPCs, and RLS in `supabase/migrations/`.
 
-The app **automatically runs in demo mode** whenever
-`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are absent, and shows a
-persistent "מצב הדגמה" (demo mode) banner + a demo-only role switcher in the
-top bar. Neither the banner nor the switcher is ever presented as production
-authentication.
+Mode selection (`src/data/appMode.ts`) is strict:
+
+- Valid `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` → **supabase mode**.
+- `VITE_DEMO_MODE=true` → **demo mode** (explicit development/test fallback;
+  shows the persistent "מצב הדגמה" banner + demo-only role switcher).
+- No configuration in a dev/test build → demo mode (development fallback).
+- No or partial configuration in a **production build** → a hard
+  configuration-error screen. Production **never** silently falls back to
+  demo data. A key that looks like a server secret (`sb_secret_…`, or a JWT
+  with `role=service_role`) is refused outright.
+
+### Authentication and authorization (supabase mode)
+
+Sign-in is Google OAuth via Supabase Auth. **Identity is not authorization**:
+after Google proves who you are, you must also match an **active row in
+`public.profiles`** (readable under RLS only by active members). No profile →
+a clear unauthorized-access screen with logout; profiles are provisioned by
+an administrator only and are never auto-created by a successful login.
+Application roles come from that profiles row — the database is the source
+of truth.
 
 ## Setup and run
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173, demo mode (no env vars needed)
+VITE_DEMO_MODE=true npm run dev   # http://localhost:5173, explicit demo mode
 ```
 
-Pick any demo user on the login screen — role is shown next to the name.
+(Plain `npm run dev` with no env vars also falls back to demo in
+development.) Pick any demo user on the login screen — role is shown next to
+the name.
 
 ### Environment variables
 
 | Variable | Required for | Notes |
 |---|---|---|
-| `VITE_SUPABASE_URL` | Supabase mode | Project URL. Omit to stay in demo mode. |
-| `VITE_SUPABASE_ANON_KEY` | Supabase mode | Public anon key only. **Never** put a service-role key in client env vars. |
+| `VITE_SUPABASE_URL` | Supabase mode | Project URL (https). |
+| `VITE_SUPABASE_ANON_KEY` | Supabase mode | Public anon key only. **Never** put a service-role key, database password, or OAuth client secret in client env vars. |
+| `VITE_DEMO_MODE` | Demo fallback | `true` explicitly enables the local demo repository (development/tests only — the e2e suite sets it). |
 
-Copy `.env.local` (create it, gitignored) with both variables set to switch
-to the Supabase repository. Auth itself (inviting real users, session
-handling) is Supabase Auth's responsibility and is out of scope for this
-build beyond the RLS/RPC contracts already written.
+Create a gitignored `.env.local` with the two Supabase variables to run
+against the hosted project. Remaining manual setup for a new authorized user:
+enable the Google provider in the Supabase dashboard (already configured for
+this project), have the user sign in once (creates their `auth.users` row),
+then have an administrator insert/activate their `public.profiles` row with
+the correct role — until then they see the unauthorized-access screen.
 
 ## Database migrations (Supabase)
 
