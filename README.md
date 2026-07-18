@@ -25,7 +25,7 @@ with two implementations:
 
 Mode selection (`src/data/appMode.ts`) is strict:
 
-- Valid `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` → **supabase mode**.
+- Valid `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` → **supabase mode**.
 - `VITE_DEMO_MODE=true` → **demo mode** (explicit development/test fallback;
   shows the persistent "מצב הדגמה" banner + demo-only role switcher).
 - No configuration in a dev/test build → demo mode (development fallback).
@@ -60,7 +60,7 @@ the name.
 | Variable | Required for | Notes |
 |---|---|---|
 | `VITE_SUPABASE_URL` | Supabase mode | Project URL (https). |
-| `VITE_SUPABASE_ANON_KEY` | Supabase mode | Public anon key only. **Never** put a service-role key, database password, or OAuth client secret in client env vars. |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase mode | Public (publishable) key only — `sb_publishable_…` or the legacy JWT-shaped public key. **Never** put a service-role key, database password, or OAuth client secret in client env vars. |
 | `VITE_DEMO_MODE` | Demo fallback | `true` explicitly enables the local demo repository (development/tests only — the e2e suite sets it). |
 
 Create a gitignored `.env.local` with the two Supabase variables to run

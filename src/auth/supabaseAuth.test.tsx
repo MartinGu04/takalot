@@ -35,7 +35,7 @@ const mockAuth = {
 };
 
 vi.mock('../data/appMode', () => ({
-  getAppMode: () => ({ kind: 'supabase', url: 'https://example.supabase.co', anonKey: 'k.e.y' }),
+  getAppMode: () => ({ kind: 'supabase', url: 'https://example.supabase.co', publishableKey: 'k.e.y' }),
 }));
 
 vi.mock('../data/supabase/client', () => ({

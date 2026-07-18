@@ -10,16 +10,23 @@
 // Anything else (partial configuration, an invalid URL, a key that looks
 // like a server-side secret) resolves to 'misconfigured', which the app
 // surfaces as a hard configuration-error screen instead of guessing.
+//
+// Environment contract (fixed -- these exact names, no aliases and no
+// fallback between differently named variables):
+//   VITE_SUPABASE_URL
+//   VITE_SUPABASE_PUBLISHABLE_KEY
+//   VITE_DEMO_MODE (explicit dev/test fallback only)
 
 export type AppMode =
-  | { kind: 'supabase'; url: string; anonKey: string }
+  | { kind: 'supabase'; url: string; publishableKey: string }
   | { kind: 'demo' }
   | { kind: 'misconfigured'; reason: string };
 
 /**
  * True when the string looks like a Supabase service-role key or any other
- * server-side secret. The anon key is the ONLY key allowed in client code;
- * a service-role key here would grant every visitor full database access.
+ * server-side secret. The publishable (public) key is the ONLY key allowed
+ * in client code; a service-role key here would grant every visitor full
+ * database access.
  */
 function looksLikeServerSecret(key: string): boolean {
   // New-style Supabase secret API keys.
@@ -40,7 +47,9 @@ function looksLikeServerSecret(key: string): boolean {
   return false;
 }
 
-function looksLikeAnonKey(key: string): boolean {
+/** Accepts both key formats Supabase issues for browser use: the new-style
+ *  sb_publishable_… key and the legacy JWT-shaped public (anon) key. */
+function looksLikePublishableKey(key: string): boolean {
   if (key.startsWith('sb_publishable_')) return true;
   const parts = key.split('.');
   return parts.length === 3 && parts.every((p) => p.length > 0);
@@ -48,7 +57,7 @@ function looksLikeAnonKey(key: string): boolean {
 
 function resolve(env: ImportMetaEnv): AppMode {
   const url = env.VITE_SUPABASE_URL?.trim();
-  const anonKey = env.VITE_SUPABASE_ANON_KEY?.trim();
+  const publishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
   const explicitDemo = env.VITE_DEMO_MODE === 'true';
 
   if (explicitDemo) {
@@ -57,12 +66,12 @@ function resolve(env: ImportMetaEnv): AppMode {
     return { kind: 'demo' };
   }
 
-  if (url || anonKey) {
-    if (!url || !anonKey) {
+  if (url || publishableKey) {
+    if (!url || !publishableKey) {
       return {
         kind: 'misconfigured',
         reason:
-          'הוגדר רק אחד משני משתני הסביבה VITE_SUPABASE_URL ו־VITE_SUPABASE_ANON_KEY. יש להגדיר את שניהם.',
+          'הוגדר רק אחד משני משתני הסביבה VITE_SUPABASE_URL ו־VITE_SUPABASE_PUBLISHABLE_KEY. יש להגדיר את שניהם.',
       };
     }
     let parsed: URL;
@@ -74,17 +83,17 @@ function resolve(env: ImportMetaEnv): AppMode {
     if (parsed.protocol !== 'https:') {
       return { kind: 'misconfigured', reason: 'VITE_SUPABASE_URL חייב להיות כתובת https.' };
     }
-    if (looksLikeServerSecret(anonKey)) {
+    if (looksLikeServerSecret(publishableKey)) {
       return {
         kind: 'misconfigured',
         reason:
-          'המפתח שהוגדר ב־VITE_SUPABASE_ANON_KEY הוא מפתח שרת (service role). אסור בהחלט להשתמש בו בצד הלקוח — יש להחליפו מיידית במפתח ה־anon הציבורי, ולבטל את המפתח שנחשף.',
+          'המפתח שהוגדר ב־VITE_SUPABASE_PUBLISHABLE_KEY הוא מפתח שרת (service role). אסור בהחלט להשתמש בו בצד הלקוח — יש להחליפו מיידית במפתח הציבורי (publishable), ולבטל את המפתח שנחשף.',
       };
     }
-    if (!looksLikeAnonKey(anonKey)) {
-      return { kind: 'misconfigured', reason: 'VITE_SUPABASE_ANON_KEY אינו נראה כמפתח anon תקין.' };
+    if (!looksLikePublishableKey(publishableKey)) {
+      return { kind: 'misconfigured', reason: 'VITE_SUPABASE_PUBLISHABLE_KEY אינו נראה כמפתח ציבורי תקין.' };
     }
-    return { kind: 'supabase', url, anonKey };
+    return { kind: 'supabase', url, publishableKey };
   }
 
   // No configuration at all. In a production build this is a hard error --
@@ -94,7 +103,7 @@ function resolve(env: ImportMetaEnv): AppMode {
     return {
       kind: 'misconfigured',
       reason:
-        'חסרה הגדרת Supabase לסביבת ייצור: יש להגדיר את VITE_SUPABASE_URL ואת VITE_SUPABASE_ANON_KEY בעת הבנייה.',
+        'חסרה הגדרת Supabase לסביבת ייצור: יש להגדיר את VITE_SUPABASE_URL ואת VITE_SUPABASE_PUBLISHABLE_KEY בעת הבנייה.',
     };
   }
   return { kind: 'demo' };
