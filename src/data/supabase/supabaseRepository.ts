@@ -79,6 +79,7 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   nextUpdateDue: r.next_update_due as string | null,
   noDeadlineReason: r.no_deadline_reason as string | null,
   reportedToOps: r.reported_to_ops as Incident['reportedToOps'],
+  reportedToOpsRecipient: r.reported_to_ops_recipient as string | null,
   closedAt: r.closed_at as string | null,
   closedBy: r.closed_by as string | null,
   rootCause: r.root_cause as string | null,

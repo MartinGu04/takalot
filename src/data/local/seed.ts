@@ -88,6 +88,7 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     nextUpdateDue: s.nextUpdateOffset === null ? null : at(s.nextUpdateOffset ?? hours(4)),
     noDeadlineReason: s.noDeadlineReason ?? null,
     reportedToOps: 'yes',
+    reportedToOpsRecipient: 'מוקד מבצעים (דמו)',
     closedAt: null,
     closedBy: null,
     rootCause: null,
@@ -226,7 +227,11 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   inc5.updatedAt = at(-hours(44));
   inc5.nextUpdateDue = null;
 
-  // 6. Closed with partial readiness, follow-up required
+  // 6. Historical record: closed with partial readiness, follow-up required.
+  // Predates the incomplete-readiness lifecycle policy (an incident with
+  // partial/no readiness can no longer be marked "closed" going forward --
+  // see inc8 for the current behavior). Preserved as-is: history is never
+  // silently rewritten or deleted.
   const inc6 = mk({
     id: 'inc-6',
     n: 6,
@@ -274,8 +279,34 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   inc7.lastUpdateAt = at(-hours(1));
   inc7.updatedAt = at(-hours(1));
 
-  db.incidents = [inc1, inc2, inc3, inc4, inc5, inc6, inc7];
-  db.sequences[String(year)] = 7;
+  // 8. Attempted closure with partial readiness under the current policy:
+  // stays active as "כשירות חלקית" rather than closing, with a responsible
+  // owner and follow-up notes recorded.
+  const inc8 = mk({
+    id: 'inc-8',
+    n: 8,
+    systemId: 'sys-pos-a',
+    locationId: 'loc-2',
+    description: 'לאחר טיפול בעמדה א׳ בוצע ניסיון סגירה, אך התברר כי הביצועים לא חזרו לרמה המלאה.',
+    severity: 'medium',
+    status: 'partial_readiness',
+    impact: 'העמדה פועלת בביצועים מופחתים עד השלמת פעולות ההמשך.',
+    ownerUserId: DEMO_USERS.tech2,
+    createdOffset: -hours(40),
+    createdBy: DEMO_USERS.supervisor2,
+    nextUpdateOffset: null,
+  });
+  inc8.version = 2;
+  inc8.rootCause = 'רכיב בלאי בעמדה א׳ לא הוחלף במלואו.';
+  inc8.resolution = 'הותקן רכיב חלופי זמני בעל ביצועים מופחתים.';
+  inc8.followUpNotes = 'להזמין רכיב מקורי ולהתקינו לצורך חזרה לכשירות מלאה.';
+  inc8.followUpRequired = true;
+  inc8.noDeadlineReason = 'התקלה נותרה פעילה עם כשירות לא מלאה, ממתינה להשלמת פעולות המשך';
+  inc8.lastUpdateAt = at(-hours(30));
+  inc8.updatedAt = at(-hours(30));
+
+  db.incidents = [inc1, inc2, inc3, inc4, inc5, inc6, inc7, inc8];
+  db.sequences[String(year)] = 8;
 
   // --- updates & events ---
   const updates: IncidentUpdate[] = [
@@ -365,6 +396,13 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       note: 'התופעה חזרה: התצוגה קפאה פעמיים במשמרת האחרונה.',
     }),
     ev('ev-7-upd-a', 'inc-7', 'update', DEMO_USERS.tech1, -hours(1), { refId: 'upd-7a' }),
+    ev('ev-8-created', 'inc-8', 'created', DEMO_USERS.supervisor2, -hours(40)),
+    ev('ev-8-status', 'inc-8', 'status_change', DEMO_USERS.supervisor2, -hours(30), {
+      field: 'status',
+      oldValue: 'in_progress',
+      newValue: 'partial_readiness',
+      note: 'סיבת התקלה: רכיב בלאי בעמדה א׳ לא הוחלף במלואו.\nהפתרון החלקי שבוצע: הותקן רכיב חלופי זמני בעל ביצועים מופחתים.\nפעולות המשך: להזמין רכיב מקורי ולהתקינו לצורך חזרה לכשירות מלאה.\nגורם מטפל אחראי המשך: ליאור אדרי (דמו)',
+    }),
   ];
 
   // --- handovers ---

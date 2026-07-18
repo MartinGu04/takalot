@@ -19,6 +19,7 @@ export default function HandoverCreatePage() {
   const [toUserId, setToUserId] = useState('');
   const [generalNote, setGeneralNote] = useState('');
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
+  const [noteOpenFor, setNoteOpenFor] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | undefined>();
 
   const included = useMemo(
@@ -53,8 +54,8 @@ export default function HandoverCreatePage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-bold">יצירת העברת משמרת</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="page-title">יצירת העברת משמרת</h1>
+      <p className="mt-1 text-sm text-muted">
         ההעברה תכלול אוטומטית את כל התקלות הפתוחות ואת התקלות הסגורות עם כשירות לא מלאה.
       </p>
 
@@ -74,36 +75,51 @@ export default function HandoverCreatePage() {
         </Field>
       </div>
 
-      <h2 className="mt-6 mb-2 text-lg font-bold">תקלות בהעברה ({included.length})</h2>
+      <h2 className="section-title mt-6 mb-2">תקלות בהעברה ({included.length})</h2>
+      <p className="mb-2 text-sm text-muted">צילום מצב תמציתי של כל התקלות הפעילות. ניתן להוסיף הערה פרטנית רק במקרה הצורך.</p>
       <div className="flex flex-col gap-3">
-        {included.map((i) => (
-          <div key={i.id} className="rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-bold">{i.number}</span>
-              <span>{systems?.find((s) => s.id === i.systemId)?.name}</span>
-              <span className="ms-auto flex gap-1.5">
-                <SeverityBadge severity={i.severity} />
-                <StatusBadge status={i.status} />
-              </span>
+        {included.map((i) => {
+          const noteOpen = noteOpenFor[i.id] || !!itemNotes[i.id]?.trim();
+          return (
+            <div key={i.id} className="surface p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-text-primary">{i.number}</span>
+                <span className="text-text-primary">{systems?.find((s) => s.id === i.systemId)?.name}</span>
+                <span className="ms-auto flex gap-1.5">
+                  <SeverityBadge severity={i.severity} />
+                  <StatusBadge status={i.status} />
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-secondary">
+                {locations?.find((l) => l.id === i.locationId)?.name} · גורם מטפל: {ownerDisplay(i, profiles)}
+              </p>
+              {noteOpen ? (
+                <div className="mt-2">
+                  <Field label="הערת מסירה לתקלה זו (לא חובה)">
+                    {(a) => (
+                      <Textarea
+                        {...a}
+                        rows={2}
+                        autoFocus
+                        value={itemNotes[i.id] ?? ''}
+                        onChange={(e) => setItemNotes((n) => ({ ...n, [i.id]: e.target.value }))}
+                        maxLength={1000}
+                      />
+                    )}
+                  </Field>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="mt-2 text-xs font-medium text-brand-700 hover:underline dark:text-brand-400"
+                  onClick={() => setNoteOpenFor((n) => ({ ...n, [i.id]: true }))}
+                >
+                  + הוסף הערה
+                </button>
+              )}
             </div>
-            <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
-              {locations?.find((l) => l.id === i.locationId)?.name} · גורם מטפל: {ownerDisplay(i, profiles)}
-            </p>
-            <div className="mt-2">
-              <Field label="הערת מסירה לתקלה זו (לא חובה)">
-                {(a) => (
-                  <Textarea
-                    {...a}
-                    rows={2}
-                    value={itemNotes[i.id] ?? ''}
-                    onChange={(e) => setItemNotes((n) => ({ ...n, [i.id]: e.target.value }))}
-                    maxLength={1000}
-                  />
-                )}
-              </Field>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {error && <p role="alert" className="mt-3 text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}

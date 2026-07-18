@@ -1,4 +1,4 @@
-# מעקב תקלות (Takalot) — Incident Tracking
+# Nexus — מערכת ניהול ומעקב תקלות
 
 An internal, Hebrew-first, RTL, mobile-first incident-tracking tool. Its single
 purpose: make it obvious at every moment which incidents are open, who owns

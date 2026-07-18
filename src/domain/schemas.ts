@@ -32,6 +32,31 @@ const ownerFields = {
   ownerExternalName: z.string().max(120, 'שם גורם חיצוני: עד 120 תווים').nullable(),
 };
 
+/** Owner fields that may be entirely omitted (used where an owner is only conditionally required). */
+const optionalOwnerFields = {
+  ownerUserId: z.string().nullable().optional(),
+  ownerExternalName: z.string().max(120, 'שם גורם חיצוני: עד 120 תווים').nullable().optional(),
+};
+
+const reportedToOpsFields = {
+  reportedToOps: reportedToOpsSchema,
+  reportedToOpsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable().optional(),
+};
+
+/** Required only when reportedToOps is 'yes'; must be cleared/ignored otherwise. */
+function checkReportedToOpsRecipient(
+  data: { reportedToOps: string; reportedToOpsRecipient?: string | null },
+  ctx: z.RefinementCtx,
+): void {
+  if (data.reportedToOps === 'yes' && !(data.reportedToOpsRecipient ?? '').trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reportedToOpsRecipient'],
+      message: 'יש להזין למי דווח',
+    });
+  }
+}
+
 export const createIncidentSchema = z
   .object({
     systemId: z.string().min(1, 'יש לבחור מערכת / עמדה'),
@@ -46,8 +71,8 @@ export const createIncidentSchema = z
     }),
     nextUpdateDue: z.string().nullable(),
     noDeadlineReason: z.string().max(500).nullable(),
-    reportedToOps: reportedToOpsSchema,
     ...ownerFields,
+    ...reportedToOpsFields,
   })
   .superRefine((data, ctx) => {
     if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
@@ -64,6 +89,7 @@ export const createIncidentSchema = z
         message: 'יש להזין צפי לעדכון הבא, או לסמן "ללא צפי כרגע" עם נימוק',
       });
     }
+    checkReportedToOpsRecipient(data, ctx);
   });
 
 export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;
@@ -81,8 +107,8 @@ export const updateIncidentSchema = z
     changeReason: z.string().max(500).optional().default(''),
     nextUpdateDue: z.string().nullable(),
     noDeadlineReason: z.string().max(500).nullable(),
-    reportedToOps: reportedToOpsSchema,
     ...ownerFields,
+    ...reportedToOpsFields,
   })
   .superRefine((data, ctx) => {
     if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
@@ -99,6 +125,7 @@ export const updateIncidentSchema = z
         message: 'יש להזין צפי לעדכון הבא, או לסמן "ללא צפי כרגע" עם נימוק',
       });
     }
+    checkReportedToOpsRecipient(data, ctx);
   });
 
 export type UpdateIncidentInput = z.infer<typeof updateIncidentSchema>;
@@ -121,16 +148,27 @@ export const closeIncidentSchema = z
     resolution: nonBlank(4000, 'הפתרון שבוצע'),
     readiness: readinessSchema,
     followUpNotes: z.string().max(2000).optional().default(''),
-    reportedToOps: reportedToOpsSchema,
+    ...optionalOwnerFields,
+    ...reportedToOpsFields,
   })
   .superRefine((data, ctx) => {
-    if (data.readiness !== 'full' && !data.followUpNotes.trim()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['followUpNotes'],
-        message: 'בסגירה עם כשירות חלקית או ללא כשירות יש לפרט פעולות המשך',
-      });
+    if (data.readiness !== 'full') {
+      if (!data.followUpNotes.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['followUpNotes'],
+          message: 'בסגירה עם כשירות חלקית או ללא כשירות יש לפרט פעולות המשך',
+        });
+      }
+      if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['ownerUserId'],
+          message: 'כאשר הכשירות אינה מלאה יש לקבוע גורם מטפל אחראי המשך',
+        });
+      }
     }
+    checkReportedToOpsRecipient(data, ctx);
   });
 
 export type CloseIncidentInput = z.infer<typeof closeIncidentSchema>;

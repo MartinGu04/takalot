@@ -153,10 +153,10 @@ export default function IncidentDetailPage() {
 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="page-title">
             {incident.number} · {systemName}
           </h1>
-          <p className="text-neutral-500">{locationName}</p>
+          <p className="text-muted">{locationName}</p>
         </div>
         <div className="flex gap-1.5">
           <SeverityBadge severity={incident.severity} />
@@ -172,58 +172,63 @@ export default function IncidentDetailPage() {
         </div>
       )}
 
-      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <dt className="text-xs text-neutral-500">גורם מטפל נוכחי</dt>
+            <dt className="text-xs text-muted">גורם מטפל נוכחי</dt>
             <dd className="font-medium">{ownerDisplay(incident, profiles)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-neutral-500">השפעה מבצעית</dt>
+            <dt className="text-xs text-muted">השפעה מבצעית</dt>
             <dd>{incident.operationalImpact}</dd>
           </div>
           <div>
-            <dt className="text-xs text-neutral-500">שעת גילוי</dt>
+            <dt className="text-xs text-muted">שעת גילוי</dt>
             <dd>{formatDateTime(incident.discoveredAt)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-neutral-500">עדכון אחרון</dt>
+            <dt className="text-xs text-muted">עדכון אחרון</dt>
             <dd>{formatDateTime(incident.lastUpdateAt)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-neutral-500">דווח למבצעים</dt>
-            <dd>{reportedToOpsLabels[incident.reportedToOps]}</dd>
+            <dt className="text-xs text-muted">דווח למבצעים</dt>
+            <dd>
+              {reportedToOpsLabels[incident.reportedToOps]}
+              {incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient && (
+                <span className="font-normal text-secondary"> — {incident.reportedToOpsRecipient}</span>
+              )}
+            </dd>
           </div>
           <div>
-            <dt className="text-xs text-neutral-500">תיאור</dt>
+            <dt className="text-xs text-muted">תיאור</dt>
             <dd className="whitespace-pre-wrap break-words">{incident.description}</dd>
           </div>
         </dl>
       </div>
 
       {isClosed && (
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
-          <h2 className="font-bold">סיכום סגירה</h2>
+        <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
+          <h2 className="section-title">סיכום סגירה</h2>
           <dl className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div><dt className="text-xs text-neutral-500">שעת סגירה</dt><dd>{formatDateTime(incident.closedAt)}</dd></div>
+            <div><dt className="text-xs text-muted">שעת סגירה</dt><dd>{formatDateTime(incident.closedAt)}</dd></div>
             <div>
-              <dt className="text-xs text-neutral-500">משך התקלה</dt>
+              <dt className="text-xs text-muted">משך התקלה</dt>
               <dd>{formatDuration(incident.discoveredAt, incident.closedAt ?? incident.createdAt)}</dd>
             </div>
-            <div><dt className="text-xs text-neutral-500">סיבת התקלה</dt><dd>{incident.rootCause}</dd></div>
-            <div><dt className="text-xs text-neutral-500">הפתרון שבוצע</dt><dd>{incident.resolution}</dd></div>
+            <div><dt className="text-xs text-muted">סיבת התקלה</dt><dd>{incident.rootCause}</dd></div>
+            <div><dt className="text-xs text-muted">הפתרון שבוצע</dt><dd>{incident.resolution}</dd></div>
             <div>
-              <dt className="text-xs text-neutral-500">כשירות</dt>
+              <dt className="text-xs text-muted">כשירות</dt>
               <dd>{incident.readinessAtClose && <ReadinessBadge readiness={incident.readinessAtClose} />}</dd>
             </div>
             {incident.followUpCompletedAt && (
-              <div><dt className="text-xs text-neutral-500">פעולות המשך</dt><dd>הושלמו ב-{formatDateTime(incident.followUpCompletedAt)}</dd></div>
+              <div><dt className="text-xs text-muted">פעולות המשך</dt><dd>הושלמו ב-{formatDateTime(incident.followUpCompletedAt)}</dd></div>
             )}
           </dl>
         </div>
       )}
 
-      <div className="sticky bottom-16 z-10 mt-4 flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white/95 p-3 backdrop-blur md:static md:bottom-auto dark:border-neutral-700 dark:bg-neutral-900/95">
+      <div className="surface sticky bottom-16 z-10 mt-4 flex flex-wrap gap-2 bg-surface/95 p-3 backdrop-blur md:static md:bottom-auto">
         {canAck && <Button onClick={() => ackMutation.mutate(undefined)} disabled={ackMutation.isPending}>אישור קבלה</Button>}
         {(canFullUpdate || canTechUpdate) && <Button onClick={() => setDialog('update')}>עדכון תקלה</Button>}
         {canAssign && <Button variant="secondary" onClick={() => setDialog('assign')}>שינוי גורם מטפל</Button>}
@@ -234,7 +239,7 @@ export default function IncidentDetailPage() {
       </div>
 
       <section className="mt-6">
-        <h2 className="mb-2 text-lg font-bold">ציר זמן</h2>
+        <h2 className="section-title mb-2">ציר זמן</h2>
         <Timeline
           events={events ?? []}
           updates={updates ?? []}

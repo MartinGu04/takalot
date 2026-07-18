@@ -18,6 +18,7 @@ import type {
   EventType,
 } from '../../domain/types';
 import { isOpen } from '../../domain/types';
+import { reportedToOpsLabels } from '../../domain/labels';
 import { hasCapability, canTechnicianUpdate, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
 import { isOverdue, sortByPriority } from '../../domain/overdue';
@@ -522,6 +523,8 @@ export class LocalDemoRepository implements Repository {
       nextUpdateDue: input.nextUpdateDue,
       noDeadlineReason: input.nextUpdateDue ? null : (input.noDeadlineReason ?? '').trim() || null,
       reportedToOps: input.reportedToOps,
+      reportedToOpsRecipient:
+        input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null,
       closedAt: null,
       closedBy: null,
       rootCause: null,
@@ -539,6 +542,13 @@ export class LocalDemoRepository implements Repository {
       eventTime: input.discoveredAt,
       note: input.actionsTaken.trim() ? `פעולות שבוצעו עד כה: ${input.actionsTaken.trim()}` : null,
     });
+    if (incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient) {
+      this.addEvent(incident.id, 'reported_to_ops_change', actor.id, {
+        field: 'reported_to_ops_recipient',
+        newValue: incident.reportedToOpsRecipient,
+        note: `דווח למבצעים: ${incident.reportedToOpsRecipient}`,
+      });
+    }
     if (input.status !== 'new') {
       this.addEvent(incident.id, 'status_change', actor.id, {
         field: 'status',
@@ -688,6 +698,16 @@ export class LocalDemoRepository implements Repository {
         note: input.nextUpdateDue ? null : `ללא צפי כרגע: ${(input.noDeadlineReason ?? '').trim()}`,
       });
     }
+    const newRecipient =
+      input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null;
+    if (input.reportedToOps !== incident.reportedToOps || newRecipient !== incident.reportedToOpsRecipient) {
+      this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
+        field: 'reported_to_ops_recipient',
+        oldValue: incident.reportedToOpsRecipient,
+        newValue: newRecipient,
+        note: `דווח למבצעים: ${reportedToOpsLabels[input.reportedToOps]}${newRecipient ? ` (${newRecipient})` : ''}`,
+      });
+    }
 
     incident.status = input.status;
     incident.severity = input.severity;
@@ -701,6 +721,7 @@ export class LocalDemoRepository implements Repository {
       ? null
       : (input.noDeadlineReason ?? '').trim() || null;
     incident.reportedToOps = input.reportedToOps;
+    incident.reportedToOpsRecipient = newRecipient;
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
@@ -813,34 +834,83 @@ export class LocalDemoRepository implements Repository {
     if (incident.status === 'closed') {
       throw new AppError('INVALID_TRANSITION', 'התקלה כבר סגורה.');
     }
+    const fullyReady = input.readiness === 'full';
+    if (!fullyReady) this.validateOwner(input.ownerUserId ?? null);
 
     const ts = this.now().toISOString();
-    incident.status = 'closed';
-    incident.closedAt = ts;
-    incident.closedBy = actor.id;
+    const oldReportedToOps = incident.reportedToOps;
+    const oldRecipient = incident.reportedToOpsRecipient;
     incident.rootCause = input.rootCause.trim();
     incident.resolution = input.resolution.trim();
-    incident.readinessAtClose = input.readiness;
     incident.followUpNotes = input.followUpNotes.trim() || null;
-    incident.followUpRequired = input.readiness !== 'full';
+    incident.followUpRequired = !fullyReady;
     incident.reportedToOps = input.reportedToOps;
-    incident.nextUpdateDue = null;
-    incident.noDeadlineReason = 'התקלה נסגרה';
+    incident.reportedToOpsRecipient =
+      input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null;
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
     incident.lastUpdateAt = ts;
 
-    this.addEvent(incidentId, 'closed', actor.id, {
-      newValue: input.readiness,
-      note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}${
-        incident.followUpNotes ? `\nפעולות המשך: ${incident.followUpNotes}` : ''
-      }`,
-    });
-    this.audit(actor.id, 'incident_closed', 'incident', incidentId, {
-      incidentNumber: incident.number,
-      after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
-    });
+    if (fullyReady) {
+      // Full readiness: the incident actually closes.
+      incident.status = 'closed';
+      incident.closedAt = ts;
+      incident.closedBy = actor.id;
+      incident.readinessAtClose = input.readiness;
+      incident.nextUpdateDue = null;
+      incident.noDeadlineReason = 'התקלה נסגרה';
+
+      this.addEvent(incidentId, 'closed', actor.id, {
+        newValue: input.readiness,
+        note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}`,
+      });
+      this.audit(actor.id, 'incident_closed', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
+      });
+      if (incident.reportedToOps !== oldReportedToOps || incident.reportedToOpsRecipient !== oldRecipient) {
+        this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
+          field: 'reported_to_ops_recipient',
+          oldValue: oldRecipient,
+          newValue: incident.reportedToOpsRecipient,
+          note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+        });
+      }
+    } else {
+      // Incomplete readiness: the incident stays active as "כשירות חלקית" —
+      // it is never marked closed while follow-up is still outstanding.
+      // readinessAtClose is left untouched: it only ever describes readiness
+      // AT AN ACTUAL CLOSE, and this incident has not closed.
+      const oldStatus = incident.status;
+      incident.status = 'partial_readiness';
+      incident.ownerUserId = input.ownerUserId ?? null;
+      incident.ownerExternalName = input.ownerUserId
+        ? null
+        : (input.ownerExternalName ?? '').trim() || null;
+      if (!incident.nextUpdateDue) {
+        incident.noDeadlineReason = 'התקלה נותרה פעילה עם כשירות לא מלאה, ממתינה להשלמת פעולות המשך';
+      }
+
+      this.addEvent(incidentId, 'status_change', actor.id, {
+        field: 'status',
+        oldValue: oldStatus,
+        newValue: 'partial_readiness',
+        note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון החלקי שבוצע: ${input.resolution.trim()}\nפעולות המשך: ${incident.followUpNotes}\nגורם מטפל אחראי המשך: ${this.ownerLabel(incident.ownerUserId, incident.ownerExternalName)}`,
+      });
+      this.audit(actor.id, 'incident_partial_readiness', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
+      });
+      if (incident.reportedToOps !== oldReportedToOps || incident.reportedToOpsRecipient !== oldRecipient) {
+        this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
+          field: 'reported_to_ops_recipient',
+          oldValue: oldRecipient,
+          newValue: incident.reportedToOpsRecipient,
+          note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+        });
+      }
+    }
     this.persist();
     return { ...incident };
   }

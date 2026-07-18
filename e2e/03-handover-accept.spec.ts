@@ -17,8 +17,8 @@ test('supervisor creates a handover and another supervisor accepts it', async ({
   await page.getByTestId('demo-role-switcher').selectOption({ value: DEMO_USERS.supervisor2 });
   await page.goto(url);
   await expect(page.getByText('בדיקת קצה לקצה של העברת משמרת')).toBeVisible();
-  await page.getByRole('button', { name: 'אישור קבלת המשמרת' }).click();
+  await page.getByRole('button', { name: 'קיבלתי את המשמרת' }).click();
 
   await expect(page.getByText('אושרה').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'אישור קבלת המשמרת' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'קיבלתי את המשמרת' })).toHaveCount(0);
 });

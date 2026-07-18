@@ -1,0 +1,42 @@
+-- מעקב תקלות — forward migration.
+-- 0005 is already applied to the hosted project -- not edited here.
+--
+-- Hosted verification of 0005 found a residual gap 0005's global default-
+-- privilege rule did not cover: the hosted project's `public` schema has
+-- its OWN schema-scoped default ACL for functions created by `postgres`,
+-- pre-configured by Supabase's platform provisioning (not by any migration
+-- in this repo), that explicitly grants EXECUTE to anon, authenticated, and
+-- service_role. In Postgres's default-ACL resolution, a schema-scoped entry
+-- for the exact (role, schema, object type) of a newly created object takes
+-- precedence over a role-global entry -- so for every function created in
+-- `public` specifically, that pre-existing schema-scoped grant is what
+-- actually applies, entirely overriding 0005's global
+-- "revoke ... from public" rule for that schema. 0005's global rule still
+-- works correctly for any OTHER schema; it just never had a chance to take
+-- effect for `public`, which is where every function in this project lives.
+--
+-- Reproduced and confirmed against a real local Postgres 16 before writing
+-- this migration: replicating the hosted schema-scoped default ACL
+-- (`alter default privileges for role postgres in schema public grant
+-- execute on functions to anon, authenticated, service_role;`, matching
+-- Supabase's own platform-level provisioning) and then creating a fresh
+-- probe function reproduced exactly the reported hosted result --
+-- has_function_privilege('anon', ..., 'execute') = true on a function 0005
+-- never touched, while has_function_privilege('public', ...) correctly
+-- stayed false (0005's global rule).
+--
+-- Fix verified the same way: revoking only `anon` from that schema-scoped
+-- default (leaving `authenticated` and `service_role` in place, since this
+-- is a revoke on a specific grantee within an ACL that still has other
+-- grantees left -- not the "revoke down to fully empty gets silently
+-- dropped" failure mode 0005's changelog documented) produces a real,
+-- persisted pg_default_acl row, and a function created afterwards
+-- correctly has: PUBLIC=false, anon=false, authenticated=true,
+-- service_role=true (unchanged -- not asked to revoke this one, and this
+-- repo still has no real backend use for it, per 0005 section 3's
+-- reasoning, which is unaffected by this migration either way).
+--
+-- This is an ADDITIVE migration. 0001-0005 are untouched.
+
+alter default privileges for role postgres in schema public
+  revoke execute on functions from anon;

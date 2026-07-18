@@ -34,6 +34,7 @@ export type EventType =
   | 'impact_change'
   | 'assignment_change'
   | 'deadline_change'
+  | 'reported_to_ops_change'
   | 'correction'
   | 'handover_included'
   | 'handover_accepted'
@@ -90,6 +91,8 @@ export interface Incident {
   nextUpdateDue: string | null; // null only with explicit reason
   noDeadlineReason: string | null;
   reportedToOps: ReportedToOps;
+  /** Concise free-text recipient (role and/or name); required and shown only when reportedToOps is 'yes'. */
+  reportedToOpsRecipient: string | null;
   // Closure fields (set only via closure flow)
   closedAt: string | null;
   closedBy: string | null;

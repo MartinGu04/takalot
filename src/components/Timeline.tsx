@@ -60,7 +60,7 @@ export function Timeline({
     label ?? (id ? (profiles?.find((p) => p.id === id)?.fullName ?? 'משתמש') : 'המערכת');
 
   if (events.length === 0) {
-    return <p className="py-4 text-sm text-neutral-500">אין אירועים בציר הזמן.</p>;
+    return <p className="py-4 text-sm text-muted">אין אירועים בציר הזמן.</p>;
   }
 
   return (
@@ -75,34 +75,34 @@ export function Timeline({
             {idx < events.length - 1 && (
               <span
                 aria-hidden
-                className="absolute top-7 right-[11px] bottom-0 w-px bg-neutral-200 dark:bg-neutral-700"
+                className="absolute top-7 right-[11px] bottom-0 w-px bg-hairline"
               />
             )}
             <span
               aria-hidden
               className={`relative z-10 mt-1 flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${
                 emphasized
-                  ? 'bg-neutral-800 text-white dark:bg-neutral-200 dark:text-neutral-900'
-                  : 'bg-neutral-200 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300'
+                  ? 'bg-brand-600 text-white dark:bg-brand-500'
+                  : 'bg-surface-active text-text-secondary'
               }`}
             >
               {typeIcon[event.type] ?? '•'}
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="font-semibold">{eventTypeLabels[event.type]}</span>
-                <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                <span className="font-semibold text-text-primary">{eventTypeLabels[event.type]}</span>
+                <span className="text-sm text-secondary">
                   {actorName(event.actorId, event.actorLabel)}
                 </span>
-                <span className="text-xs text-neutral-500">{formatDateTime(event.eventTime)}</span>
+                <span className="text-xs text-muted">{formatDateTime(event.eventTime)}</span>
                 {timesDiffer && (
-                  <span className="text-xs text-neutral-400">
+                  <span className="text-xs text-muted">
                     (נרשם בשרת: {formatDateTime(event.serverTime)})
                   </span>
                 )}
               </div>
               {event.field && (
-                <p className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-300">
+                <p className="mt-0.5 text-sm text-secondary">
                   {fieldLabels[event.field] ?? event.field}:{' '}
                   <span className="line-through opacity-60">{valueLabel(event.field, event.oldValue)}</span>
                   {' ← '}
@@ -116,7 +116,7 @@ export function Timeline({
                 </p>
               )}
               {update && (
-                <div className="mt-1.5 rounded-lg bg-neutral-50 p-2.5 text-sm dark:bg-neutral-800/60">
+                <div className="mt-1.5 rounded-lg bg-surface-active p-2.5 text-sm">
                   <p>
                     <span className="font-medium">פעולות שבוצעו: </span>
                     <span className="whitespace-pre-wrap break-words">{update.actionsTaken}</span>
@@ -136,17 +136,17 @@ export function Timeline({
                 </div>
               )}
               {event.note && !update && (
-                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700 dark:text-neutral-300">
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-secondary">
                   {event.note}
                 </p>
               )}
               {event.type === 'correction' && event.refId && (
-                <p className="mt-0.5 text-xs text-neutral-500">מתייחס לרישום קודם (הרישום המקורי נשמר)</p>
+                <p className="mt-0.5 text-xs text-muted">מתייחס לרישום קודם (הרישום המקורי נשמר)</p>
               )}
               {onCorrect && CORRECTABLE_TYPES.has(event.type) && (event.actorId === currentUserId || canCorrectAny) && (
                 <button
                   type="button"
-                  className="mt-1 text-xs text-blue-700 hover:underline dark:text-blue-400"
+                  className="mt-1 text-xs text-brand-700 hover:underline dark:text-brand-400"
                   onClick={() =>
                     onCorrect(
                       event.type === 'update' && event.refId ? event.refId : event.id,

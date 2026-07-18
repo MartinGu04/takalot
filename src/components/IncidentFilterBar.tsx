@@ -1,5 +1,5 @@
-import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord, ReportedToOps } from '../domain/types';
-import { severityLabels, statusLabels, reportedToOpsLabels } from '../domain/labels';
+import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord } from '../domain/types';
+import { severityLabels, statusLabels } from '../domain/labels';
 import { Input, Select, Badge } from './ui';
 import { useDebouncedField } from '../lib/useDebouncedField';
 
@@ -11,7 +11,6 @@ export interface FilterState {
   systemId?: string;
   locationId?: string;
   overdueOnly: boolean;
-  reportedToOps?: ReportedToOps;
   createdFrom?: string;
   createdTo?: string;
 }
@@ -71,16 +70,9 @@ export function IncidentFilterBar({
   if (value.overdueOnly) {
     chips.push({ key: 'overdue', label: 'באיחור בלבד', onRemove: () => onChange({ ...value, overdueOnly: false }) });
   }
-  if (value.reportedToOps) {
-    chips.push({
-      key: 'ops',
-      label: `דווח למבצעים: ${reportedToOpsLabels[value.reportedToOps]}`,
-      onRemove: () => onChange({ ...value, reportedToOps: undefined }),
-    });
-  }
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="surface flex flex-col gap-3 p-3">
       <Input
         placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור או גורם מטפל…"
         value={searchDraft}
@@ -146,17 +138,7 @@ export function IncidentFilterBar({
             <option key={l.id} value={l.id}>{l.name}{l.archived ? ' (בארכיון)' : ''}</option>
           ))}
         </Select>
-        <Select
-          aria-label="סינון לפי דיווח למבצעים"
-          value={value.reportedToOps ?? ''}
-          onChange={(e) => onChange({ ...value, reportedToOps: (e.target.value || undefined) as ReportedToOps | undefined })}
-        >
-          <option value="">דווח למבצעים…</option>
-          <option value="yes">כן</option>
-          <option value="no">לא</option>
-          <option value="not_required">לא נדרש</option>
-        </Select>
-        <label className="flex items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm dark:border-neutral-600">
+        <label className="flex items-center gap-2 rounded-lg border border-hairline-strong px-3 text-sm">
           <input
             type="checkbox"
             checked={value.overdueOnly}
@@ -170,9 +152,9 @@ export function IncidentFilterBar({
         <div
           role="group"
           aria-label="מסננים פעילים"
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 dark:border-blue-900 dark:bg-blue-950/40"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 p-2.5 dark:border-brand-900 dark:bg-brand-950/40"
         >
-          <span className="text-xs font-semibold text-blue-900 dark:text-blue-200">מסננים פעילים:</span>
+          <span className="text-xs font-semibold text-brand-900 dark:text-brand-200">מסננים פעילים:</span>
           <div className="flex flex-wrap gap-1.5">
             {chips.map((c) => (
               <button
@@ -182,7 +164,7 @@ export function IncidentFilterBar({
                 aria-label={`הסרת סינון: ${c.label}`}
                 className="rounded-md"
               >
-                <Badge color="blue" className="gap-1 border-blue-400 font-medium dark:border-blue-700">
+                <Badge color="brand" className="gap-1 border-brand-400 font-medium dark:border-brand-700">
                   {c.label} <span aria-hidden>✕</span>
                 </Badge>
               </button>
@@ -190,7 +172,7 @@ export function IncidentFilterBar({
           </div>
           <button
             type="button"
-            className="text-xs font-medium text-blue-800 underline hover:text-blue-950 dark:text-blue-300 dark:hover:text-blue-100"
+            className="text-xs font-medium text-brand-800 underline hover:text-brand-950 dark:text-brand-300 dark:hover:text-brand-100"
             onClick={() =>
               onChange({
                 search: value.search,

@@ -12,6 +12,107 @@
 
 @theme {
   --font-sans: 'Heebo', system-ui, -apple-system, sans-serif;
+
+  /*
+   * Nexus brand/accent tokens. The final brand color has not been chosen yet
+   * — every UI-chrome usage (buttons, links, active nav, focus rings) reads
+   * from this ramp instead of a hardcoded Tailwind color, so swapping the
+   * brand later is a one-place edit. Deliberately a distinct hue from the
+   * severity/status palette (red/orange/green/blue) so brand accents are
+   * never mistaken for a severity or status signal.
+   */
+  --color-brand-50: var(--color-violet-50);
+  --color-brand-100: var(--color-violet-100);
+  --color-brand-200: var(--color-violet-200);
+  --color-brand-300: var(--color-violet-300);
+  --color-brand-400: var(--color-violet-400);
+  --color-brand-500: var(--color-violet-500);
+  --color-brand-600: var(--color-violet-600);
+  --color-brand-700: var(--color-violet-700);
+  --color-brand-800: var(--color-violet-800);
+  --color-brand-900: var(--color-violet-900);
+  --color-brand-950: var(--color-violet-950);
+
+  /*
+   * Surface system. Every card/panel/popover reads from these instead of
+   * hardcoding bg-white/dark:bg-neutral-900 — the actual values are set
+   * below (light in :root, dark overridden under .dark) so this is the only
+   * place that needs to change to retune the whole app's depth and warmth.
+   */
+  --color-canvas: var(--nx-canvas);
+  --color-surface: var(--nx-surface);
+  --color-surface-hover: var(--nx-surface-hover);
+  --color-surface-active: var(--nx-surface-active);
+  --color-hairline: var(--nx-hairline);
+  --color-hairline-strong: var(--nx-hairline-strong);
+  --color-text-primary: var(--nx-text-primary);
+  --color-text-secondary: var(--nx-text-secondary);
+  --color-text-muted: var(--nx-text-muted);
+
+  --shadow-soft: var(--nx-shadow-soft);
+  --shadow-card: var(--nx-shadow-card);
+  --shadow-elevated: var(--nx-shadow-elevated);
+
+  /* Small, restrained entrance animations for dialogs, popovers, and cards. */
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-scale-in: scale-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+ * Light mode: a softly warm-tinted canvas (not clinical white), clearly
+ * separated near-white surfaces. Depth comes mostly from layered shadows,
+ * not from a heavy border — hairlines are a light finishing touch only.
+ */
+:root {
+  --nx-canvas: #f1efe9;
+  --nx-surface: #ffffff;
+  --nx-surface-hover: #fbfaf8;
+  --nx-surface-active: #f2f0ec;
+  --nx-hairline: #e9e5de;
+  --nx-hairline-strong: #d8d2c8;
+  --nx-text-primary: #201e1b;
+  --nx-text-secondary: #57534a;
+  --nx-text-muted: #7a7568;
+
+  --nx-shadow-soft: 0 1px 2px rgba(32, 28, 20, 0.05), 0 2px 6px rgba(32, 28, 20, 0.05);
+  --nx-shadow-card: 0 1px 2px rgba(32, 28, 20, 0.04), 0 6px 16px -4px rgba(32, 28, 20, 0.1);
+  --nx-shadow-elevated: 0 10px 24px -6px rgba(32, 28, 20, 0.16), 0 22px 44px -14px rgba(32, 28, 20, 0.18);
+}
+
+/*
+ * Dark mode: a deep charcoal base (never pure black), with a subtle tonal
+ * step between canvas → sidebar/header → cards → popovers. Depth comes from
+ * a faint inset top highlight (a soft "edge catches the light" cue) plus a
+ * dark contact shadow, rather than a glow stuck to one part of the canvas.
+ */
+.dark {
+  --nx-canvas: #15171d;
+  --nx-surface: #1b1e26;
+  --nx-surface-hover: #21252f;
+  --nx-surface-active: #191c23;
+  --nx-hairline: #292e39;
+  --nx-hairline-strong: #363d4b;
+  --nx-text-primary: #f3f2f0;
+  --nx-text-secondary: #b6b3bd;
+  --nx-text-muted: #85818e;
+
+  --nx-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --nx-shadow-card: inset 0 1px 0 0 rgba(255, 255, 255, 0.04), 0 6px 16px -4px rgba(0, 0, 0, 0.45);
+  --nx-shadow-elevated: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), 0 20px 40px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
 }
 
 html {
@@ -19,15 +120,91 @@ html {
 }
 
 body {
-  @apply bg-neutral-100 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100;
+  @apply bg-canvas text-text-primary;
   min-height: 100dvh;
 }
 
 /* Calm, readable focus states everywhere */
 :focus-visible {
-  outline: 2px solid theme(--color-blue-600);
+  outline: 2px solid theme(--color-brand-600);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* ---------- Typography hierarchy ---------- */
+/* Centralized so every page title, section heading, and muted metadata
+   line reads consistently instead of each page picking its own scale. */
+@layer components {
+  .page-title {
+    @apply text-2xl font-extrabold tracking-tight text-text-primary sm:text-[1.75rem];
+  }
+  .section-title {
+    @apply text-base font-bold text-text-primary;
+  }
+  .card-title {
+    @apply text-sm font-bold text-text-primary;
+  }
+  .group-title {
+    @apply text-xs font-bold uppercase tracking-wide text-text-muted;
+  }
+  .text-muted {
+    @apply text-text-muted;
+  }
+  .text-secondary {
+    @apply text-text-secondary;
+  }
+
+  /* Static elevated panel: filter bars, summary boxes, sticky action bars. */
+  .surface {
+    @apply rounded-xl border border-hairline bg-surface shadow-soft;
+  }
+  /* Floating menus/popovers: one step further off the canvas. */
+  .popover-panel {
+    @apply rounded-xl border border-hairline bg-surface shadow-elevated;
+  }
+  /* Clickable card: a touch more resting elevation than a static panel so it
+     already reads as "liftable", then lifts further + a neutral, slightly
+     brighter border on hover (brand is reserved for nav/selected/primary
+     actions, never a generic hover state), pressed feedback, visible
+     keyboard focus. Only apply to elements that are actually interactive
+     (links/buttons), never to decorative ones. */
+  .surface-interactive {
+    @apply rounded-xl border border-hairline bg-surface shadow-card cursor-pointer transition-[transform,box-shadow,border-color,background-color] duration-200 ease-out;
+  }
+  .surface-interactive:hover {
+    @apply -translate-y-1 border-hairline-strong bg-surface-hover shadow-elevated;
+  }
+  .surface-interactive:active {
+    @apply translate-y-0 scale-[0.994] bg-surface-active shadow-card;
+  }
+  .surface-interactive:focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+}
+
+/* ---------- Motion ---------- */
+/* Restrained, consistent interaction motion. Respects reduced-motion. */
+@layer base {
+  * {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 180ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .surface-interactive:hover,
+  .surface-interactive:active {
+    transform: none;
+  }
 }
 
 @media print {

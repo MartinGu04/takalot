@@ -22,11 +22,11 @@ export default function HandoversPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">העברת משמרת</h1>
+        <h1 className="page-title">העברת משמרת</h1>
         {hasCapability(user.role, 'create_handover') && (
           <Link
             to="/handovers/new"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 dark:bg-blue-600"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 active:scale-[0.98] dark:bg-brand-500 dark:hover:bg-brand-400"
           >
             יצירת העברת משמרת
           </Link>
@@ -35,19 +35,19 @@ export default function HandoversPage() {
 
       {pendingForMe.length > 0 && (
         <section className="mt-4">
-          <h2 className="mb-2 text-sm font-bold text-orange-700 dark:text-orange-400">ממתינות לאישורך</h2>
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-orange-700 dark:text-orange-400">ממתינות לאישורך</h2>
           <div className="flex flex-col gap-2">
             {pendingForMe.map((h) => (
               <Link
                 key={h.id}
                 to={`/handovers/${h.id}`}
-                className="block rounded-xl border border-orange-300 bg-orange-50 p-3 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950 dark:hover:bg-orange-900"
+                className="block rounded-xl border border-orange-300 bg-orange-50 p-3 shadow-soft transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-elevated dark:border-orange-800 dark:bg-orange-950"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">מאת {name(h.createdBy)}</span>
+                  <span className="font-medium text-text-primary">מאת {name(h.createdBy)}</span>
                   <Badge color="orange">ממתינה לאישור</Badge>
                 </div>
-                <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                <p className="mt-1 text-sm text-secondary">
                   {formatRelative(h.createdAt)} · {formatDateTime(h.createdAt)}
                 </p>
               </Link>
@@ -57,7 +57,7 @@ export default function HandoversPage() {
       )}
 
       <section className="mt-6">
-        <h2 className="mb-2 text-sm font-bold text-neutral-500">כל ההעברות</h2>
+        <h2 className="group-title mb-2">כל ההעברות</h2>
         {others.length === 0 && pendingForMe.length === 0 ? (
           <EmptyState title="אין עדיין העברות משמרת" />
         ) : (
@@ -66,15 +66,15 @@ export default function HandoversPage() {
               <Link
                 key={h.id}
                 to={`/handovers/${h.id}`}
-                className="block rounded-xl border border-neutral-200 bg-white p-3 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+                className="surface-interactive block p-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{name(h.createdBy)} ← {name(h.toUserId)}</span>
+                  <span className="font-medium text-text-primary">{name(h.createdBy)} ← {name(h.toUserId)}</span>
                   <Badge color={h.status === 'accepted' ? 'green' : 'orange'}>
                     {h.status === 'accepted' ? 'אושרה' : 'ממתינה'}
                   </Badge>
                 </div>
-                <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-300">
+                <p className="mt-1 text-sm text-secondary">
                   {formatDateTime(h.createdAt)}
                   {h.acceptedAt && ` · אושרה ב-${formatDateTime(h.acceptedAt)}`}
                 </p>

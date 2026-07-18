@@ -23,15 +23,23 @@ test('closed incidents remain fully searchable and filterable in the archive', a
   await expect(page.getByRole('link', { name: /2026-006/ })).toBeVisible();
 });
 
-test('closed incidents with incomplete readiness appear only in the dashboard\'s dedicated section, never in the active incidents list', async ({ page }) => {
+test('an incident closed with incomplete readiness stays active instead of closing (inc-8, seeded under the current policy)', async ({ page }) => {
   await loginAs(page, DEMO_USERS.supervisor1);
-  // inc-6 is seeded as closed with partial readiness (follow-up required).
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'כשירות לא מלאה' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /2026-006/ })).toBeVisible();
+  // inc-8 is seeded as active with status "כשירות חלקית" (partial readiness).
+  await page.goto('/incidents');
+  await expect(page.getByRole('link', { name: /2026-008/ })).toBeVisible();
 
+  await page.goto('/archive');
+  await expect(page.getByRole('link', { name: /2026-008/ })).toHaveCount(0);
+});
+
+test('a legacy closed-incomplete-readiness record (inc-6, predating this policy) is preserved in the archive, not the active list', async ({ page }) => {
+  await loginAs(page, DEMO_USERS.supervisor1);
   await page.goto('/incidents');
   await expect(page.getByRole('link', { name: /2026-006/ })).toHaveCount(0);
+
+  await page.goto('/archive');
+  await expect(page.getByRole('link', { name: /2026-006/ })).toBeVisible();
 });
 
 test('reopened incidents remain in the active incidents page', async ({ page }) => {
@@ -50,8 +58,15 @@ test('default ordering follows operational priority, not opening time alone', as
   // inc-1 (critical, overdue) must lead; inc-7 is the oldest incident by far
   // (created 96h ago) but is only medium severity and not overdue, so it
   // must not lead merely because it's the oldest.
+  //
+  // Each incident card is a single clickable link (number, system, badges,
+  // metadata all inside it), so its accessible text starts with — but isn't
+  // limited to — the incident number; extract the leading number token from
+  // each card in DOM order rather than requiring an isolated number-only link.
   const numbers = await page.locator('a[href^="/incidents/inc-"]').evaluateAll((els) =>
-    els.map((el) => el.textContent?.trim()).filter((t): t is string => !!t && /^\d{4}-\d{3}$/.test(t)),
+    els
+      .map((el) => el.textContent?.trim().match(/^\d{4}-\d{3}/)?.[0])
+      .filter((t): t is string => !!t),
   );
   expect(numbers[0]).toBe('2026-001');
   expect(numbers.indexOf('2026-007')).toBeGreaterThan(numbers.indexOf('2026-001'));

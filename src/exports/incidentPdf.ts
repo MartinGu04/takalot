@@ -42,7 +42,12 @@ export function buildIncidentPdf(
   pdf.field('סטטוס', statusLabels[incident.status]);
   pdf.field('השפעה מבצעית', incident.operationalImpact);
   pdf.field('גורם מטפל נוכחי', owner);
-  pdf.field('דווח למבצעים', reportedToOpsLabels[incident.reportedToOps]);
+  pdf.field(
+    'דווח למבצעים',
+    incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient
+      ? `${reportedToOpsLabels[incident.reportedToOps]} — ${incident.reportedToOpsRecipient}`
+      : reportedToOpsLabels[incident.reportedToOps],
+  );
   pdf.spacer();
 
   if (incident.status === 'closed') {

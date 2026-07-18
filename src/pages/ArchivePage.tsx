@@ -3,7 +3,8 @@
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
-import { Button, EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
+import { EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
+import { ExportMenu } from '../components/ExportMenu';
 import { useUrlState } from '../lib/useUrlState';
 import { useDebouncedField } from '../lib/useDebouncedField';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
@@ -81,16 +82,20 @@ export default function ArchivePage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">ארכיון תקלות סגורות</h1>
+        <h1 className="page-title">ארכיון תקלות סגורות</h1>
         {canExport && (
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => exportMutation.mutate('xlsx')}>ייצוא XLSX</Button>
-            <Button variant="secondary" onClick={() => exportMutation.mutate('csv')}>ייצוא CSV</Button>
-          </div>
+          <ExportMenu
+            disabled={exportMutation.isPending}
+            options={[
+              { kind: 'xlsx', label: 'ייצוא XLSX' },
+              { kind: 'csv', label: 'ייצוא CSV' },
+            ]}
+            onExport={(kind) => exportMutation.mutate(kind as 'xlsx' | 'csv')}
+          />
         )}
       </div>
 
-      <div className="mt-3 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
+      <div className="surface mt-3 flex flex-col gap-3 p-3">
         <Input
           placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור, סיבת התקלה או הפתרון שבוצע…"
           value={searchDraft}
@@ -140,7 +145,7 @@ export default function ArchivePage() {
         </div>
       </div>
 
-      <p className="mt-3 text-sm text-neutral-500">{(incidents ?? []).length} תקלות סגורות תואמות</p>
+      <p className="mt-3 text-sm text-muted">{(incidents ?? []).length} תקלות סגורות תואמות</p>
 
       {(incidents ?? []).length === 0 ? (
         <div className="mt-4">

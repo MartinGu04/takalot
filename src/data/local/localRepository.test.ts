@@ -52,8 +52,8 @@ describe('incident numbering atomicity and yearly reset', () => {
     const numbers = results.map((r) => r.number);
     expect(new Set(numbers).size).toBe(5); // all unique
     const suffixes = numbers.map((n) => Number(n.split('-')[1])).sort((a, b) => a - b);
-    // seed already allocated 7 numbers in 2026, so these five continue 8..12
-    expect(suffixes).toEqual([8, 9, 10, 11, 12]);
+    // seed already allocated 8 numbers in 2026, so these five continue 9..13
+    expect(suffixes).toEqual([9, 10, 11, 12, 13]);
   });
 
   it('resets the sequence to 001 for a new calendar year (Asia/Jerusalem)', async () => {
@@ -111,6 +111,7 @@ describe('closure requirements', () => {
       readiness: 'full',
       followUpNotes: '',
       reportedToOps: 'yes',
+      reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
     });
     expect(closed.status).toBe('closed');
     expect(closed.followUpRequired).toBe(false);
@@ -126,6 +127,8 @@ describe('closure requirements', () => {
       resolution: 'הותקן פתרון זמני',
       readiness: 'partial',
       followUpNotes: 'להתקין רכיב קבוע בהמשך',
+      ownerUserId: DEMO_USERS.tech1,
+      ownerExternalName: null,
       reportedToOps: 'no',
     });
     expect(closed.followUpRequired).toBe(true);
@@ -157,6 +160,204 @@ describe('closure requirements', () => {
         reportedToOps: 'no',
       }),
     ).rejects.toThrow(AppError);
+  });
+});
+
+describe('incomplete-readiness lifecycle', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('keeps an incident active as "כשירות חלקית" instead of closing it when readiness is partial', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const result = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב זמני',
+      readiness: 'partial',
+      followUpNotes: 'להזמין רכיב קבוע',
+      ownerUserId: DEMO_USERS.tech2,
+      ownerExternalName: null,
+      reportedToOps: 'no',
+    });
+    expect(result.status).toBe('partial_readiness');
+    expect(result.status).not.toBe('closed');
+    expect(result.closedAt).toBeNull();
+    expect(result.closedBy).toBeNull();
+    expect(result.followUpRequired).toBe(true);
+    expect(result.ownerUserId).toBe(DEMO_USERS.tech2);
+
+    // Stays visible among active incidents, not closed/archived.
+    const active = await repo.listIncidents(supervisor1, { openOnly: true });
+    expect(active.some((i) => i.id === 'inc-2')).toBe(true);
+  });
+
+  it('keeps an incident active when readiness is "none" as well', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-3');
+    const result = await repo.closeIncident(supervisor1, 'inc-3', {
+      expectedVersion: incident!.version,
+      rootCause: 'תקלת חומרה חמורה',
+      resolution: 'טופל חלקית',
+      readiness: 'none',
+      followUpNotes: 'להמשיך טיפול',
+      ownerUserId: DEMO_USERS.tech1,
+      ownerExternalName: null,
+      reportedToOps: 'no',
+    });
+    expect(result.status).toBe('partial_readiness');
+    expect(result.closedAt).toBeNull();
+  });
+
+  it('requires a responsible owner when readiness is not full', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await expect(
+      repo.closeIncident(supervisor1, 'inc-2', {
+        expectedVersion: incident!.version,
+        rootCause: 'תקלת חומרה',
+        resolution: 'הוחלף רכיב זמני',
+        readiness: 'partial',
+        followUpNotes: 'להזמין רכיב קבוע',
+        reportedToOps: 'no',
+      } as CloseIncidentInput),
+    ).rejects.toThrow(AppError);
+  });
+
+  it('only closes the incident (status "נסגרה") when readiness is full', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const result = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      rootCause: 'תקלת חומרה',
+      resolution: 'תוקנה במלואה',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    });
+    expect(result.status).toBe('closed');
+    expect(result.closedAt).not.toBeNull();
+    expect(result.followUpRequired).toBe(false);
+  });
+
+  it('allows closing again for real once a partial-readiness incident reaches full readiness', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const partial = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב זמני',
+      readiness: 'partial',
+      followUpNotes: 'להזמין רכיב קבוע',
+      ownerUserId: DEMO_USERS.tech2,
+      ownerExternalName: null,
+      reportedToOps: 'no',
+    });
+    expect(partial.status).toBe('partial_readiness');
+
+    const closed = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: partial.version,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הותקן רכיב קבוע ואומתה תקינות מלאה',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    });
+    expect(closed.status).toBe('closed');
+    expect(closed.closedAt).not.toBeNull();
+  });
+});
+
+describe('reporting recipient', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('requires a recipient only when reportedToOps is "yes"', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', {
+        expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        actionsTaken: 'עדכון',
+        findings: '',
+        nextSteps: '',
+        status: incident!.status,
+        severity: incident!.severity,
+        operationalImpact: incident!.operationalImpact,
+        changeReason: '',
+        ownerUserId: incident!.ownerUserId,
+        ownerExternalName: incident!.ownerExternalName,
+        nextUpdateDue: incident!.nextUpdateDue,
+        noDeadlineReason: incident!.noDeadlineReason,
+        reportedToOps: 'yes',
+        reportedToOpsRecipient: '',
+      }),
+    ).rejects.toThrow(AppError);
+
+    const withRecipient = await repo.updateIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון',
+      findings: '',
+      nextSteps: '',
+      status: incident!.status,
+      severity: incident!.severity,
+      operationalImpact: incident!.operationalImpact,
+      changeReason: '',
+      ownerUserId: incident!.ownerUserId,
+      ownerExternalName: incident!.ownerExternalName,
+      nextUpdateDue: incident!.nextUpdateDue,
+      noDeadlineReason: incident!.noDeadlineReason,
+      reportedToOps: 'yes',
+      reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
+    });
+    expect(withRecipient.reportedToOpsRecipient).toBe('אחמ״ש מוקד מבצעים');
+
+    // Not required, and cleared, when reportedToOps is "no".
+    const cleared = await repo.updateIncident(supervisor1, 'inc-2', {
+      expectedVersion: withRecipient.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון נוסף',
+      findings: '',
+      nextSteps: '',
+      status: incident!.status,
+      severity: incident!.severity,
+      operationalImpact: incident!.operationalImpact,
+      changeReason: '',
+      ownerUserId: incident!.ownerUserId,
+      ownerExternalName: incident!.ownerExternalName,
+      nextUpdateDue: incident!.nextUpdateDue,
+      noDeadlineReason: incident!.noDeadlineReason,
+      reportedToOps: 'no',
+      reportedToOpsRecipient: 'ערך שאמור להימחק',
+    });
+    expect(cleared.reportedToOpsRecipient).toBeNull();
+  });
+
+  it('records the recipient in a timeline event visible in incident history', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.updateIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'דווח למבצעים',
+      findings: '',
+      nextSteps: '',
+      status: incident!.status,
+      severity: incident!.severity,
+      operationalImpact: incident!.operationalImpact,
+      changeReason: '',
+      ownerUserId: incident!.ownerUserId,
+      ownerExternalName: incident!.ownerExternalName,
+      nextUpdateDue: incident!.nextUpdateDue,
+      noDeadlineReason: incident!.noDeadlineReason,
+      reportedToOps: 'yes',
+      reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
+    });
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const recipientEvent = events.find((e) => e.type === 'reported_to_ops_change');
+    expect(recipientEvent).toBeDefined();
+    expect(recipientEvent!.newValue).toBe('אחמ״ש מוקד מבצעים');
+    expect(recipientEvent!.actorId).toBe(DEMO_USERS.supervisor1);
+    expect(recipientEvent!.serverTime).toBeTruthy();
   });
 });
 
@@ -318,6 +519,7 @@ describe('optimistic concurrency', () => {
       nextUpdateDue: incident!.nextUpdateDue,
       noDeadlineReason: incident!.noDeadlineReason,
       reportedToOps: incident!.reportedToOps,
+      reportedToOpsRecipient: incident!.reportedToOpsRecipient,
     });
 
     // Second writer, still holding the stale version from before the first write, must be rejected.
@@ -337,6 +539,7 @@ describe('optimistic concurrency', () => {
         nextUpdateDue: incident!.nextUpdateDue,
         noDeadlineReason: incident!.noDeadlineReason,
         reportedToOps: incident!.reportedToOps,
+        reportedToOpsRecipient: incident!.reportedToOpsRecipient,
       }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
@@ -380,6 +583,31 @@ describe('handover creation and acceptance', () => {
     expect(accepted.acceptedBy).toBe(DEMO_USERS.supervisor2);
 
     await expect(repo.acceptHandover(supervisor2, handover.id)).rejects.toThrow(AppError);
+  });
+
+  it('can be submitted with no general note and no individual incident notes', async () => {
+    const handover = await repo.createHandover(supervisor1, {
+      toUserId: DEMO_USERS.supervisor2,
+      generalNote: '',
+      itemNotes: {},
+    });
+    expect(handover.status).toBe('pending');
+    const full = await repo.getHandover(supervisor1, handover.id);
+    expect(full!.items.length).toBeGreaterThan(0);
+    expect(full!.items.every((i) => i.note === '')).toBe(true);
+  });
+
+  it('preserves optional per-incident notes when supplied, leaving others blank', async () => {
+    const handover = await repo.createHandover(supervisor1, {
+      toUserId: DEMO_USERS.supervisor2,
+      generalNote: 'הערה כללית',
+      itemNotes: { 'inc-1': 'לתשומת לב מיוחדת בתחילת המשמרת' },
+    });
+    const full = await repo.getHandover(supervisor1, handover.id);
+    const inc1Item = full!.items.find((i) => i.incidentId === 'inc-1');
+    expect(inc1Item?.note).toBe('לתשומת לב מיוחדת בתחילת המשמרת');
+    const otherItem = full!.items.find((i) => i.incidentId !== 'inc-1');
+    expect(otherItem?.note).toBe('');
   });
 });
 
@@ -435,9 +663,9 @@ describe('active incidents page semantics', () => {
     const active = await repo.listIncidents(supervisor1, { openOnly: true }, 'priority');
     // inc-1: critical, overdue -> tier 1 (critical/high overdue)
     // inc-2: high, not overdue -> tier 3 (remaining critical/high)
-    // inc-3, inc-4, inc-7: medium/low, not overdue -> tier 4 (remaining active),
-    //   ordered by newest discovery time first: inc-4 > inc-3 > inc-7
-    expect(active.map((i) => i.id)).toEqual(['inc-1', 'inc-2', 'inc-4', 'inc-3', 'inc-7']);
+    // inc-3, inc-4, inc-7, inc-8: medium/low, not overdue -> tier 4 (remaining
+    //   active), ordered by newest discovery time first: inc-4 > inc-3 > inc-8 > inc-7
+    expect(active.map((i) => i.id)).toEqual(['inc-1', 'inc-2', 'inc-4', 'inc-3', 'inc-8', 'inc-7']);
   });
 });
 

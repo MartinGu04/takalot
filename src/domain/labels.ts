@@ -9,7 +9,8 @@ import type {
   NotificationType,
 } from './types';
 
-export const APP_NAME = 'מעקב תקלות';
+export const APP_NAME = 'Nexus';
+export const APP_TAGLINE = 'מערכת ניהול ומעקב תקלות';
 
 export const roleLabels: Record<Role, string> = {
   system_admin: 'מנהל מערכת',
@@ -60,6 +61,7 @@ export const eventTypeLabels: Record<EventType, string> = {
   impact_change: 'שינוי השפעה מבצעית',
   assignment_change: 'שינוי גורם מטפל',
   deadline_change: 'שינוי צפי עדכון',
+  reported_to_ops_change: 'עדכון דיווח למבצעים',
   correction: 'תיקון רישום',
   handover_included: 'נכללה בהעברת משמרת',
   handover_accepted: 'העברת משמרת אושרה',
@@ -82,4 +84,5 @@ export const fieldLabels: Record<string, string> = {
   owner: 'גורם מטפל',
   next_update_due: 'צפי לעדכון הבא',
   reported_to_ops: 'דווח למבצעים',
+  reported_to_ops_recipient: 'למי דווח',
 };

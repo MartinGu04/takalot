@@ -1,12 +1,13 @@
 // Complete active-incidents list: search, filters, sort, pagination, bulk export.
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { IncidentFilterBar, ALL_STATUSES, type FilterState } from '../components/IncidentFilterBar';
 import { IncidentCard } from '../components/incident';
 import { Button, EmptyState, ErrorState, Select, Spinner, useToast } from '../components/ui';
+import { ExportMenu } from '../components/ExportMenu';
 import { useUrlState } from '../lib/useUrlState';
-import type { IncidentStatus, Severity, ReportedToOps, Incident } from '../domain/types';
+import type { IncidentStatus, Severity, Incident } from '../domain/types';
 import type { IncidentSort } from '../data/repository';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
 
@@ -27,7 +28,6 @@ function filtersFromUrl(url: ReturnType<typeof useUrlState>): FilterState {
     systemId: url.get('system'),
     locationId: url.get('location'),
     overdueOnly: url.get('overdue') === '1',
-    reportedToOps: url.get('ops') as ReportedToOps | undefined,
   };
 }
 
@@ -36,7 +36,6 @@ export default function IncidentsPage() {
   const filters = filtersFromUrl(url);
   const sort = (url.get('sort') as IncidentSort) ?? 'priority';
   const page = Number(url.get('page') ?? '1');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const toast = useToast();
   const session = useSession();
 
@@ -57,7 +56,7 @@ export default function IncidentsPage() {
 
   const exportMutation = useAppMutation(
     async (kind: 'xlsx' | 'csv') => {
-      const rows = selected.size > 0 ? (incidents ?? []).filter((i) => selected.has(i.id)) : incidents ?? [];
+      const rows = incidents ?? [];
       const ctx = { profiles: profiles ?? [], systems: systems ?? [], locations: locations ?? [], now };
       await repo().recordExport(session, {
         exportType: kind === 'xlsx' ? 'incidents_xlsx' : 'incidents_csv',
@@ -99,17 +98,7 @@ export default function IncidentsPage() {
       system: next.systemId,
       location: next.locationId,
       overdue: next.overdueOnly ? '1' : undefined,
-      ops: next.reportedToOps,
       page: undefined,
-    });
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
     });
   };
 
@@ -119,7 +108,7 @@ export default function IncidentsPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">תקלות</h1>
+        <h1 className="page-title">תקלות</h1>
         <div className="flex items-center gap-2">
           <Select
             aria-label="מיון"
@@ -134,14 +123,14 @@ export default function IncidentsPage() {
             <option value="last_update">לפי עדכון אחרון</option>
           </Select>
           {canExport && (
-            <>
-              <Button variant="secondary" onClick={() => exportMutation.mutate('xlsx')}>
-                ייצוא XLSX
-              </Button>
-              <Button variant="secondary" onClick={() => exportMutation.mutate('csv')}>
-                ייצוא CSV
-              </Button>
-            </>
+            <ExportMenu
+              disabled={exportMutation.isPending}
+              options={[
+                { kind: 'xlsx', label: 'ייצוא XLSX' },
+                { kind: 'csv', label: 'ייצוא CSV' },
+              ]}
+              onExport={(kind) => exportMutation.mutate(kind as 'xlsx' | 'csv')}
+            />
           )}
         </div>
       </div>
@@ -157,10 +146,7 @@ export default function IncidentsPage() {
         />
       </div>
 
-      <p className="mt-3 text-sm text-neutral-500">
-        {pageItems.total} תקלות תואמות
-        {selected.size > 0 && ` · ${selected.size} נבחרו`}
-      </p>
+      <p className="mt-3 text-sm text-muted">{pageItems.total} תקלות תואמות</p>
 
       {pageItems.rows.length === 0 ? (
         <div className="mt-4">
@@ -169,26 +155,14 @@ export default function IncidentsPage() {
       ) : (
         <div className="mt-3 flex flex-col gap-2">
           {pageItems.rows.map((incident: Incident) => (
-            <div key={incident.id} className="flex items-start gap-2">
-              {canExport && (
-                <input
-                  type="checkbox"
-                  className="mt-4 size-5"
-                  aria-label={`בחירת תקלה ${incident.number} לייצוא`}
-                  checked={selected.has(incident.id)}
-                  onChange={() => toggleSelect(incident.id)}
-                />
-              )}
-              <div className="flex-1">
-                <IncidentCard
-                  incident={incident}
-                  profiles={profiles}
-                  systemName={systemName(incident.systemId)}
-                  locationName={locationName(incident.locationId)}
-                  now={now}
-                />
-              </div>
-            </div>
+            <IncidentCard
+              key={incident.id}
+              incident={incident}
+              profiles={profiles}
+              systemName={systemName(incident.systemId)}
+              locationName={locationName(incident.locationId)}
+              now={now}
+            />
           ))}
         </div>
       )}
@@ -198,7 +172,7 @@ export default function IncidentsPage() {
           <Button variant="secondary" disabled={page <= 1} onClick={() => url.set('page', String(page - 1))}>
             הקודם
           </Button>
-          <span className="text-sm text-neutral-500">
+          <span className="text-sm text-muted">
             עמוד {page} מתוך {Math.ceil(pageItems.total / PAGE_SIZE)}
           </span>
           <Button

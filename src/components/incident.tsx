@@ -5,6 +5,7 @@ import { severityLabels, statusLabels, readinessLabels } from '../domain/labels'
 import { isOverdue, overdueText } from '../domain/overdue';
 import { formatDateTime, formatRelative } from '../lib/time';
 import { Badge } from './ui';
+import { IconChevronLeft } from './icons';
 
 export function SeverityBadge({ severity }: { severity: Severity }) {
   const color = severity === 'critical' ? 'red' : severity === 'high' ? 'orange' : 'neutral';
@@ -45,7 +46,7 @@ export function NextUpdateNote({ incident, now }: { incident: Incident; now: Dat
   if (incident.status === 'closed') return null;
   if (!incident.nextUpdateDue) {
     return (
-      <span className="text-sm text-neutral-500 dark:text-neutral-400">
+      <span className="text-sm text-muted">
         ללא צפי כרגע{incident.noDeadlineReason ? ` — ${incident.noDeadlineReason}` : ''}
       </span>
     );
@@ -58,9 +59,25 @@ export function NextUpdateNote({ incident, now }: { incident: Incident; now: Dat
     );
   }
   return (
-    <span className="text-sm text-neutral-600 dark:text-neutral-300">
+    <span className="text-sm text-secondary">
       עדכון הבא: {formatRelative(incident.nextUpdateDue, now)} ({formatDateTime(incident.nextUpdateDue)})
     </span>
+  );
+}
+
+const severityValueColor: Record<Severity, string> = {
+  critical: 'text-red-700 dark:text-red-400',
+  high: 'text-orange-700 dark:text-orange-400',
+  medium: 'text-text-primary',
+  low: 'text-text-primary',
+};
+
+/** Labeled "label: value" field — value emphasized, label kept secondary. */
+function MetaField({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
+  return (
+    <div className="text-sm text-secondary">
+      {label}: <span className={`font-semibold ${valueClassName ?? 'text-text-primary'}`}>{value}</span>
+    </div>
   );
 }
 
@@ -70,54 +87,40 @@ export function IncidentCard({
   systemName,
   locationName,
   now,
-  action,
 }: {
   incident: Incident;
   profiles: Profile[] | undefined;
   systemName: string;
   locationName: string;
   now: Date;
-  action?: React.ReactNode;
 }) {
   const overdue = isOverdue(incident, now);
+  const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
   return (
-    <div
-      className={`rounded-xl border bg-white p-3 dark:bg-neutral-900 ${
-        overdue
-          ? 'border-red-300 dark:border-red-800'
-          : 'border-neutral-200 dark:border-neutral-700'
+    <Link
+      to={`/incidents/${incident.id}`}
+      className={`surface-interactive group relative block p-3.5 pe-8 ${
+        overdue ? 'border-s-4 border-s-red-500 bg-red-50/40 dark:border-s-red-500 dark:bg-red-950/20' : ''
       }`}
     >
+      <IconChevronLeft className="absolute inset-y-0 end-2.5 my-auto size-4 text-muted opacity-0 transition-[opacity,transform] group-hover:-translate-x-0.5 group-hover:opacity-100" />
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          to={`/incidents/${incident.id}`}
-          className="font-bold text-blue-700 hover:underline dark:text-blue-400"
-        >
-          {incident.number}
-        </Link>
-        <span className="font-medium">{systemName}</span>
-        <span className="text-sm text-neutral-500">{locationName}</span>
-        <span className="ms-auto flex gap-1.5">
-          <SeverityBadge severity={incident.severity} />
-          <StatusBadge status={incident.status} />
-        </span>
+        <span className="text-base font-extrabold text-brand-700 dark:text-brand-400">{incident.number}</span>
+        <span className="font-semibold text-text-primary">{systemName}</span>
+        <span className="text-sm text-muted">{locationName}</span>
       </div>
-      <p className="mt-2 line-clamp-2 text-sm text-neutral-700 dark:text-neutral-300">
-        {incident.operationalImpact}
-      </p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <span className="text-neutral-600 dark:text-neutral-300">
-          גורם מטפל: <strong>{ownerDisplay(incident, profiles)}</strong>
-        </span>
-        <span className="text-neutral-500">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</span>
-        <NextUpdateNote incident={incident} now={now} />
+      <p className="mt-1.5 line-clamp-2 text-sm text-secondary">{incident.operationalImpact}</p>
+      <div className="mt-2.5 grid grid-cols-1 gap-1 sm:grid-cols-3 sm:gap-3">
+        <MetaField label="חומרה" value={severityLabels[incident.severity]} valueClassName={severityValueColor[incident.severity]} />
+        <MetaField label="סטטוס נוכחי" value={statusLabels[incident.status]} />
+        <MetaField label="גורם מטפל" value={hasOwner ? ownerDisplay(incident, profiles) : 'אין'} />
       </div>
+      <p className="mt-2 text-xs text-muted">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</p>
       {incident.followUpRequired && !incident.followUpCompletedAt && (
         <p className="mt-2 text-sm font-medium text-orange-700 dark:text-orange-400">
           נדרשות פעולות המשך — כשירות לא מלאה
         </p>
       )}
-      {action && <div className="mt-3">{action}</div>}
-    </div>
+    </Link>
   );
 }

@@ -24,6 +24,7 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     nextUpdateDue: '2026-07-16T14:00:00.000Z',
     noDeadlineReason: null,
     reportedToOps: 'yes',
+    reportedToOpsRecipient: 'מוקד מבצעים',
     closedAt: null,
     closedBy: null,
     rootCause: null,
