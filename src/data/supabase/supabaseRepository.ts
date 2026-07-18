@@ -1,10 +1,7 @@
 // SupabaseRepository: production-ready data layer wired to the SQL schema in
 // /supabase/migrations. Authorization is enforced by RLS policies and SECURITY
 // DEFINER RPCs in the database — not by this client code.
-//
-// NOTE: this implementation is ready for connection but has NOT been executed
-// against a live Supabase project in this build (no credentials available).
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AppNotification,
   AuditLog,
@@ -96,8 +93,10 @@ export class SupabaseRepository implements Repository {
   readonly mode = 'supabase' as const;
   private client: SupabaseClient;
 
-  constructor(url: string, anonKey: string) {
-    this.client = createClient(url, anonKey);
+  /** Takes the SHARED client (src/data/supabase/client.ts) so every request
+   *  carries the signed-in user's JWT -- RLS and the RPCs authorize from it. */
+  constructor(client: SupabaseClient) {
+    this.client = client;
   }
 
   private async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
