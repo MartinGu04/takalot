@@ -163,6 +163,20 @@ describe('supabase mode: profile check failure', () => {
   });
 });
 
+describe('supabase mode: admin users page', () => {
+  it('offers no create-user action and explains manual provisioning instead', async () => {
+    state.session = { user: { id: 'auth-admin-1', email: 'admin@example.com' } };
+    state.getProfile.mockResolvedValue({ ...ACTIVE_PROFILE, id: 'auth-admin-1', role: 'system_admin' });
+    window.history.pushState({}, '', '/admin');
+
+    render(<App />);
+    // The manual-provisioning explanation replaces the demo-only create form.
+    expect(await screen.findByTestId('user-provisioning-note')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'הוספת משתמש' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/שם מלא/)).not.toBeInTheDocument();
+  });
+});
+
 describe('supabase mode: logout from the app', () => {
   it('clears back to the login screen', async () => {
     const user = userEvent.setup();

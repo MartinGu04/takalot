@@ -1,6 +1,7 @@
 // System administrator screen: users, systems/positions, locations, audit log.
 import { useState } from 'react';
 import { useSession } from '../auth/AuthContext';
+import { isDemoMode } from '../data';
 import { useProfiles, useSystems, useLocations, useAuditLogs, useAppMutation, repo } from '../data/hooks';
 import { roleLabels } from '../domain/labels';
 import type { Role } from '../domain/types';
@@ -11,6 +12,7 @@ const ROLES: Role[] = ['system_admin', 'professional_manager', 'shift_supervisor
 
 function UsersTab() {
   const session = useSession();
+  const demo = isDemoMode();
   const { data: profiles, isLoading } = useProfiles();
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState<Role>('technician');
@@ -33,26 +35,44 @@ function UsersTab() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-end gap-2 surface p-3">
-        <Field label="שם מלא (משתמש הדגמה)">
-          {(a) => <Input {...a} value={newName} onChange={(e) => setNewName(e.target.value)} />}
-        </Field>
-        <Field label="תפקיד">
-          {(a) => (
-            <Select {...a} value={newRole} onChange={(e) => setNewRole(e.target.value as Role)}>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{roleLabels[r]}</option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Button
-          disabled={!newName.trim() || createUser.isPending}
-          onClick={() => createUser.mutate({ name: newName.trim(), role: newRole })}
+      {demo ? (
+        // Demo-only fictional-user creation. In supabase mode this action is
+        // absent entirely: it would only write a disconnected placeholder
+        // row, which neither creates nor authorizes a real Google user, so
+        // presenting it as "user creation" there would be misleading.
+        <div className="mb-4 flex flex-wrap items-end gap-2 surface p-3">
+          <Field label="שם מלא (משתמש הדגמה)">
+            {(a) => <Input {...a} value={newName} onChange={(e) => setNewName(e.target.value)} />}
+          </Field>
+          <Field label="תפקיד">
+            {(a) => (
+              <Select {...a} value={newRole} onChange={(e) => setNewRole(e.target.value as Role)}>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>{roleLabels[r]}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Button
+            disabled={!newName.trim() || createUser.isPending}
+            onClick={() => createUser.mutate({ name: newName.trim(), role: newRole })}
+          >
+            הוספת משתמש
+          </Button>
+        </div>
+      ) : (
+        <div
+          className="mb-4 surface p-3 text-sm text-secondary"
+          data-testid="user-provisioning-note"
         >
-          הוספת משתמש
-        </Button>
-      </div>
+          <p className="font-medium text-text-primary">הוספת משתמש חדש</p>
+          <p className="mt-1">
+            משתמש חדש מתחבר תחילה עם Google (ויקבל מסך "אין הרשאת גישה"), ולאחר מכן מנהל המערכת
+            מסדיר עבורו פרופיל פעיל דרך ממשק הניהול של Supabase. לא ניתן ליצור משתמש מורשה מתוך
+            מסך זה. משתמשים שכבר הוסדרו מנוהלים כאן — תפקיד והפעלה/השבתה.
+          </p>
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         {(profiles ?? []).map((p) => (
           <div key={p.id} className="flex flex-wrap items-center gap-2 surface p-3">
