@@ -14,7 +14,13 @@
 -- (Reuses role_ceiling_allows from 0008 -- the SAME ceiling table already
 -- governing pending-personnel creation now governs linked-profile
 -- management too, so there is exactly one ceiling definition in the
--- database.) On top of the ceiling:
+-- database. NOTE, reported but deliberately NOT changed here: this reused
+-- ceiling makes shift_supervisor able to manage ANOTHER shift_supervisor,
+-- professional_manager able to manage ANOTHER professional_manager, and
+-- excludes 'viewer' entirely from both non-admin ceilings -- see the
+-- verification report for a recommended future split between "roles a
+-- manager may assign to a new person" and "existing roles a manager may
+-- edit/deactivate".) On top of the ceiling:
 --
 --   * no caller may change their own role or deactivate themselves --
 --     unconditionally, even system_admin;
@@ -25,38 +31,98 @@
 --     must always be at least one way back into administration;
 --   * every change is audited, exactly as before.
 --
--- On the self-block alone, a single request can never legally reduce the
--- active-admin count to zero: acting on someone else requires the caller
--- to themselves be an active system_admin, so target+caller are already
--- two distinct active-admin rows whenever the guard could matter. The
--- real exposure is TWO CONCURRENT requests deactivating/demoting two
--- DIFFERENT admins at once (A deactivates B while, simultaneously, B
--- deactivates A) -- both could observe count=2 before either commits and
--- both proceed, leaving zero. The count is therefore taken under
--- `for update` on the matching rows first, so the second transaction
--- blocks until the first commits and then re-observes the now-smaller
--- count. (Verified locally with two concurrent sessions -- see the
--- verification report.)
+-- ===== Concurrency (revised) =====
+-- The first version of this migration read the target profile with a
+-- plain (unlocked) SELECT before checking the ceiling and writing the
+-- change. That is a genuine TOCTOU: nothing stopped a second, concurrent
+-- admin_set_user_role/admin_set_user_active call from changing the SAME
+-- target's role between this transaction's read and its write, so the
+-- ceiling check and the last-admin guard could both be evaluated against
+-- data that was no longer true by the time the UPDATE ran -- e.g. a
+-- shift_supervisor's ceiling check could pass while the target was still
+-- a technician, and then, after a concurrent system_admin promotion the
+-- shift_supervisor's transaction never re-observed, silently overwrite
+-- that promotion with its own (in-ceiling-at-read-time) change. Locking
+-- only the "active system_admin" row set (the first version's approach,
+-- for the last-admin guard alone) does not close this: it does nothing
+-- for non-admin targets, and for admin targets it introduces its OWN
+-- hazard -- two administrators concurrently managing EACH OTHER each lock
+-- their own target row first, then both try to additionally lock the
+-- other's row as part of "all active admins", waiting on each other in
+-- opposite order: a deadlock.
+--
+-- Both functions now acquire a single, always-identical advisory
+-- transaction lock (pg_advisory_xact_lock) BEFORE reading the target row
+-- at all, and hold it until commit. This closes the TOCTOU completely --
+-- no second call to either function can run any part of its body while
+-- this transaction holds the lock, so the target row this transaction
+-- reads cannot change out from under it for the rest of the transaction
+-- -- and it is structurally deadlock-free: there is exactly one lock
+-- resource in this class, acquired before any row is touched, so two
+-- concurrent callers can only ever be in "acquired" or "waiting for the
+-- single lock" states, never each holding something the other needs
+-- (the precondition for a deadlock). The tradeoff is that ALL personnel
+-- role/activation writes serialize globally rather than only when their
+-- targets conflict; this operation is low-frequency (administrator
+-- action, not a request-path hot path), so that tradeoff is deliberate.
+-- Both functions share the SAME lock key so a concurrent
+-- admin_set_user_role and admin_set_user_active call also serialize
+-- against each other, since the last-admin invariant spans both.
+--
+-- A SECOND, easy-to-miss instance of the same staleness class: the
+-- caller's OWN role/active status must also be read AFTER acquiring the
+-- lock, not before. A naive `v_actor_role := my_role()` in the DECLARE
+-- section runs at function entry -- before this transaction even
+-- attempts the lock -- so a session queued behind another one can be
+-- unblocked holding a role snapshot from before it waited, including one
+-- that no longer reflects reality (e.g. the very transaction it was
+-- queued behind just deactivated IT). Concretely: with exactly two
+-- active admins X and Y, X deactivates Y while Y concurrently
+-- deactivates X -- if X's role were captured before the lock, X's
+-- transaction (unblocked second, after Y already deactivated X) would
+-- still believe it was an authorized active admin and complete the
+-- deactivation of Y, leaving ZERO active admins. Both functions now
+-- resolve v_actor_role via an explicit call AFTER the lock is held, so a
+-- caller deactivated by the transaction it just waited behind correctly
+-- loses authorization for its own still-pending call.
+-- (Verified locally with real two- and three-session concurrent runs,
+-- including the exactly-two-active-admins mutual-deactivation case that
+-- exposed this second bug -- see the verification report.)
 --
 -- Grants are unchanged: both functions were already granted to
 -- authenticated (0003, restated in 0007) and CREATE OR REPLACE preserves
 -- existing grants for an unchanged signature, so no grant statements are
 -- required here.
 --
--- 0001-0009 are untouched. This is an ADDITIVE migration.
+-- 0001-0009 are untouched. This is an ADDITIVE migration. This file has
+-- never been applied to any hosted database, so it is revised IN PLACE
+-- rather than superseded by a new migration.
 
 create or replace function public.admin_set_user_role(p_user_id uuid, p_role public.app_role) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_actor_role public.app_role := public.my_role();
+  v_actor_role public.app_role;
   v_target public.profiles;
   v_active_admins int;
 begin
-  if v_actor_role is null then
+  if auth.uid() is null then
     raise exception 'permission: אין הרשאה לנהל אנשי צוות';
   end if;
   if p_user_id = auth.uid() then
     raise exception 'permission: לא ניתן לשנות את התפקיד של עצמך';
+  end if;
+
+  -- Serialize every personnel role/activation write on one lock, BEFORE
+  -- reading anything -- see the header for why this closes the TOCTOU and
+  -- cannot deadlock.
+  perform pg_advisory_xact_lock(hashtext('personnel_management_write')::bigint);
+
+  -- Resolve the CALLER's own authorization only after the lock is held
+  -- (see header) -- not in DECLARE, which would run before this
+  -- transaction even attempts the lock.
+  v_actor_role := public.my_role();
+  if v_actor_role is null then
+    raise exception 'permission: אין הרשאה לנהל אנשי צוות';
   end if;
 
   select * into v_target from public.profiles where id = p_user_id;
@@ -72,11 +138,11 @@ begin
     raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
   end if;
 
-  -- The last ACTIVE system_admin may not be demoted by anyone. Lock the
-  -- active-admin row set BEFORE counting (see header) so a concurrent
-  -- demotion/deactivation of a different admin cannot race past this check.
+  -- The last ACTIVE system_admin may not be demoted by anyone. Safe to
+  -- count without an additional lock: the advisory lock above already
+  -- guarantees no other call in this function class can be concurrently
+  -- in flight.
   if v_target.role = 'system_admin' and v_target.active and p_role <> 'system_admin' then
-    perform 1 from public.profiles where role = 'system_admin' and active for update;
     select count(*) into v_active_admins from public.profiles where role = 'system_admin' and active;
     if v_active_admins <= 1 then
       raise exception 'validation: לא ניתן להוריד בדרגה את מנהל המערכת הפעיל האחרון';
@@ -92,15 +158,27 @@ $$;
 create or replace function public.admin_set_user_active(p_user_id uuid, p_active boolean) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
-  v_actor_role public.app_role := public.my_role();
+  v_actor_role public.app_role;
   v_target public.profiles;
   v_active_admins int;
 begin
-  if v_actor_role is null then
+  if auth.uid() is null then
     raise exception 'permission: אין הרשאה לנהל אנשי צוות';
   end if;
   if p_user_id = auth.uid() then
     raise exception 'permission: לא ניתן לשנות את הסטטוס של עצמך';
+  end if;
+
+  -- Same lock, same reasoning as admin_set_user_role -- and the SAME key,
+  -- so a concurrent role change and activation change on related targets
+  -- also serialize against each other.
+  perform pg_advisory_xact_lock(hashtext('personnel_management_write')::bigint);
+
+  -- Resolve the CALLER's own authorization only after the lock is held --
+  -- see admin_set_user_role and the header for why.
+  v_actor_role := public.my_role();
+  if v_actor_role is null then
+    raise exception 'permission: אין הרשאה לנהל אנשי צוות';
   end if;
 
   select * into v_target from public.profiles where id = p_user_id;
@@ -112,10 +190,8 @@ begin
     raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
   end if;
 
-  -- The last ACTIVE system_admin may not be deactivated by anyone. Same
-  -- lock-before-count pattern as above, for the same concurrent-race reason.
+  -- The last ACTIVE system_admin may not be deactivated by anyone.
   if not p_active and v_target.role = 'system_admin' and v_target.active then
-    perform 1 from public.profiles where role = 'system_admin' and active for update;
     select count(*) into v_active_admins from public.profiles where role = 'system_admin' and active;
     if v_active_admins <= 1 then
       raise exception 'validation: לא ניתן להשבית את מנהל המערכת הפעיל האחרון';
