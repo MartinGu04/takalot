@@ -31,12 +31,21 @@
 --     attempts serialize; the loser re-observes a consumed one-shot (or an
 --     existing active admin) and fails closed. The profiles primary key is
 --     the final backstop. One transaction end to end.
---   * Permanently one-shot: success stamps consumed_at/consumed_by. Once
---     an active system_admin exists -- or the one-shot is consumed --
---     bootstrap fails closed forever. This is NOT a general
---     self-registration path and cannot assign any role except
---     system_admin (no role input exists); every later user goes through
---     pending_personnel.
+--   * Permanently one-shot, with the closure MODELLED EXPLICITLY
+--     (closed_reason): a successful bootstrap stamps
+--     consumed_at/consumed_by/closed_reason='bootstrap_completed'; and if
+--     an ACTIVE system_admin is ever OBSERVED while the configuration is
+--     still open (an administrator created through another legitimate or
+--     manual path), the RPC permanently closes the configuration right
+--     then -- under the same FOR UPDATE lock -- with
+--     closed_reason='admin_already_exists' and consumed_by NULL (a system
+--     closure, never attributed to the arbitrary caller who happened to
+--     trigger the observation). Either way, once any active system_admin
+--     has existed while a configuration was present, that configuration
+--     can never become usable later -- even if every administrator is
+--     subsequently deactivated. This is NOT a general self-registration
+--     path and cannot assign any role except system_admin (no role input
+--     exists); every later user goes through pending_personnel.
 --   * Auditing without leakage: while the one-shot is open, rejected
 --     attempts are recorded as admin_bootstrap_rejected with a reason
 --     CODE only (never the configured email); success records
@@ -58,7 +67,18 @@ create table public.bootstrap_admin_config (
   email text not null check (length(trim(email)) between 3 and 320 and position('@' in trim(email)) > 1),
   created_at timestamptz not null default now(),
   consumed_at timestamptz,
-  consumed_by uuid references auth.users (id)
+  consumed_by uuid references auth.users (id),
+  -- Why the one-shot closed. 'bootstrap_completed' = the first admin was
+  -- created through this flow (consumed_by = that identity);
+  -- 'admin_already_exists' = an active system_admin from another path was
+  -- observed while the config was open (a SYSTEM closure, consumed_by
+  -- null). A closed row never reopens.
+  closed_reason text,
+  constraint bootstrap_closure_consistent check (
+    (consumed_at is null and closed_reason is null and consumed_by is null)
+    or (consumed_at is not null and closed_reason = 'bootstrap_completed' and consumed_by is not null)
+    or (consumed_at is not null and closed_reason = 'admin_already_exists' and consumed_by is null)
+  )
 );
 
 -- Clients can never read (or write) the configured email: RLS enabled with
@@ -106,9 +126,21 @@ begin
     return null;
   end if;
 
-  -- One first administrator, ever: an existing ACTIVE system_admin closes
-  -- the window even if the one-shot was somehow not stamped.
+  -- One first administrator, ever: observing an existing ACTIVE
+  -- system_admin while the configuration is still open PERMANENTLY closes
+  -- it, right here, under the FOR UPDATE lock already held -- so a later
+  -- deactivation of every administrator can never resurrect the window.
+  -- This is a SYSTEM closure: consumed_by stays null (the arbitrary
+  -- caller who happened to trigger the observation is not its author),
+  -- and the audit entry carries only the reason code -- no email.
   if exists (select 1 from public.profiles p where p.role = 'system_admin' and p.active) then
+    update public.bootstrap_admin_config
+      set consumed_at = now(), consumed_by = null, closed_reason = 'admin_already_exists'
+      where id;
+    insert into public.audit_logs (actor_id, action, entity_type, entity_id, after_data, correlation_id)
+    values (null, 'admin_bootstrap_closed', 'bootstrap_admin_config', 'config',
+            jsonb_build_object('reason', 'admin_already_exists'),
+            substring(gen_random_uuid()::text, 1, 8));
     return null;
   end if;
 
@@ -168,7 +200,7 @@ begin
   -- Stamp the one-shot inside the same transaction: from this commit on,
   -- bootstrap permanently fails closed.
   update public.bootstrap_admin_config
-    set consumed_at = now(), consumed_by = v_uid
+    set consumed_at = now(), consumed_by = v_uid, closed_reason = 'bootstrap_completed'
     where id;
 
   perform public.write_audit('admin_bootstrap_completed', 'profiles', v_uid::text, null,
