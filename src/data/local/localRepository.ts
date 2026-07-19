@@ -13,6 +13,7 @@ import type {
   IncidentUpdate,
   LocationRecord,
   PendingPersonnel,
+  PersonnelEntry,
   Profile,
   Role,
   SystemRecord,
@@ -405,11 +406,77 @@ export class LocalDemoRepository implements Repository {
     return actor;
   }
 
+  /** Demo email registry: a linked profile's Google email is known through
+   *  the claimed entry that created it (in supabase mode auth.users is the
+   *  authority, read server-side only). */
+  private linkedEmailOf(profileId: string): string | null {
+    const claimed = this.pendingRows().find((r) => r.status === 'claimed' && r.claimedBy === profileId);
+    return claimed ? claimed.email : null;
+  }
+
+  /** Mirrors 0008's lazy expiry retirement: an expired pending row for this
+   *  email is atomically retired (status 'expired' + audit) so it never
+   *  permanently blocks a replacement entry. */
+  private retireExpiredPending(email: string, actorId: string, excludeId?: string): void {
+    const nowIso = this.now().toISOString();
+    const corpse = this.pendingRows().find(
+      (r) =>
+        r.email === email &&
+        r.id !== excludeId &&
+        r.status === 'pending' &&
+        r.expiresAt !== null &&
+        r.expiresAt <= nowIso,
+    );
+    if (!corpse) return;
+    corpse.status = 'expired';
+    corpse.updatedAt = nowIso;
+    this.audit(actorId, 'personnel_pending_expired', 'pending_personnel', corpse.id, {
+      before: JSON.stringify({ email: corpse.email }),
+    });
+  }
+
+  private validateExpiresAt(expiresAt: string | null | undefined): string | null {
+    if (!expiresAt) return null;
+    if (expiresAt <= this.now().toISOString()) {
+      throw new AppError('VALIDATION', 'מועד התפוגה חייב להיות עתידי.');
+    }
+    return expiresAt;
+  }
+
   async listPendingPersonnel(session: Session): Promise<PendingPersonnel[]> {
     this.requirePersonnelManager(session);
     return this.pendingRows()
       .map((r) => ({ ...r }))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listPersonnel(session: Session): Promise<PersonnelEntry[]> {
+    // Mirrors list_personnel(): manager roles only; unified pending+linked
+    // view; emails resolved here, never by the caller; no UUID entry needed.
+    this.requirePersonnelManager(session);
+    const nowIso = this.now().toISOString();
+    const pending: PersonnelEntry[] = this.pendingRows()
+      .filter((r) => r.status === 'pending' && (!r.expiresAt || r.expiresAt > nowIso))
+      .map((r) => ({
+        kind: 'pending' as const,
+        id: r.id,
+        fullName: r.fullName,
+        email: r.email,
+        role: r.role,
+        state: 'pending' as const,
+        createdAt: r.createdAt,
+      }));
+    const linked: PersonnelEntry[] = this.db.profiles.map((p) => ({
+      kind: 'linked' as const,
+      id: p.id,
+      fullName: p.fullName,
+      email: this.linkedEmailOf(p.id),
+      role: p.role,
+      state: p.active ? ('active' as const) : ('inactive' as const),
+      createdAt: p.createdAt,
+    }));
+    const byCreatedDesc = (a: PersonnelEntry, b: PersonnelEntry) => b.createdAt.localeCompare(a.createdAt);
+    return [...linked.sort(byCreatedDesc), ...pending.sort(byCreatedDesc)];
   }
 
   async createPendingPersonnel(session: Session, rawInput: PendingPersonnelInput): Promise<PendingPersonnel> {
@@ -418,6 +485,21 @@ export class LocalDemoRepository implements Repository {
     if (!allowedPendingRoles(actor.role).includes(input.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה להוסיף רישום כוח אדם בתפקיד המבוקש.');
     }
+    const expiresAt = this.validateExpiresAt(input.expiresAt);
+    // An email already linked to an existing profile -- active OR inactive
+    // -- must not get a new pending identity: a pending entry must never
+    // silently reactivate or replace a deactivated profile.
+    if (
+      this.pendingRows().some(
+        (r) => r.status === 'claimed' && r.email === input.email && r.claimedBy !== null
+          && this.db.profiles.some((p) => p.id === r.claimedBy),
+      )
+    ) {
+      throw new AppError('VALIDATION', 'לכתובת דוא״ל זו כבר קיים משתמש מקושר במערכת.');
+    }
+    // Lazy retirement of an EXPIRED pending row occupying the claimable
+    // slot -- an expired entry must never permanently block re-inviting.
+    this.retireExpiredPending(input.email, actor.id);
     if (this.pendingRows().some((r) => r.status === 'pending' && r.email === input.email)) {
       throw new AppError('VALIDATION', 'כבר קיים רישום ממתין לכתובת דוא״ל זו.');
     }
@@ -431,7 +513,7 @@ export class LocalDemoRepository implements Repository {
       createdBy: actor.id,
       createdAt: ts,
       updatedAt: ts,
-      expiresAt: null,
+      expiresAt,
       claimedBy: null,
       claimedAt: null,
       cancelledBy: null,
@@ -461,6 +543,19 @@ export class LocalDemoRepository implements Repository {
     if (!ceiling.includes(row.role) || !ceiling.includes(input.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לערוך רישום זה.');
     }
+    const expiresAt = this.validateExpiresAt(input.expiresAt);
+    if (
+      input.email !== row.email &&
+      this.pendingRows().some(
+        (r) => r.status === 'claimed' && r.email === input.email && r.claimedBy !== null
+          && this.db.profiles.some((p) => p.id === r.claimedBy),
+      )
+    ) {
+      throw new AppError('VALIDATION', 'לכתובת דוא״ל זו כבר קיים משתמש מקושר במערכת.');
+    }
+    // Same lazy retirement as create: moving onto an email whose previous
+    // pending entry expired must not be blocked by that corpse.
+    this.retireExpiredPending(input.email, actor.id, id);
     if (
       input.email !== row.email &&
       this.pendingRows().some((r) => r.id !== id && r.status === 'pending' && r.email === input.email)
@@ -471,6 +566,7 @@ export class LocalDemoRepository implements Repository {
     row.fullName = input.fullName.trim();
     row.email = input.email;
     row.role = input.role;
+    row.expiresAt = expiresAt;
     row.updatedAt = this.now().toISOString();
     this.audit(actor.id, 'personnel_pending_updated', 'pending_personnel', row.id, {
       before: JSON.stringify(before),
@@ -507,14 +603,30 @@ export class LocalDemoRepository implements Repository {
 
   /**
    * Demo/test stand-in for the server-side claim: the `identity` argument
-   * plays the role the backend derives itself from auth.uid()/auth.users
-   * (in supabase mode the client can supply nothing -- the RPC takes no
-   * arguments). Mirrors 0008's rules: normalization, pending-only,
-   * unexpired-only, single-claim, role from the entry, audit record.
+   * plays the role the backend derives itself from auth.uid()/auth.users/
+   * auth.identities (in supabase mode the client can supply nothing -- the
+   * RPC takes no arguments). Mirrors 0008's rules: normalization,
+   * pending-only, unexpired-only, single-claim, role from the entry, audit
+   * record, plus the identity preconditions -- a CONFIRMED email on a
+   * GOOGLE provider identity -- and the inactive-profile fail-close: a
+   * deactivated existing profile is never returned as authorization and is
+   * never reactivated or replaced by a pending entry.
    */
-  claimPendingForIdentity(identity: { authUserId: string; email: string }): Profile | null {
+  claimPendingForIdentity(identity: {
+    authUserId: string;
+    email: string;
+    /** Defaults mirror the healthy path; tests override to prove fail-close. */
+    provider?: string;
+    emailConfirmed?: boolean;
+  }): Profile | null {
     const existing = this.db.profiles.find((p) => p.id === identity.authUserId);
-    if (existing) return { ...existing };
+    if (existing) {
+      // Deactivation is authorization revocation: fail closed, and leave
+      // both the profile and any pending entry untouched.
+      return existing.active ? { ...existing } : null;
+    }
+    if ((identity.provider ?? 'google') !== 'google') return null;
+    if (!(identity.emailConfirmed ?? true)) return null;
 
     const email = identity.email.trim().toLowerCase();
     const nowIso = this.now().toISOString();

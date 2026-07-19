@@ -13,6 +13,7 @@ import type {
   IncidentUpdate,
   LocationRecord,
   PendingPersonnel,
+  PersonnelEntry,
   Profile,
   Role,
   SystemRecord,
@@ -255,6 +256,22 @@ export class SupabaseRepository implements Repository {
       active: r.active as boolean,
       createdAt: r.created_at as string,
     };
+  }
+
+  async listPersonnel(_s: Session): Promise<PersonnelEntry[]> {
+    // SECURITY DEFINER RPC: resolves linked profiles' Google emails
+    // server-side (the client has no access to auth.users) and rejects
+    // every caller below the manager roles.
+    const rows = await this.rpc<Record<string, unknown>[]>('list_personnel', {});
+    return (rows ?? []).map((r) => ({
+      kind: r.kind as PersonnelEntry['kind'],
+      id: r.id as string,
+      fullName: r.full_name as string,
+      email: (r.email as string | null) ?? null,
+      role: r.role as Role,
+      state: r.state as PersonnelEntry['state'],
+      createdAt: r.created_at as string,
+    }));
   }
 
   async listIncidents(

@@ -50,7 +50,7 @@ export interface Profile {
   createdAt: string; // ISO UTC
 }
 
-export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled';
+export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled' | 'expired';
 
 /** A pre-provisioned personnel entry: created by an authorized role BEFORE
  *  the person's first Google sign-in, and claimed automatically (server-
@@ -70,6 +70,22 @@ export interface PendingPersonnel {
   claimedAt: string | null;
   cancelledBy: string | null;
   cancelledAt: string | null;
+}
+
+/** One row of the unified, management-safe personnel listing: a live
+ *  pending entry or an already-linked profile. The backend (list_personnel)
+ *  exposes exactly these fields -- never raw auth.users data. `id` targets
+ *  management RPCs; it is not for display and is never typed by a user. */
+export interface PersonnelEntry {
+  kind: 'pending' | 'linked';
+  id: string;
+  fullName: string;
+  /** Normalized Google email; null for a linked profile with no auth identity. */
+  email: string | null;
+  role: Role;
+  /** 'pending' for pending entries; 'active' | 'inactive' for linked profiles. */
+  state: 'pending' | 'active' | 'inactive';
+  createdAt: string;
 }
 
 export interface SystemRecord {

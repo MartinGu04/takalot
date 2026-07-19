@@ -154,13 +154,21 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       if (!profile) {
         // First sign-in of a PRE-PROVISIONED person: attempt the secure
         // claim. The call carries no identity/email/role -- the backend
-        // derives auth.uid() itself and matches the VERIFIED email from
-        // auth.users against a live pending_personnel entry, creating the
-        // profile with the preassigned role atomically. No match => null,
-        // and the user stays unauthorized. Nothing is auto-created from
-        // the Google identity alone.
-        profile = await getRepository().claimPendingProfile();
+        // derives auth.uid() itself and matches the VERIFIED, CONFIRMED
+        // Google email server-side against a live pending_personnel entry,
+        // creating the profile with the preassigned role atomically. No
+        // match => null, and the user stays unauthorized. Nothing is
+        // auto-created from the Google identity alone.
+        const claimed = await getRepository().claimPendingProfile();
         if (seq !== checkSeq.current) return;
+        if (claimed) {
+          // The claim's return value is NOT trusted as authorization by
+          // itself: re-confirm through the exact same path every session
+          // uses -- the RLS-guarded profiles read. Only an active profile
+          // visible there authorizes access.
+          profile = await getRepository().getProfile(authUserId);
+          if (seq !== checkSeq.current) return;
+        }
       }
       if (profile && profile.active) {
         setUser(profile);

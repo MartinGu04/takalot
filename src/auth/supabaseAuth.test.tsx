@@ -123,10 +123,13 @@ describe('supabase mode: session restoration', () => {
 });
 
 describe('supabase mode: pre-provisioned first sign-in', () => {
-  it('claims the pending entry automatically (no client-supplied identity) and enters the app', async () => {
+  it('claims the pending entry automatically (no client-supplied identity), re-confirms through the profile read, and enters the app', async () => {
+    const claimedProfile = { ...ACTIVE_PROFILE, id: 'auth-new-1', role: 'technician' };
     state.session = { user: { id: 'auth-new-1', email: 'new.person@example.com' } };
-    state.getProfile.mockResolvedValue(null); // no profile yet
-    state.claimPending.mockResolvedValue({ ...ACTIVE_PROFILE, id: 'auth-new-1', role: 'technician' });
+    // First read: no profile yet. After the claim, the SAME authorization
+    // path must confirm the now-existing active profile.
+    state.getProfile.mockResolvedValueOnce(null).mockResolvedValue(claimedProfile);
+    state.claimPending.mockResolvedValue(claimedProfile);
 
     render(<App />);
     await screen.findByRole('heading', { name: 'מצב נוכחי' });
@@ -134,6 +137,10 @@ describe('supabase mode: pre-provisioned first sign-in', () => {
     // verified identity itself; the client has nothing to say about it.
     expect(state.claimPending).toHaveBeenCalledTimes(1);
     expect(state.claimPending).toHaveBeenCalledWith();
+    // The gate re-confirmed via getProfile instead of trusting the claim's
+    // return value.
+    expect(state.getProfile).toHaveBeenCalledTimes(2);
+    expect(state.getProfile).toHaveBeenLastCalledWith('auth-new-1');
   });
 
   it('stays unauthorized when the claim finds no matching entry', async () => {
@@ -144,6 +151,36 @@ describe('supabase mode: pre-provisioned first sign-in', () => {
     render(<App />);
     expect(await screen.findByTestId('unauthorized-screen')).toBeInTheDocument();
     expect(state.claimPending).toHaveBeenCalledTimes(1);
+    // No successful claim => no second profile read; one failed check is
+    // enough to stay locked out.
+    expect(state.getProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT trust the claim return value: a claim "success" that the profile read cannot confirm stays unauthorized', async () => {
+    state.session = { user: { id: 'auth-ghost', email: 'ghost@example.com' } };
+    // A buggy/compromised data layer answers the claim with a profile
+    // object, but the RLS-guarded profile read still returns nothing --
+    // the gate must side with the profile read.
+    state.getProfile.mockResolvedValue(null);
+    state.claimPending.mockResolvedValue({ ...ACTIVE_PROFILE, id: 'auth-ghost' });
+
+    render(<App />);
+    expect(await screen.findByTestId('unauthorized-screen')).toBeInTheDocument();
+    expect(state.getProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it('an INACTIVE existing profile cannot regain access through the claim path', async () => {
+    state.session = { user: { id: 'auth-off-1', email: 'off.person@example.com' } };
+    // The backend fails the claim closed for a deactivated profile (null),
+    // and the profile read confirms nothing active exists.
+    state.getProfile.mockResolvedValue(null);
+    state.claimPending.mockResolvedValue(null);
+
+    render(<App />);
+    expect(await screen.findByTestId('unauthorized-screen')).toBeInTheDocument();
+    // Even if a stale layer returned the inactive profile itself, the
+    // active=false check keeps the gate closed -- proven separately below
+    // in "treats an INACTIVE profile as unauthorized too".
   });
 });
 

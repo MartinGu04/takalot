@@ -245,6 +245,10 @@ export const pendingPersonnelInputSchema = z.object({
     .max(320, 'כתובת הדוא״ל אינה תקינה')
     .refine((v) => v.indexOf('@') > 0, 'כתובת הדוא״ל אינה תקינה'),
   role: roleSchema,
+  /** Optional expiry (ISO timestamp). Must be in the future at write time --
+   *  the repository/database enforce that; expired entries are not
+   *  claimable and are lazily retired when a replacement is created. */
+  expiresAt: z.string().datetime({ offset: true, message: 'מועד התפוגה אינו תקין' }).nullish(),
 });
 
 export type PendingPersonnelInput = z.infer<typeof pendingPersonnelInputSchema>;

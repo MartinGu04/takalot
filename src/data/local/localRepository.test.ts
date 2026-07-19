@@ -815,6 +815,129 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
     });
   });
 
+  describe('inactive existing profiles (deactivation is revocation)', () => {
+    it('an inactive existing profile is never returned as authorization by the claim path', async () => {
+      await repo.createPendingPersonnel(supervisor1, input({ email: 'come.back@example.com' }));
+      // Deactivate an existing linked user, then have that same identity try
+      // to re-enter through the claim with a matching pending entry waiting.
+      await repo.setUserActive(admin, DEMO_USERS.tech1, false);
+      const result = repo.claimPendingForIdentity({ authUserId: DEMO_USERS.tech1, email: 'come.back@example.com' });
+      expect(result).toBeNull();
+      // The pending entry was NOT consumed and the profile was NOT
+      // reactivated or replaced -- nothing about the deactivated account
+      // changed.
+      const rows = await repo.listPendingPersonnel(supervisor1);
+      expect(rows.find((r) => r.email === 'come.back@example.com')?.status).toBe('pending');
+      const profile = await repo.getProfile(DEMO_USERS.tech1);
+      expect(profile).toMatchObject({ active: false });
+    });
+
+    it('a pending entry cannot even be created for an email already linked to a profile, active or inactive', async () => {
+      await repo.createPendingPersonnel(supervisor1, input({ email: 'linked@example.com' }));
+      const claimed = repo.claimPendingForIdentity({ authUserId: 'auth-linked-1', email: 'linked@example.com' });
+      expect(claimed).not.toBeNull();
+      // While active: rejected.
+      await expect(
+        repo.createPendingPersonnel(supervisor1, input({ email: 'linked@example.com' })),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+      // After deactivation: STILL rejected -- a new pending entry must not
+      // silently reactivate or replace the deactivated profile.
+      await repo.setUserActive(admin, 'auth-linked-1', false);
+      await expect(
+        repo.createPendingPersonnel(supervisor1, input({ email: 'linked@example.com' })),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+  });
+
+  describe('verified Google identity preconditions (mirrors the server-side auth.users/auth.identities checks)', () => {
+    it('a non-Google identity cannot claim, even with the exact matching email', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      expect(
+        repo.claimPendingForIdentity({ authUserId: 'auth-gh', email: 'new.person@example.com', provider: 'github' }),
+      ).toBeNull();
+      const rows = await repo.listPendingPersonnel(supervisor1);
+      expect(rows.find((r) => r.email === 'new.person@example.com')?.status).toBe('pending');
+    });
+
+    it('an unconfirmed email cannot claim', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      expect(
+        repo.claimPendingForIdentity({
+          authUserId: 'auth-uc',
+          email: 'new.person@example.com',
+          emailConfirmed: false,
+        }),
+      ).toBeNull();
+    });
+  });
+
+  describe('expiry lifecycle', () => {
+    it('rejects a non-future expiresAt at creation', async () => {
+      const past = new Date(FIXED_NOW.getTime() - 1000).toISOString();
+      await expect(
+        repo.createPendingPersonnel(supervisor1, { ...input(), expiresAt: past }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('an expired entry cannot be claimed, but does not permanently block a valid replacement (lazy retirement)', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, {
+        ...input(),
+        expiresAt: new Date(FIXED_NOW.getTime() + 60_000).toISOString(),
+      });
+      // Let the expiry pass (the demo clock is fixed, so move the stored
+      // expiry into the past -- exactly what elapsed time would produce).
+      const raw = (repo as unknown as { db: { pendingPersonnel: { id: string; expiresAt: string | null }[] } }).db;
+      raw.pendingPersonnel.find((r) => r.id === entry.id)!.expiresAt = new Date(
+        FIXED_NOW.getTime() - 1000,
+      ).toISOString();
+
+      // Not claimable.
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-exp', email: 'new.person@example.com' })).toBeNull();
+
+      // A replacement for the same email succeeds: the expired corpse is
+      // retired to status 'expired' in the same operation, with an audit row.
+      const replacement = await repo.createPendingPersonnel(supervisor1, input());
+      expect(replacement.status).toBe('pending');
+      const rows = await repo.listPendingPersonnel(supervisor1);
+      expect(rows.find((r) => r.id === entry.id)?.status).toBe('expired');
+      const logs = await repo.listAuditLogs(admin, {});
+      expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['personnel_pending_expired']));
+      // And the replacement is claimable.
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-exp2', email: 'new.person@example.com' })).not.toBeNull();
+    });
+  });
+
+  describe('unified personnel listing (list_personnel mirror)', () => {
+    it('returns pending entries and linked profiles with normalized emails, resolved by the backend layer', async () => {
+      await repo.createPendingPersonnel(supervisor1, input({ email: 'waiting@example.com' }));
+      await repo.createPendingPersonnel(supervisor1, input({ email: 'joined@example.com' }));
+      repo.claimPendingForIdentity({ authUserId: 'auth-j1', email: 'joined@example.com' });
+      await repo.setUserActive(admin, 'auth-j1', false);
+
+      const list = await repo.listPersonnel(supervisor1);
+      expect(list.find((e) => e.kind === 'pending' && e.email === 'waiting@example.com')).toMatchObject({
+        state: 'pending',
+        role: 'technician',
+      });
+      // The linked (then deactivated) user appears with the email the
+      // backend layer resolved -- the caller never supplied or queried it.
+      expect(list.find((e) => e.kind === 'linked' && e.id === 'auth-j1')).toMatchObject({
+        email: 'joined@example.com',
+        state: 'inactive',
+      });
+      // Pre-seeded demo profiles (no Google identity) are listed with a
+      // null email rather than an invented one.
+      expect(list.find((e) => e.kind === 'linked' && e.id === DEMO_USERS.tech1)).toMatchObject({ email: null });
+      // A claimed entry is no longer listed as pending.
+      expect(list.find((e) => e.kind === 'pending' && e.email === 'joined@example.com')).toBeUndefined();
+    });
+
+    it('returns nothing to technicians and viewers', async () => {
+      await expect(repo.listPersonnel(tech1)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.listPersonnel(viewer)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+  });
+
   describe('visibility and audit', () => {
     it('technicians cannot list pending personnel', async () => {
       await expect(repo.listPendingPersonnel(tech1)).rejects.toMatchObject({ code: 'FORBIDDEN' });

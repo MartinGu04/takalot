@@ -12,6 +12,7 @@ import type {
   IncidentUpdate,
   LocationRecord,
   PendingPersonnel,
+  PersonnelEntry,
   Profile,
   ReportedToOps,
   Role,
@@ -123,6 +124,13 @@ export interface Repository {
    * stays unauthorized in that case.
    */
   claimPendingProfile(): Promise<Profile | null>;
+  /**
+   * Unified management-safe listing of pending entries AND already-linked
+   * profiles (with their normalized Google emails, resolved server-side --
+   * the client never queries auth.users). Restricted to shift_supervisor /
+   * professional_manager / system_admin; everyone else is rejected.
+   */
+  listPersonnel(session: Session): Promise<PersonnelEntry[]>;
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;
