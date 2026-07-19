@@ -14,10 +14,12 @@ const state: {
   session: { user: { id: string; email: string } } | null;
   listeners: AuthListener[];
   getProfile: ReturnType<typeof vi.fn>;
+  claimPending: ReturnType<typeof vi.fn>;
 } = {
   session: null,
   listeners: [],
   getProfile: vi.fn(),
+  claimPending: vi.fn(),
 };
 
 const mockAuth = {
@@ -47,6 +49,7 @@ vi.mock('../data', () => ({
   getRepository: () => ({
     mode: 'supabase',
     getProfile: (...args: unknown[]) => state.getProfile(...args),
+    claimPendingProfile: (...args: unknown[]) => state.claimPending(...args),
     listProfiles: async () => [],
     listSystems: async () => [],
     listLocations: async () => [],
@@ -71,6 +74,7 @@ beforeEach(() => {
   state.session = null;
   state.listeners = [];
   state.getProfile = vi.fn();
+  state.claimPending = vi.fn().mockResolvedValue(null);
   mockAuth.signInWithOAuth.mockClear();
   mockAuth.signOut.mockClear();
   window.history.pushState({}, '', '/');
@@ -113,6 +117,33 @@ describe('supabase mode: session restoration', () => {
     release(ACTIVE_PROFILE);
     await screen.findByRole('heading', { name: 'מצב נוכחי' });
     expect(state.getProfile).toHaveBeenCalledWith('auth-user-1');
+    // An already-linked profile never triggers a claim attempt.
+    expect(state.claimPending).not.toHaveBeenCalled();
+  });
+});
+
+describe('supabase mode: pre-provisioned first sign-in', () => {
+  it('claims the pending entry automatically (no client-supplied identity) and enters the app', async () => {
+    state.session = { user: { id: 'auth-new-1', email: 'new.person@example.com' } };
+    state.getProfile.mockResolvedValue(null); // no profile yet
+    state.claimPending.mockResolvedValue({ ...ACTIVE_PROFILE, id: 'auth-new-1', role: 'technician' });
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    // The claim call carries NO email/uuid/role -- the backend derives the
+    // verified identity itself; the client has nothing to say about it.
+    expect(state.claimPending).toHaveBeenCalledTimes(1);
+    expect(state.claimPending).toHaveBeenCalledWith();
+  });
+
+  it('stays unauthorized when the claim finds no matching entry', async () => {
+    state.session = { user: { id: 'auth-stranger', email: 'stranger@example.com' } };
+    state.getProfile.mockResolvedValue(null);
+    state.claimPending.mockResolvedValue(null);
+
+    render(<App />);
+    expect(await screen.findByTestId('unauthorized-screen')).toBeInTheDocument();
+    expect(state.claimPending).toHaveBeenCalledTimes(1);
   });
 });
 

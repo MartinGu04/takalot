@@ -148,10 +148,20 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     try {
       // RLS on public.profiles only returns rows to active members, so a
       // Google-authenticated user without an active provisioned profile
-      // reads nothing here. That absence IS the authorization decision:
-      // identity alone never grants access, and no profile is auto-created.
-      const profile = await getRepository().getProfile(authUserId);
+      // reads nothing here.
+      let profile = await getRepository().getProfile(authUserId);
       if (seq !== checkSeq.current) return;
+      if (!profile) {
+        // First sign-in of a PRE-PROVISIONED person: attempt the secure
+        // claim. The call carries no identity/email/role -- the backend
+        // derives auth.uid() itself and matches the VERIFIED email from
+        // auth.users against a live pending_personnel entry, creating the
+        // profile with the preassigned role atomically. No match => null,
+        // and the user stays unauthorized. Nothing is auto-created from
+        // the Google identity alone.
+        profile = await getRepository().claimPendingProfile();
+        if (seq !== checkSeq.current) return;
+      }
       if (profile && profile.active) {
         setUser(profile);
         setStatus('active');

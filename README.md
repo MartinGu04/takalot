@@ -64,11 +64,26 @@ the name.
 | `VITE_DEMO_MODE` | Demo fallback | `true` explicitly enables the local demo repository (development/tests only — the e2e suite sets it). |
 
 Create a gitignored `.env.local` with the two Supabase variables to run
-against the hosted project. Remaining manual setup for a new authorized user:
-enable the Google provider in the Supabase dashboard (already configured for
-this project), have the user sign in once (creates their `auth.users` row),
-then have an administrator insert/activate their `public.profiles` row with
-the correct role — until then they see the unauthorized-access screen.
+against the hosted project.
+
+### Provisioning a new authorized user (supabase mode)
+
+1. An authorized creator (shift supervisor, NCO, or system administrator)
+   registers the person as a **pending personnel entry** — full name, Google
+   email, and intended role — *before* they ever sign in. Role ceilings are
+   enforced in the database: a supervisor may register technicians and
+   supervisors; an NCO additionally NCOs; only a system administrator may
+   register any role. Technicians cannot register anyone.
+2. The person signs in once with Google. On that first authenticated
+   session the backend **automatically and atomically claims** the matching
+   entry: it derives the identity from `auth.uid()`, reads the *verified*
+   email server-side from `auth.users` (client input plays no part),
+   creates the `public.profiles` row with the preassigned role, and marks
+   the entry claimed. No invitation link, no manual UUID handling, no
+   dashboard step.
+3. No valid matching entry (none, cancelled, expired, already claimed, or a
+   different Google account) → the user stays on the unauthorized-access
+   screen. Nothing is ever auto-created from a Google identity alone.
 
 ## Database migrations (Supabase)
 
