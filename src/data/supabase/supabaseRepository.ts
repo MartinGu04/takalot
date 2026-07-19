@@ -258,6 +258,24 @@ export class SupabaseRepository implements Repository {
     };
   }
 
+  async bootstrapFirstAdmin(): Promise<Profile | null> {
+    // Deliberately parameterless, like the claim RPC: identity, confirmed
+    // email, Google provider and the configured bootstrap address are all
+    // verified server-side. Every rejection (window closed, wrong email,
+    // unverified identity) comes back as null -- fail closed.
+    const { data, error } = await this.client.rpc('bootstrap_first_admin');
+    wrap(error);
+    if (!data) return null;
+    const r = data as Record<string, unknown>;
+    return {
+      id: r.id as string,
+      fullName: r.full_name as string,
+      role: r.role as Role,
+      active: r.active as boolean,
+      createdAt: r.created_at as string,
+    };
+  }
+
   async listPersonnel(_s: Session): Promise<PersonnelEntry[]> {
     // SECURITY DEFINER RPC: resolves linked profiles' Google emails
     // server-side (the client has no access to auth.users) and rejects

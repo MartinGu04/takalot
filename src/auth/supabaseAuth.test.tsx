@@ -15,11 +15,13 @@ const state: {
   listeners: AuthListener[];
   getProfile: ReturnType<typeof vi.fn>;
   claimPending: ReturnType<typeof vi.fn>;
+  bootstrapAdmin: ReturnType<typeof vi.fn>;
 } = {
   session: null,
   listeners: [],
   getProfile: vi.fn(),
   claimPending: vi.fn(),
+  bootstrapAdmin: vi.fn(),
 };
 
 const mockAuth = {
@@ -50,6 +52,7 @@ vi.mock('../data', () => ({
     mode: 'supabase',
     getProfile: (...args: unknown[]) => state.getProfile(...args),
     claimPendingProfile: (...args: unknown[]) => state.claimPending(...args),
+    bootstrapFirstAdmin: (...args: unknown[]) => state.bootstrapAdmin(...args),
     listProfiles: async () => [],
     listSystems: async () => [],
     listLocations: async () => [],
@@ -75,6 +78,7 @@ beforeEach(() => {
   state.listeners = [];
   state.getProfile = vi.fn();
   state.claimPending = vi.fn().mockResolvedValue(null);
+  state.bootstrapAdmin = vi.fn().mockResolvedValue(null);
   mockAuth.signInWithOAuth.mockClear();
   mockAuth.signOut.mockClear();
   window.history.pushState({}, '', '/');
@@ -141,6 +145,8 @@ describe('supabase mode: pre-provisioned first sign-in', () => {
     // return value.
     expect(state.getProfile).toHaveBeenCalledTimes(2);
     expect(state.getProfile).toHaveBeenLastCalledWith('auth-new-1');
+    // A successful claim never reaches the bootstrap path.
+    expect(state.bootstrapAdmin).not.toHaveBeenCalled();
   });
 
   it('stays unauthorized when the claim finds no matching entry', async () => {
@@ -181,6 +187,50 @@ describe('supabase mode: pre-provisioned first sign-in', () => {
     // Even if a stale layer returned the inactive profile itself, the
     // active=false check keeps the gate closed -- proven separately below
     // in "treats an INACTIVE profile as unauthorized too".
+  });
+});
+
+describe('supabase mode: first-administrator bootstrap (fresh database)', () => {
+  it('the configured owner identity becomes the first system_admin on a normal Google sign-in', async () => {
+    const adminProfile = { ...ACTIVE_PROFILE, id: 'auth-owner', role: 'system_admin' };
+    state.session = { user: { id: 'auth-owner', email: 'owner@example.com' } };
+    // Fresh database: no profile, no pending entry to claim -- then the
+    // bootstrap succeeds and the SAME authorization path confirms it.
+    state.getProfile.mockResolvedValueOnce(null).mockResolvedValue(adminProfile);
+    state.claimPending.mockResolvedValue(null);
+    state.bootstrapAdmin.mockResolvedValue(adminProfile);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    // Zero arguments: the client supplies no email/uuid/role -- the backend
+    // verifies the configured address and Google identity server-side.
+    expect(state.bootstrapAdmin).toHaveBeenCalledTimes(1);
+    expect(state.bootstrapAdmin).toHaveBeenCalledWith();
+    // The claim was tried first; bootstrap only runs when nothing claimed.
+    expect(state.claimPending).toHaveBeenCalledTimes(1);
+    expect(state.getProfile).toHaveBeenLastCalledWith('auth-owner');
+  });
+
+  it('a rejected bootstrap (wrong account, closed window, unverified identity) stays unauthorized', async () => {
+    state.session = { user: { id: 'auth-not-owner', email: 'someone@example.com' } };
+    state.getProfile.mockResolvedValue(null);
+    state.claimPending.mockResolvedValue(null);
+    state.bootstrapAdmin.mockResolvedValue(null); // fail closed
+
+    render(<App />);
+    expect(await screen.findByTestId('unauthorized-screen')).toBeInTheDocument();
+    expect(state.bootstrapAdmin).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT trust the bootstrap return value: a "success" the profile read cannot confirm stays unauthorized', async () => {
+    state.session = { user: { id: 'auth-fake-owner', email: 'owner@example.com' } };
+    state.getProfile.mockResolvedValue(null);
+    state.claimPending.mockResolvedValue(null);
+    state.bootstrapAdmin.mockResolvedValue({ ...ACTIVE_PROFILE, id: 'auth-fake-owner', role: 'system_admin' });
+
+    render(<App />);
+    expect(await screen.findByTestId('unauthorized-screen')).toBeInTheDocument();
+    expect(state.getProfile).toHaveBeenCalledTimes(2);
   });
 });
 

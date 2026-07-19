@@ -601,6 +601,14 @@ export class LocalDemoRepository implements Repository {
     return null;
   }
 
+  async bootstrapFirstAdmin(): Promise<Profile | null> {
+    // The demo database is always seeded with an active system_admin, so
+    // the one-time bootstrap window (a fresh, zero-profile production
+    // database) never exists here -- permanently fail closed, exactly as
+    // the backend does once an active admin exists.
+    return null;
+  }
+
   /**
    * Demo/test stand-in for the server-side claim: the `identity` argument
    * plays the role the backend derives itself from auth.uid()/auth.users/

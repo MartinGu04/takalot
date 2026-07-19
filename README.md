@@ -66,6 +66,27 @@ the name.
 Create a gitignored `.env.local` with the two Supabase variables to run
 against the hosted project.
 
+### First administrator (one-time bootstrap, supabase mode)
+
+A fresh database has zero profiles, so nobody can create or claim pending
+entries yet. The project owner performs exactly **one** manual setup
+action, in the Supabase SQL editor, before the first login (server-side
+only — never in frontend code or a `VITE_*` variable, and no auth UUID is
+ever involved):
+
+```sql
+insert into public.bootstrap_admin_config (email)
+values ('owner.account@gmail.com');
+```
+
+Then the owner signs in once with Google, normally. The backend verifies
+the confirmed Google identity server-side against that address and creates
+the single first `system_admin` profile — at most once, ever (race-safe;
+permanently closed afterwards). Knowing the email grants nothing: the
+caller must *be* the verified Google account behind it, and the configured
+address is unreadable by clients. Every subsequent user is provisioned
+through the pending-personnel flow below.
+
 ### Provisioning a new authorized user (supabase mode)
 
 1. An authorized creator (shift supervisor, NCO, or system administrator)

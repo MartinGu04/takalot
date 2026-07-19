@@ -159,8 +159,18 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         // creating the profile with the preassigned role atomically. No
         // match => null, and the user stays unauthorized. Nothing is
         // auto-created from the Google identity alone.
-        const claimed = await getRepository().claimPendingProfile();
+        let claimed = await getRepository().claimPendingProfile();
         if (seq !== checkSeq.current) return;
+        if (!claimed) {
+          // Fresh-database edge: with zero profiles no pending entry can
+          // exist, so the very first sign-in additionally attempts the
+          // ONE-TIME first-administrator bootstrap. Also parameterless;
+          // the backend verifies the configured email + Google identity
+          // server-side, succeeds at most once ever, and fails closed for
+          // everyone else -- this is not self-registration.
+          claimed = await getRepository().bootstrapFirstAdmin();
+          if (seq !== checkSeq.current) return;
+        }
         if (claimed) {
           // The claim's return value is NOT trusted as authorization by
           // itself: re-confirm through the exact same path every session

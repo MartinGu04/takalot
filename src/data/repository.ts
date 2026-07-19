@@ -131,6 +131,15 @@ export interface Repository {
    * professional_manager / system_admin; everyone else is rejected.
    */
   listPersonnel(session: Session): Promise<PersonnelEntry[]>;
+  /**
+   * One-time first-administrator bootstrap for a fresh database (no
+   * profiles at all). Takes no arguments by design: the backend verifies
+   * the confirmed Google identity server-side against a server-side-only
+   * configured email, succeeds at most once ever, and fails closed
+   * (null) in every other case. Not a self-registration path -- every
+   * later user goes through pending_personnel.
+   */
+  bootstrapFirstAdmin(): Promise<Profile | null>;
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;
