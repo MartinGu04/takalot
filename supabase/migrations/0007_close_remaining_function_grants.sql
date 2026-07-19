@@ -43,22 +43,29 @@ revoke execute on function public.admin_create_placeholder_profile(text, app_rol
 -- invoked either inside SECURITY DEFINER RPC bodies (which execute as the
 -- function owner, who always retains EXECUTE on own functions) or by RLS
 -- policies (see section 3), so nothing legitimate needs a broad grant.
-revoke execute on function public.current_role_of(uuid) from public, anon;
-revoke execute on function public.is_operational_role() from public, anon;
-revoke execute on function public.write_audit(text, text, text, text, jsonb, jsonb) from public, anon;
-revoke execute on function public.allocate_incident_number() from public, anon;
-revoke execute on function public.is_valid_transition(incident_status, incident_status) from public, anon;
-revoke execute on function public.assert_owner_valid(uuid) from public, anon;
-revoke execute on function public.lock_incident_checked(uuid, int) from public, anon;
-revoke execute on function public.is_active_member() from public, anon;
+-- `authenticated` is revoked here too: depending on the default ACL in
+-- force at each function's creation, authenticated may hold an EXPLICIT
+-- grant on these internals -- a signed-in user must not be able to call
+-- write_audit or the locking/numbering helpers directly any more than an
+-- anonymous one. The one internal helper signed-in users genuinely need
+-- (is_active_member, evaluated inside RLS policy expressions with the
+-- querying user's privileges) is explicitly re-granted in section 3.
+revoke execute on function public.current_role_of(uuid) from public, anon, authenticated;
+revoke execute on function public.is_operational_role() from public, anon, authenticated;
+revoke execute on function public.write_audit(text, text, text, text, jsonb, jsonb) from public, anon, authenticated;
+revoke execute on function public.allocate_incident_number() from public, anon, authenticated;
+revoke execute on function public.is_valid_transition(incident_status, incident_status) from public, anon, authenticated;
+revoke execute on function public.assert_owner_valid(uuid) from public, anon, authenticated;
+revoke execute on function public.lock_incident_checked(uuid, int) from public, anon, authenticated;
+revoke execute on function public.is_active_member() from public, anon, authenticated;
 
 -- Trigger/housekeeping functions: triggers fire without an EXECUTE check on
 -- the invoking user, so revoking breaks nothing while removing the ability
 -- to call them directly.
-revoke execute on function public.reject_mutation() from public, anon;
-revoke execute on function public.protect_accepted_handover() from public, anon;
-revoke execute on function public.touch_updated_at() from public, anon;
-revoke execute on function public.refresh_incident_search_text() from public, anon;
+revoke execute on function public.reject_mutation() from public, anon, authenticated;
+revoke execute on function public.protect_accepted_handover() from public, anon, authenticated;
+revoke execute on function public.touch_updated_at() from public, anon, authenticated;
+revoke execute on function public.refresh_incident_search_text() from public, anon, authenticated;
 
 -- ===== 3. Authenticated grants: restated in full =====
 -- The complete intended API surface for signed-in users (0003's list; the
