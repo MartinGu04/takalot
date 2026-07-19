@@ -9,6 +9,7 @@ import type {
   IncidentEvent,
   IncidentUpdate,
   LocationRecord,
+  PendingPersonnel,
   Profile,
   SystemRecord,
 } from '../../domain/types';
@@ -31,6 +32,8 @@ export interface DemoDatabase {
   handoverAddenda: HandoverAddendum[];
   notifications: StoredNotification[];
   auditLogs: AuditLog[];
+  /** Optional for databases persisted before 0008's model existed. */
+  pendingPersonnel?: PendingPersonnel[];
   sequences: Record<string, number>; // year -> last allocated number
   policy: PolicyFlags;
 }
@@ -49,6 +52,7 @@ export function emptyDatabase(): DemoDatabase {
     handoverAddenda: [],
     notifications: [],
     auditLogs: [],
+    pendingPersonnel: [],
     sequences: {},
     policy: { allowSupervisorReopen: false, viewerExportUserIds: [] },
   };

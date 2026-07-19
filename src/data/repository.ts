@@ -11,6 +11,7 @@ import type {
   IncidentStatus,
   IncidentUpdate,
   LocationRecord,
+  PendingPersonnel,
   Profile,
   ReportedToOps,
   Role,
@@ -23,6 +24,7 @@ import type {
   CorrectionInput,
   CreateHandoverInput,
   CreateIncidentInput,
+  PendingPersonnelInput,
   ReopenIncidentInput,
   TechnicianUpdateInput,
   UpdateIncidentInput,
@@ -107,6 +109,20 @@ export interface Repository {
   createUser(session: Session, fullName: string, role: Role): Promise<Profile>;
   setUserRole(session: Session, userId: string, role: Role): Promise<void>;
   setUserActive(session: Session, userId: string, active: boolean): Promise<void>;
+
+  // --- pre-provisioned personnel (supabase-mode onboarding) ---
+  listPendingPersonnel(session: Session): Promise<PendingPersonnel[]>;
+  createPendingPersonnel(session: Session, input: PendingPersonnelInput): Promise<PendingPersonnel>;
+  updatePendingPersonnel(session: Session, id: string, input: PendingPersonnelInput): Promise<PendingPersonnel>;
+  cancelPendingPersonnel(session: Session, id: string): Promise<void>;
+  /**
+   * Attempts to claim the authenticated identity's matching pending entry.
+   * Takes no identity/email arguments by design: the backend derives
+   * auth.uid() and the verified email itself. Returns the resulting (or
+   * already-existing) profile, or null when nothing matches -- the caller
+   * stays unauthorized in that case.
+   */
+  claimPendingProfile(): Promise<Profile | null>;
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;

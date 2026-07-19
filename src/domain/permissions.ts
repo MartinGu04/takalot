@@ -105,6 +105,28 @@ export function hasCapability(
   return false;
 }
 
+/**
+ * Role ceilings for pre-provisioned personnel entries. Mirrors the database
+ * rule (role_ceiling_allows in 0008) -- the database is authoritative; this
+ * exists for the demo backend and for hiding unavailable UI options:
+ *   shift_supervisor     -> technician, shift_supervisor
+ *   professional_manager -> + professional_manager (NCO)
+ *   system_admin         -> every role, including system_admin
+ *   technician / viewer  -> nothing
+ */
+export function allowedPendingRoles(creator: Role): Role[] {
+  switch (creator) {
+    case 'system_admin':
+      return ['system_admin', 'professional_manager', 'shift_supervisor', 'technician', 'viewer'];
+    case 'professional_manager':
+      return ['professional_manager', 'shift_supervisor', 'technician'];
+    case 'shift_supervisor':
+      return ['shift_supervisor', 'technician'];
+    default:
+      return [];
+  }
+}
+
 /** Technicians may add technical updates only to incidents assigned to them. */
 export function canTechnicianUpdate(userId: string, incident: Incident): boolean {
   return incident.ownerUserId === userId && incident.status !== 'closed';

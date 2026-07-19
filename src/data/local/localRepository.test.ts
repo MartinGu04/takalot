@@ -669,6 +669,178 @@ describe('active incidents page semantics', () => {
   });
 });
 
+describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  const input = (over: Partial<{ fullName: string; email: string; role: Session['role'] }> = {}) => ({
+    fullName: 'חייל חדש',
+    email: 'new.person@example.com',
+    role: 'technician' as Session['role'],
+    ...over,
+  });
+
+  describe('role ceilings (enforced in the backend layer, not the UI)', () => {
+    it('technician and viewer cannot create entries at all', async () => {
+      await expect(repo.createPendingPersonnel(tech1, input())).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.createPendingPersonnel(viewer, input())).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('shift supervisor may create technician and shift_supervisor, nothing higher', async () => {
+      await expect(repo.createPendingPersonnel(supervisor1, input({ role: 'technician' }))).resolves.toBeTruthy();
+      await expect(
+        repo.createPendingPersonnel(supervisor1, input({ email: 'b@example.com', role: 'shift_supervisor' })),
+      ).resolves.toBeTruthy();
+      await expect(
+        repo.createPendingPersonnel(supervisor1, input({ email: 'c@example.com', role: 'professional_manager' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        repo.createPendingPersonnel(supervisor1, input({ email: 'd@example.com', role: 'system_admin' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('NCO (professional manager) may additionally create NCOs, but not administrators', async () => {
+      await expect(
+        repo.createPendingPersonnel(manager, input({ role: 'professional_manager' })),
+      ).resolves.toBeTruthy();
+      await expect(
+        repo.createPendingPersonnel(manager, input({ email: 'e@example.com', role: 'system_admin' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('system administrator may create every role, including system_admin', async () => {
+      await expect(repo.createPendingPersonnel(admin, input({ role: 'system_admin' }))).resolves.toBeTruthy();
+    });
+
+    it('a supervisor cannot edit or cancel an entry above their ceiling', async () => {
+      const entry = await repo.createPendingPersonnel(manager, input({ role: 'professional_manager' }));
+      await expect(
+        repo.updatePendingPersonnel(supervisor1, entry.id, input({ role: 'technician' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.cancelPendingPersonnel(supervisor1, entry.id)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+  });
+
+  describe('normalization and uniqueness', () => {
+    it('stores the email normalized (trim + lowercase)', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input({ email: '  Mixed.Case@EXAMPLE.Com  ' }));
+      expect(entry.email).toBe('mixed.case@example.com');
+    });
+
+    it('rejects a duplicate claimable entry for the same email, and allows one again after cancelling', async () => {
+      const first = await repo.createPendingPersonnel(supervisor1, input());
+      await expect(repo.createPendingPersonnel(supervisor1, input())).rejects.toMatchObject({
+        code: 'VALIDATION',
+      });
+      await repo.cancelPendingPersonnel(supervisor1, first.id);
+      await expect(repo.createPendingPersonnel(supervisor1, input())).resolves.toBeTruthy();
+    });
+  });
+
+  describe('claiming (the demo stand-in receives the identity the real backend derives itself)', () => {
+    it('the exact confirmed email claims the entry and creates the profile with the preassigned role', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input({ role: 'shift_supervisor' }));
+      const profile = repo.claimPendingForIdentity({ authUserId: 'auth-x1', email: 'new.person@example.com' });
+      expect(profile).toMatchObject({ id: 'auth-x1', role: 'shift_supervisor', active: true, fullName: 'חייל חדש' });
+      const rows = await repo.listPendingPersonnel(supervisor1);
+      expect(rows.find((r) => r.id === entry.id)).toMatchObject({ status: 'claimed', claimedBy: 'auth-x1' });
+    });
+
+    it('matching is case-insensitive after normalization', async () => {
+      await repo.createPendingPersonnel(supervisor1, input({ email: 'person@example.com' }));
+      const profile = repo.claimPendingForIdentity({ authUserId: 'auth-x2', email: '  PERSON@Example.COM ' });
+      expect(profile).not.toBeNull();
+    });
+
+    it('a different Google account (different email) stays unauthorized', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-x3', email: 'someone.else@example.com' })).toBeNull();
+    });
+
+    it('no matching entry stays unauthorized', () => {
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-x4', email: 'nobody@example.com' })).toBeNull();
+    });
+
+    it('a cancelled entry cannot be claimed', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.cancelPendingPersonnel(supervisor1, entry.id);
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-x5', email: 'new.person@example.com' })).toBeNull();
+    });
+
+    it('an entry can be claimed exactly once; the claiming identity gets the same profile back idempotently', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      const first = repo.claimPendingForIdentity({ authUserId: 'auth-x6', email: 'new.person@example.com' });
+      expect(first).not.toBeNull();
+      // A DIFFERENT identity cannot claim the already-claimed entry.
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-x7', email: 'new.person@example.com' })).toBeNull();
+      // The SAME identity is idempotent: existing profile returned, no re-claim.
+      const again = repo.claimPendingForIdentity({ authUserId: 'auth-x6', email: 'new.person@example.com' });
+      expect(again).toMatchObject({ id: 'auth-x6' });
+    });
+
+    it('an expired entry cannot be claimed', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      const rows = await repo.listPendingPersonnel(supervisor1);
+      // Simulate an expiry set in the past (the demo model honors expiresAt
+      // exactly as the SQL claim does).
+      void rows;
+      const raw = (repo as unknown as { db: { pendingPersonnel: { id: string; expiresAt: string | null }[] } }).db;
+      raw.pendingPersonnel.find((r) => r.id === entry.id)!.expiresAt = new Date(
+        FIXED_NOW.getTime() - 1000,
+      ).toISOString();
+      expect(repo.claimPendingForIdentity({ authUserId: 'auth-x8', email: 'new.person@example.com' })).toBeNull();
+    });
+
+    it('an existing linked profile continues to work and is returned untouched (never re-claimed)', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      const existing = repo.claimPendingForIdentity({ authUserId: DEMO_USERS.tech1, email: 'new.person@example.com' });
+      // tech1 already has a profile: it is returned as-is and the pending
+      // entry is NOT consumed.
+      expect(existing).toMatchObject({ id: DEMO_USERS.tech1, role: 'technician' });
+      const rows = await repo.listPendingPersonnel(supervisor1);
+      expect(rows.find((r) => r.email === 'new.person@example.com')?.status).toBe('pending');
+    });
+
+    it('the production interface method takes no identity input at all (demo returns null)', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      // claimPendingProfile() -- the ONLY claim surface the app calls -- has
+      // no parameters through which client-supplied email/role/UUID could
+      // influence the outcome.
+      expect(repo.claimPendingProfile.length).toBe(0);
+      await expect(repo.claimPendingProfile()).resolves.toBeNull();
+    });
+  });
+
+  describe('visibility and audit', () => {
+    it('technicians cannot list pending personnel', async () => {
+      await expect(repo.listPendingPersonnel(tech1)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('creation, update, cancellation and claiming are all recorded in the audit log', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.updatePendingPersonnel(supervisor1, entry.id, input({ fullName: 'שם מעודכן' }));
+      await repo.cancelPendingPersonnel(supervisor1, entry.id);
+      await repo.createPendingPersonnel(supervisor1, input({ email: 'second@example.com' }));
+      repo.claimPendingForIdentity({ authUserId: 'auth-a1', email: 'second@example.com' });
+
+      const logs = await repo.listAuditLogs(admin, {});
+      const actions = logs.map((l) => l.action);
+      expect(actions).toEqual(
+        expect.arrayContaining([
+          'personnel_pending_created',
+          'personnel_pending_updated',
+          'personnel_pending_cancelled',
+          'personnel_pending_claimed',
+        ]),
+      );
+    });
+  });
+});
+
 describe('export permission enforcement', () => {
   it('allows export for shift_supervisor and system_admin', async () => {
     const repo = newRepo({ now: FIXED_NOW });

@@ -12,6 +12,7 @@ import type {
   IncidentEvent,
   IncidentUpdate,
   LocationRecord,
+  PendingPersonnel,
   Profile,
   Role,
   SystemRecord,
@@ -22,6 +23,7 @@ import type {
   CorrectionInput,
   CreateHandoverInput,
   CreateIncidentInput,
+  PendingPersonnelInput,
   ReopenIncidentInput,
   TechnicianUpdateInput,
   UpdateIncidentInput,
@@ -87,6 +89,22 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   followUpCompletedAt: r.follow_up_completed_at as string | null,
   followUpCompletedBy: r.follow_up_completed_by as string | null,
   reopenCount: r.reopen_count as number,
+});
+
+const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
+  id: r.id as string,
+  fullName: r.full_name as string,
+  email: r.email as string,
+  role: r.role as Role,
+  status: r.status as PendingPersonnel['status'],
+  createdBy: r.created_by as string,
+  createdAt: r.created_at as string,
+  updatedAt: r.updated_at as string,
+  expiresAt: r.expires_at as string | null,
+  claimedBy: r.claimed_by as string | null,
+  claimedAt: r.claimed_at as string | null,
+  cancelledBy: r.cancelled_by as string | null,
+  cancelledAt: r.cancelled_at as string | null,
 });
 
 export class SupabaseRepository implements Repository {
@@ -186,6 +204,57 @@ export class SupabaseRepository implements Repository {
 
   async setUserActive(_s: Session, userId: string, active: boolean): Promise<void> {
     await this.rpc('admin_set_user_active', { p_user_id: userId, p_active: active });
+  }
+
+  // --- pre-provisioned personnel ---
+
+  async listPendingPersonnel(_s: Session): Promise<PendingPersonnel[]> {
+    // RLS restricts rows to the manager roles; writes are RPC-only.
+    const { data, error } = await this.client
+      .from('pending_personnel')
+      .select('*')
+      .order('created_at', { ascending: false });
+    wrap(error);
+    return (data ?? []).map(mapPendingPersonnel);
+  }
+
+  async createPendingPersonnel(_s: Session, input: PendingPersonnelInput): Promise<PendingPersonnel> {
+    const data = await this.rpc<Record<string, unknown>>('create_pending_personnel', { p_input: input });
+    return mapPendingPersonnel(data);
+  }
+
+  async updatePendingPersonnel(_s: Session, id: string, input: PendingPersonnelInput): Promise<PendingPersonnel> {
+    const data = await this.rpc<Record<string, unknown>>('update_pending_personnel', {
+      p_id: id,
+      p_input: input,
+    });
+    return mapPendingPersonnel(data);
+  }
+
+  async cancelPendingPersonnel(_s: Session, id: string): Promise<void> {
+    await this.rpc('cancel_pending_personnel', { p_id: id });
+  }
+
+  async claimPendingProfile(): Promise<Profile | null> {
+    // Deliberately parameterless: the RPC derives auth.uid() itself and
+    // reads the verified email from auth.users -- nothing the client sends
+    // can influence which entry is claimed or which role is assigned.
+    const { data, error } = await this.client.rpc('claim_pending_personnel');
+    if (error) {
+      // "No matching entry" is the expected fail-closed outcome for an
+      // unprovisioned identity -- signalled as null, not as a failure.
+      if (/not_found/.test(error.message)) return null;
+      wrap(error);
+    }
+    if (!data) return null;
+    const r = data as Record<string, unknown>;
+    return {
+      id: r.id as string,
+      fullName: r.full_name as string,
+      role: r.role as Role,
+      active: r.active as boolean,
+      createdAt: r.created_at as string,
+    };
   }
 
   async listIncidents(

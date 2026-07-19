@@ -50,6 +50,28 @@ export interface Profile {
   createdAt: string; // ISO UTC
 }
 
+export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled';
+
+/** A pre-provisioned personnel entry: created by an authorized role BEFORE
+ *  the person's first Google sign-in, and claimed automatically (server-
+ *  side, against the verified email) on their first authenticated session. */
+export interface PendingPersonnel {
+  id: string;
+  fullName: string;
+  /** Always normalized: trim + lowercase. */
+  email: string;
+  role: Role;
+  status: PendingPersonnelStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+  claimedBy: string | null;
+  claimedAt: string | null;
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+}
+
 export interface SystemRecord {
   id: string;
   name: string;
