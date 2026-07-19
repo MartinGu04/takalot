@@ -99,11 +99,13 @@ export function PersonnelFormDialog({
           </p>
         )}
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="secondary" onClick={handleClose}>
-            ביטול
-          </Button>
+          {/* RTL: the first element in source order sits rightmost -- the
+              primary action goes first so it reads as visually first. */}
           <Button type="submit" disabled={submitting}>
             {submitting ? 'שומר…' : submitLabel}
+          </Button>
+          <Button type="button" variant="secondary" onClick={handleClose}>
+            ביטול
           </Button>
         </div>
       </form>

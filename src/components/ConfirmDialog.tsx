@@ -30,11 +30,13 @@ export function ConfirmDialog({
       <div className="flex flex-col gap-4">
         <div className="text-sm text-secondary">{message}</div>
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {cancelLabel}
-          </Button>
+          {/* RTL: first in source order sits rightmost -- the primary
+              (confirm) action goes first so it reads as visually first. */}
           <Button type="button" variant={danger ? 'danger' : 'primary'} disabled={submitting} onClick={onConfirm}>
             {submitting ? 'שומר…' : confirmLabel}
+          </Button>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {cancelLabel}
           </Button>
         </div>
       </div>

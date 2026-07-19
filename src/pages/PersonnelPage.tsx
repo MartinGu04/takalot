@@ -41,6 +41,10 @@ export default function PersonnelPage() {
   const [cancelingEntry, setCancelingEntry] = useState<PersonnelEntry | null>(null);
   const [deactivatingEntry, setDeactivatingEntry] = useState<PersonnelEntry | null>(null);
   const [roleChangeRequest, setRoleChangeRequest] = useState<{ entry: PersonnelEntry; newRole: Role } | null>(null);
+  // Which linked row currently has its role/status controls expanded --
+  // the controls are hidden by default so the list stays scannable with
+  // many entries; only one row's controls are open at a time.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const allowedRoles = allowedPendingRoles(session.role);
 
@@ -69,12 +73,16 @@ export default function PersonnelPage() {
   const activateMutation = useAppMutation((id: string) => repo().setUserActive(session, id, true), {
     invalidate: [['personnel'], ['profiles']],
     successText: 'המשתמש הופעל.',
+    onSuccess: () => setExpandedId(null),
   });
 
   const deactivateMutation = useAppMutation((id: string) => repo().setUserActive(session, id, false), {
     invalidate: [['personnel'], ['profiles']],
     successText: 'המשתמש הושבת.',
-    onSuccess: () => setDeactivatingEntry(null),
+    onSuccess: () => {
+      setDeactivatingEntry(null);
+      setExpandedId(null);
+    },
   });
 
   const roleChangeMutation = useAppMutation(
@@ -82,7 +90,10 @@ export default function PersonnelPage() {
     {
       invalidate: [['personnel'], ['profiles']],
       successText: 'התפקיד עודכן.',
-      onSuccess: () => setRoleChangeRequest(null),
+      onSuccess: () => {
+        setRoleChangeRequest(null);
+        setExpandedId(null);
+      },
     },
   );
 
@@ -169,56 +180,74 @@ export default function PersonnelPage() {
           <EmptyState title={emptyTitle} />
         </div>
       ) : (
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="surface mt-3 divide-y divide-hairline">
           {rows.map((entry) => {
             if (entry.kind === 'pending') {
               const canManage = allowedRoles.includes(entry.role);
               return (
-                <div key={entry.id} className="surface flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-text-primary">{entry.fullName}</span>
-                      <Badge color="orange">{personnelStatusLabels.pending}</Badge>
-                    </div>
-                    <p className="mt-0.5 truncate text-sm text-muted" dir="ltr">
+                <div
+                  key={entry.id}
+                  data-personnel-row={entry.id}
+                  className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+                    <p className="truncate text-xs text-muted" dir="ltr">
                       {entry.email}
                     </p>
-                    <p className="mt-0.5 text-xs text-muted">{personnelRoleLabels[entry.role]}</p>
                   </div>
-                  {canManage && (
-                    <div className="flex shrink-0 gap-2">
-                      <Button variant="secondary" onClick={() => setEditingEntry(entry)}>
-                        עריכה
-                      </Button>
-                      <Button variant="danger" onClick={() => setCancelingEntry(entry)}>
-                        ביטול
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
+                    <Badge color="orange">{personnelStatusLabels.pending}</Badge>
+                    {canManage && (
+                      <>
+                        <Button variant="ghost" className="px-2" onClick={() => setEditingEntry(entry)}>
+                          עריכה
+                        </Button>
+                        <Button variant="ghost" className="px-2 text-red-700 dark:text-red-400" onClick={() => setCancelingEntry(entry)}>
+                          ביטול
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             }
 
             const canManage = allowedRoles.includes(entry.role) && entry.id !== session.userId;
             const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
+            const expanded = canManage && expandedId === entry.id;
             return (
-              <div key={entry.id} className="surface flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-text-primary">{entry.fullName}</span>
+              <div key={entry.id} data-personnel-row={entry.id} className="flex flex-col gap-2 px-3 py-2.5">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+                    {entry.email && (
+                      <p className="truncate text-xs text-muted" dir="ltr">
+                        {entry.email}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
                     <Badge color={entry.state === 'active' ? 'green' : 'neutral'}>
                       {entry.state === 'active' ? personnelStatusLabels.active : personnelStatusLabels.inactive}
                     </Badge>
                     {entry.id === session.userId && <Badge color="blue">אתה</Badge>}
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        className="px-2"
+                        aria-expanded={expanded}
+                        onClick={() => setExpandedId(expanded ? null : entry.id)}
+                      >
+                        עריכה
+                      </Button>
+                    )}
                   </div>
-                  {entry.email && (
-                    <p className="mt-0.5 truncate text-sm text-muted" dir="ltr">
-                      {entry.email}
-                    </p>
-                  )}
                 </div>
-                {canManage ? (
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {expanded && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-active/60 p-2 sm:me-auto">
                     <Select
                       aria-label={`תפקיד ${entry.fullName}`}
                       className="w-auto"
@@ -251,8 +280,6 @@ export default function PersonnelPage() {
                       </Button>
                     )}
                   </div>
-                ) : (
-                  <div className="shrink-0 text-sm text-muted">{personnelRoleLabels[entry.role]}</div>
                 )}
               </div>
             );

@@ -43,7 +43,7 @@ async function openPersonnel(userTestId: string) {
 }
 
 function rowFor(fullName: string): HTMLElement {
-  return within(main()).getByText(fullName).closest('.surface') as HTMLElement;
+  return within(main()).getByText(fullName).closest('[data-personnel-row]') as HTMLElement;
 }
 
 describe('navigation visibility: shift_supervisor', () => {
@@ -225,19 +225,36 @@ describe('editing and cancelling a pending entry', () => {
 });
 
 describe('linked user management and safety rules', () => {
-  it('a system_admin can change a technician role and deactivate/reactivate them, both with confirmation', async () => {
+  it('the role select and deactivate button are hidden by default; the row shows role as text and an עריכה toggle', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+    const row = rowFor('עומר פרץ (דמו)');
+    expect(within(row).getByText('טכנאי')).toBeInTheDocument();
+    expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'עריכה' })).toBeInTheDocument();
+  });
+
+  it('a system_admin can expand עריכה to change a technician role and deactivate/reactivate them, both with confirmation', async () => {
     const user = await openPersonnel('login-u-admin');
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('עומר פרץ (דמו)');
 
-    const row = rowFor('עומר פרץ (דמו)');
+    let row = rowFor('עומר פרץ (דמו)');
+    await user.click(within(row).getByRole('button', { name: 'עריכה' }));
+    row = rowFor('עומר פרץ (דמו)');
     await user.selectOptions(within(row).getByLabelText(/^תפקיד עומר פרץ/), 'shift_supervisor');
     const roleDialog = await screen.findByRole('dialog', { name: 'שינוי תפקיד' });
     await user.click(within(roleDialog).getByRole('button', { name: 'שינוי תפקיד' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'שינוי תפקיד' })).not.toBeInTheDocument());
+    // The panel collapses again after a successful change.
+    expect(rowFor('עומר פרץ (דמו)').querySelector('[role="combobox"]')).not.toBeInTheDocument();
 
-    const updatedRow = rowFor('עומר פרץ (דמו)');
-    await user.click(within(updatedRow).getByRole('button', { name: 'השבתה' }));
+    row = rowFor('עומר פרץ (דמו)');
+    await user.click(within(row).getByRole('button', { name: 'עריכה' }));
+    row = rowFor('עומר פרץ (דמו)');
+    await user.click(within(row).getByRole('button', { name: 'השבתה' }));
     const deactivateDialog = await screen.findByRole('dialog', { name: 'השבתת משתמש' });
     await user.click(within(deactivateDialog).getByRole('button', { name: 'השבתה' }));
 
@@ -246,22 +263,24 @@ describe('linked user management and safety rules', () => {
     expect(await within(main()).findByText('עומר פרץ (דמו)')).toBeInTheDocument();
   });
 
-  it('a shift_supervisor cannot manage a professional_manager (no controls shown, above ceiling)', async () => {
+  it('a shift_supervisor cannot manage a professional_manager (no controls, no עריכה toggle, above ceiling)', async () => {
     const user = await openPersonnel('login-u-supervisor-1');
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('דנה לוי (דמו)');
     const row = rowFor('דנה לוי (דמו)');
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
   });
 
-  it("no controls are shown for the signed-in user's own row (no self-service)", async () => {
+  it("no controls or עריכה toggle are shown for the signed-in user's own row (no self-service)", async () => {
     const user = await openPersonnel('login-u-admin');
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('אלון ברק (דמו)');
     const row = rowFor('אלון ברק (דמו)');
     expect(within(row).getByText('אתה')).toBeInTheDocument();
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
   });
 
@@ -273,11 +292,15 @@ describe('linked user management and safety rules', () => {
     // must succeed (it is not the protected transition).
     await within(main()).findByText('דנה לוי (דמו)');
     let managerRow = rowFor('דנה לוי (דמו)');
+    await user.click(within(managerRow).getByRole('button', { name: 'עריכה' }));
+    managerRow = rowFor('דנה לוי (דמו)');
     await user.selectOptions(within(managerRow).getByLabelText(/^תפקיד דנה לוי/), 'system_admin');
     let roleDialog = await screen.findByRole('dialog', { name: 'שינוי תפקיד' });
     await user.click(within(roleDialog).getByRole('button', { name: 'שינוי תפקיד' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'שינוי תפקיד' })).not.toBeInTheDocument());
 
+    managerRow = rowFor('דנה לוי (דמו)');
+    await user.click(within(managerRow).getByRole('button', { name: 'עריכה' }));
     managerRow = rowFor('דנה לוי (דמו)');
     await user.selectOptions(within(managerRow).getByLabelText(/^תפקיד דנה לוי/), 'professional_manager');
     roleDialog = await screen.findByRole('dialog', { name: 'שינוי תפקיד' });
@@ -288,6 +311,7 @@ describe('linked user management and safety rules', () => {
     // controls (self-service is never offered, regardless of admin count).
     const ownRow = rowFor('אלון ברק (דמו)');
     expect(within(ownRow).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(ownRow).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
     expect(within(ownRow).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
   });
 });

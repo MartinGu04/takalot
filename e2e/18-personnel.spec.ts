@@ -20,6 +20,12 @@ test.describe('desktop', () => {
     expect(viewport).not.toBeNull();
     expect(box!.y + box!.height).toBeLessThan(viewport!.height - 4);
 
+    // RTL button order: the primary "הוספה" action sits visually first
+    // (rightmost), "ביטול" second -- both buttons live in the same row.
+    const buttons = dialog.locator('form button');
+    await expect(buttons.nth(0)).toHaveText('הוספה');
+    await expect(buttons.nth(1)).toHaveText('ביטול');
+
     await dialog.getByLabel('שם מלא', { exact: false }).fill('טכנאי E2E');
     await dialog.getByLabel('כתובת חשבון Google', { exact: false }).fill('e2e.tech@example.com');
     await dialog.getByRole('button', { name: 'הוספה' }).click();
@@ -27,6 +33,24 @@ test.describe('desktop', () => {
     await expect(page.getByText(/איש הצוות נוסף וממתין להתחברות הראשונה/)).toBeVisible();
     await expect(page.getByText('טכנאי E2E')).toBeVisible();
     await expect(page.getByText('e2e.tech@example.com')).toBeVisible();
+  });
+
+  test('the personnel list is compact: role shown as text, no permanently visible role select or deactivate button', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/personnel');
+    await page.getByRole('tab', { name: /^פעילים/ }).click();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
+    await expect(row).toBeVisible();
+    await expect(row.getByText('טכנאי')).toBeVisible();
+    await expect(row.getByRole('combobox')).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'השבתה' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'עריכה' })).toBeVisible();
+
+    // Expanding עריכה reveals the role select and deactivate button.
+    await row.getByRole('button', { name: 'עריכה' }).click();
+    await expect(row.getByRole('combobox')).toBeVisible();
+    await expect(row.getByRole('button', { name: 'השבתה' })).toBeVisible();
   });
 
   test('technician does not see כוח אדם and is blocked from /personnel directly', async ({ page }) => {
@@ -79,7 +103,7 @@ test.describe('mobile', () => {
     await dialog.getByRole('button', { name: 'הוספה' }).click();
     await expect(page.getByText('לעריכה נייד')).toBeVisible();
 
-    const row = page.locator('.surface', { hasText: 'לעריכה נייד' });
+    const row = page.locator('[data-personnel-row]', { hasText: 'לעריכה נייד' });
     await row.getByRole('button', { name: 'עריכה' }).click();
     dialog = page.getByRole('dialog', { name: 'עריכת רישום ממתין' });
     const nameField = dialog.getByLabel('שם מלא', { exact: false });
@@ -87,7 +111,7 @@ test.describe('mobile', () => {
     await dialog.getByRole('button', { name: 'שמירה' }).click();
     await expect(page.getByText('שם עודכן נייד')).toBeVisible();
 
-    const updatedRow = page.locator('.surface', { hasText: 'שם עודכן נייד' });
+    const updatedRow = page.locator('[data-personnel-row]', { hasText: 'שם עודכן נייד' });
     await updatedRow.getByRole('button', { name: 'ביטול' }).click();
     const confirm = page.getByRole('dialog', { name: 'ביטול רישום ממתין' });
     await expect(confirm).toBeVisible();
