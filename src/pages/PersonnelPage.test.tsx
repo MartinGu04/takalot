@@ -146,7 +146,8 @@ describe('adding personnel', () => {
     const dialog = await screen.findByRole('dialog', { name: 'הוספת איש צוות' });
     const roleSelect = within(dialog).getByLabelText(/^תפקיד/);
     const optionLabels = within(roleSelect).getAllByRole('option').map((o) => o.textContent);
-    expect(optionLabels).toEqual(['אחמ״ש', 'טכנאי']);
+    expect(optionLabels).toEqual(['טכנאי', 'צפייה בלבד']);
+    expect(optionLabels).not.toContain('אחמ״ש');
     expect(optionLabels).not.toContain('נגד');
     expect(optionLabels).not.toContain('מנהל מערכת');
 
@@ -163,14 +164,15 @@ describe('adding personnel', () => {
     expect(within(main()).getByText('new.tech@example.com')).toBeInTheDocument();
   });
 
-  it('a professional_manager sees technician, shift_supervisor and professional_manager as role options', async () => {
+  it('a professional_manager sees shift_supervisor, technician and viewer as role options -- never a peer professional_manager', async () => {
     const user = await openPersonnel('login-u-manager');
     await user.click(screen.getByRole('button', { name: 'הוספת איש צוות' }));
     const dialog = await screen.findByRole('dialog', { name: 'הוספת איש צוות' });
     const optionLabels = within(within(dialog).getByLabelText(/^תפקיד/))
       .getAllByRole('option')
       .map((o) => o.textContent);
-    expect(optionLabels).toEqual(['נגד', 'אחמ״ש', 'טכנאי']);
+    expect(optionLabels).toEqual(['אחמ״ש', 'טכנאי', 'צפייה בלבד']);
+    expect(optionLabels).not.toContain('נגד');
   });
 
   it('a system_admin sees every role, including מנהל מערכת', async () => {

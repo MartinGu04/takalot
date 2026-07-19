@@ -91,19 +91,26 @@ alter table public.pending_personnel enable row level security;
 create policy pending_personnel_select on public.pending_personnel for select
   using (public.my_role() in ('shift_supervisor', 'professional_manager', 'system_admin'));
 
--- ===== 2. Role ceilings (internal helper) =====
--- Who may create/manage an entry for which target role. Enforced HERE, in
--- the database, not only in frontend code:
---   shift_supervisor      -> technician, shift_supervisor
---   professional_manager  -> technician, shift_supervisor, professional_manager
+-- ===== 2. Role ceiling for ASSIGNMENT (internal helper) =====
+-- Who may register a NEW pending-personnel entry for which target role.
+-- Enforced HERE, in the database, not only in frontend code. A STRICT
+-- hierarchy -- neither non-admin rank may reach a PEER of its own rank:
+--   shift_supervisor      -> technician, viewer
+--   professional_manager  -> shift_supervisor, technician, viewer
 --   system_admin          -> every role, including system_admin
 --   technician / viewer   -> nothing
-create or replace function public.role_ceiling_allows(p_creator public.app_role, p_target public.app_role) returns boolean
+--
+-- Deliberately separate from role_ceiling_allows_manage (0010), which
+-- governs editing/deactivating an ALREADY-LINKED profile. The two
+-- matrices are identical today but are kept as two independent functions
+-- so they can diverge later without one edit silently affecting the
+-- other policy.
+create or replace function public.role_ceiling_allows_assign(p_creator public.app_role, p_target public.app_role) returns boolean
 language sql immutable set search_path = '' as $$
   select case p_creator
     when 'system_admin' then true
-    when 'professional_manager' then p_target in ('technician', 'shift_supervisor', 'professional_manager')
-    when 'shift_supervisor' then p_target in ('technician', 'shift_supervisor')
+    when 'professional_manager' then p_target in ('shift_supervisor', 'technician', 'viewer')
+    when 'shift_supervisor' then p_target in ('technician', 'viewer')
     else false
   end;
 $$;
@@ -121,7 +128,7 @@ declare
   v_expired_id uuid;
   v_row public.pending_personnel;
 begin
-  if v_role is null or not public.role_ceiling_allows(v_role, v_target) then
+  if v_role is null or not public.role_ceiling_allows_assign(v_role, v_target) then
     raise exception 'permission: אין הרשאה להוסיף רישום כוח אדם בתפקיד המבוקש';
   end if;
   if length(v_name) < 1 or length(v_name) > 120 then
@@ -198,8 +205,8 @@ begin
   -- The editor's ceiling must cover BOTH the entry's current role and the
   -- new one -- otherwise a lower role could take over entries above it.
   if v_role is null
-     or not public.role_ceiling_allows(v_role, v_old.role)
-     or not public.role_ceiling_allows(v_role, v_target) then
+     or not public.role_ceiling_allows_assign(v_role, v_old.role)
+     or not public.role_ceiling_allows_assign(v_role, v_target) then
     raise exception 'permission: אין הרשאה לערוך רישום זה';
   end if;
   if length(v_name) < 1 or length(v_name) > 120 then
@@ -264,7 +271,7 @@ begin
   if v_old.status <> 'pending' then
     raise exception 'validation: ניתן לבטל רק רישום ממתין';
   end if;
-  if v_role is null or not public.role_ceiling_allows(v_role, v_old.role) then
+  if v_role is null or not public.role_ceiling_allows_assign(v_role, v_old.role) then
     raise exception 'permission: אין הרשאה לבטל רישום זה';
   end if;
 
@@ -411,7 +418,7 @@ $$;
 -- Every new function: nothing for PUBLIC/anon. Management RPCs, the claim
 -- RPC and the listing are callable by authenticated (their bodies enforce
 -- the real authorization); the ceiling helper is internal only.
-revoke execute on function public.role_ceiling_allows(public.app_role, public.app_role) from public, anon, authenticated;
+revoke execute on function public.role_ceiling_allows_assign(public.app_role, public.app_role) from public, anon, authenticated;
 revoke execute on function public.create_pending_personnel(jsonb) from public, anon;
 revoke execute on function public.update_pending_personnel(uuid, jsonb) from public, anon;
 revoke execute on function public.cancel_pending_personnel(uuid) from public, anon;

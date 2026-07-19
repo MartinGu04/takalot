@@ -9,7 +9,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from '../auth/AuthContext';
 import { repo, useAppMutation } from '../data/hooks';
-import { allowedPendingRoles } from '../domain/permissions';
+import { allowedAssignRoles, allowedManageRoles } from '../domain/permissions';
 import { personnelRoleLabels, personnelStatusLabels } from '../domain/labels';
 import type { PersonnelEntry, Role } from '../domain/types';
 import type { PendingPersonnelInput } from '../domain/schemas';
@@ -46,7 +46,12 @@ export default function PersonnelPage() {
   // many entries; only one row's controls are open at a time.
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const allowedRoles = allowedPendingRoles(session.role);
+  // Deliberately separate: who this session may ASSIGN a role to when
+  // registering a new pending entry, vs. whose ALREADY-LINKED role/status
+  // they may edit -- mirrors the database's two separate ceiling
+  // functions (role_ceiling_allows_assign / role_ceiling_allows_manage).
+  const assignRoles = allowedAssignRoles(session.role);
+  const manageRoles = allowedManageRoles(session.role);
 
   const createMutation = useAppMutation((input: PendingPersonnelInput) => repo().createPendingPersonnel(session, input), {
     invalidate: [['personnel']],
@@ -183,7 +188,7 @@ export default function PersonnelPage() {
         <div className="surface mt-3 divide-y divide-hairline">
           {rows.map((entry) => {
             if (entry.kind === 'pending') {
-              const canManage = allowedRoles.includes(entry.role);
+              const canManage = assignRoles.includes(entry.role);
               return (
                 <div
                   key={entry.id}
@@ -214,7 +219,7 @@ export default function PersonnelPage() {
               );
             }
 
-            const canManage = allowedRoles.includes(entry.role) && entry.id !== session.userId;
+            const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId;
             const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
             const expanded = canManage && expandedId === entry.id;
             return (
@@ -259,7 +264,7 @@ export default function PersonnelPage() {
                         if (newRole !== entry.role) setRoleChangeRequest({ entry, newRole });
                       }}
                     >
-                      {allowedRoles.map((r) => (
+                      {manageRoles.map((r) => (
                         <option key={r} value={r}>
                           {personnelRoleLabels[r]}
                         </option>
@@ -292,7 +297,7 @@ export default function PersonnelPage() {
         onClose={() => setAddOpen(false)}
         title="הוספת איש צוות"
         submitLabel="הוספה"
-        allowedRoles={allowedRoles}
+        allowedRoles={assignRoles}
         onSubmit={(input) => createMutation.mutate(input)}
         submitting={createMutation.isPending}
       />
@@ -303,7 +308,7 @@ export default function PersonnelPage() {
           onClose={() => setEditingEntry(null)}
           title="עריכת רישום ממתין"
           submitLabel="שמירה"
-          allowedRoles={allowedRoles}
+          allowedRoles={assignRoles}
           initial={{ fullName: editingEntry.fullName, email: editingEntry.email ?? '', role: editingEntry.role }}
           onSubmit={(input) => updateMutation.mutate({ id: editingEntry.id, input })}
           submitting={updateMutation.isPending}

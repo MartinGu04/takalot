@@ -3,24 +3,30 @@
 -- admin_set_user_role / admin_set_user_active were system_admin-only and,
 -- even for system_admin, allowed a caller to change their OWN role or
 -- deactivate themselves (only "another" system_admin was protected). This
--- migration replaces both bodies so that:
+-- migration replaces both bodies so that -- a STRICT hierarchy, not a
+-- peer-level one:
 --
---   * shift_supervisor      may manage technician, shift_supervisor;
---   * professional_manager  may manage technician, shift_supervisor,
---                           professional_manager;
+--   * shift_supervisor      may manage technician, viewer;
+--   * professional_manager  may manage shift_supervisor, technician, viewer;
 --   * system_admin          may manage every role, including system_admin;
 --   * technician / viewer   may manage nobody.
 --
--- (Reuses role_ceiling_allows from 0008 -- the SAME ceiling table already
--- governing pending-personnel creation now governs linked-profile
--- management too, so there is exactly one ceiling definition in the
--- database. NOTE, reported but deliberately NOT changed here: this reused
--- ceiling makes shift_supervisor able to manage ANOTHER shift_supervisor,
--- professional_manager able to manage ANOTHER professional_manager, and
--- excludes 'viewer' entirely from both non-admin ceilings -- see the
--- verification report for a recommended future split between "roles a
--- manager may assign to a new person" and "existing roles a manager may
--- edit/deactivate".) On top of the ceiling:
+-- Neither non-admin rank may manage a PEER of its own rank: a
+-- shift_supervisor may NOT manage another shift_supervisor, and a
+-- professional_manager may NOT manage another professional_manager --
+-- only system_admin reaches system_admin. 'viewer' is included as a
+-- manageable lower role for both non-admin ranks (this replaces an
+-- earlier revision of this migration, never applied to hosted, that
+-- reused 0008's assignment ceiling directly -- which allowed
+-- peer-management and excluded 'viewer' entirely; see role_ceiling_allows_manage
+-- below, a NEW function dedicated to this policy).
+--
+-- role_ceiling_allows_manage is deliberately a SEPARATE function from
+-- 0008's role_ceiling_allows_assign (which governs registering a NEW
+-- pending-personnel entry), even though the two matrices are identical
+-- today -- so the assignment policy and the linked-management policy can
+-- diverge independently later without one edit silently affecting the
+-- other.
 --
 --   * no caller may change their own role or deactivate themselves --
 --     unconditionally, even system_admin;
@@ -89,14 +95,31 @@
 -- including the exactly-two-active-admins mutual-deactivation case that
 -- exposed this second bug -- see the verification report.)
 --
--- Grants are unchanged: both functions were already granted to
--- authenticated (0003, restated in 0007) and CREATE OR REPLACE preserves
--- existing grants for an unchanged signature, so no grant statements are
--- required here.
+-- Grants for admin_set_user_role/admin_set_user_active are unchanged:
+-- both were already granted to authenticated (0003, restated in 0007)
+-- and CREATE OR REPLACE preserves existing grants for an unchanged
+-- signature. role_ceiling_allows_manage is a NEW function added below and
+-- is granted/revoked explicitly, mirroring role_ceiling_allows_assign in
+-- 0008 (internal only -- no client role may call it directly).
 --
 -- 0001-0009 are untouched. This is an ADDITIVE migration. This file has
 -- never been applied to any hosted database, so it is revised IN PLACE
 -- rather than superseded by a new migration.
+
+-- ===== Role ceiling for MANAGEMENT (internal helper) =====
+-- Who may edit the role of / activate / deactivate an ALREADY-LINKED
+-- profile. See the header for the matrix and why this is a separate
+-- function from 0008's role_ceiling_allows_assign.
+create or replace function public.role_ceiling_allows_manage(p_actor public.app_role, p_target public.app_role) returns boolean
+language sql immutable set search_path = '' as $$
+  select case p_actor
+    when 'system_admin' then true
+    when 'professional_manager' then p_target in ('shift_supervisor', 'technician', 'viewer')
+    when 'shift_supervisor' then p_target in ('technician', 'viewer')
+    else false
+  end;
+$$;
+revoke execute on function public.role_ceiling_allows_manage(public.app_role, public.app_role) from public, anon, authenticated;
 
 create or replace function public.admin_set_user_role(p_user_id uuid, p_role public.app_role) returns void
 language plpgsql security definer set search_path = '' as $$
@@ -133,8 +156,8 @@ begin
   -- The ceiling must cover BOTH the profile's current role and the
   -- requested new role -- otherwise a lower manager could take over a
   -- profile above their reach, or hand it a role above their reach.
-  if not public.role_ceiling_allows(v_actor_role, v_target.role)
-     or not public.role_ceiling_allows(v_actor_role, p_role) then
+  if not public.role_ceiling_allows_manage(v_actor_role, v_target.role)
+     or not public.role_ceiling_allows_manage(v_actor_role, p_role) then
     raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
   end if;
 
@@ -186,7 +209,7 @@ begin
     raise exception 'not_found: המשתמש לא נמצא';
   end if;
 
-  if not public.role_ceiling_allows(v_actor_role, v_target.role) then
+  if not public.role_ceiling_allows_manage(v_actor_role, v_target.role) then
     raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
   end if;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hasCapability, canTechnicianUpdate, DEFAULT_POLICY } from './permissions';
-import type { Incident } from './types';
+import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, DEFAULT_POLICY } from './permissions';
+import type { Incident, Role } from './types';
 
 describe('role permission matrix', () => {
   it('grants full incident lifecycle capabilities to system_admin', () => {
@@ -43,6 +43,38 @@ describe('role permission matrix', () => {
     const granted = { ...DEFAULT_POLICY, viewerExportUserIds: ['viewer-1'] };
     expect(hasCapability('viewer', 'export_data', granted, 'viewer-1')).toBe(true);
     expect(hasCapability('viewer', 'export_data', granted, 'viewer-2')).toBe(false);
+  });
+});
+
+describe('personnel role-ceiling matrix (strict hierarchy, mirrors 0008/0010)', () => {
+  const ALL_ROLES: Role[] = ['system_admin', 'professional_manager', 'shift_supervisor', 'technician', 'viewer'];
+
+  it('shift_supervisor may assign/manage only technician and viewer -- never a peer or higher', () => {
+    expect(allowedAssignRoles('shift_supervisor')).toEqual(['technician', 'viewer']);
+    expect(allowedManageRoles('shift_supervisor')).toEqual(['technician', 'viewer']);
+  });
+
+  it('professional_manager may assign/manage shift_supervisor, technician and viewer -- never a peer or system_admin', () => {
+    expect(allowedAssignRoles('professional_manager')).toEqual(['shift_supervisor', 'technician', 'viewer']);
+    expect(allowedManageRoles('professional_manager')).toEqual(['shift_supervisor', 'technician', 'viewer']);
+  });
+
+  it('system_admin may assign/manage every role, including another system_admin', () => {
+    expect(allowedAssignRoles('system_admin')).toEqual(expect.arrayContaining(ALL_ROLES));
+    expect(allowedManageRoles('system_admin')).toEqual(expect.arrayContaining(ALL_ROLES));
+  });
+
+  it('technician and viewer may assign/manage nobody', () => {
+    expect(allowedAssignRoles('technician')).toEqual([]);
+    expect(allowedManageRoles('technician')).toEqual([]);
+    expect(allowedAssignRoles('viewer')).toEqual([]);
+    expect(allowedManageRoles('viewer')).toEqual([]);
+  });
+
+  it('the assignment and management ceilings are independent functions with identical (but separately evolvable) matrices today', () => {
+    for (const role of ALL_ROLES) {
+      expect(allowedAssignRoles(role)).toEqual(allowedManageRoles(role));
+    }
   });
 });
 

@@ -21,7 +21,7 @@ import type {
 } from '../../domain/types';
 import { isOpen } from '../../domain/types';
 import { reportedToOpsLabels } from '../../domain/labels';
-import { hasCapability, canTechnicianUpdate, allowedPendingRoles, type Capability } from '../../domain/permissions';
+import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
 import { isOverdue, sortByPriority } from '../../domain/overdue';
 import {
@@ -340,10 +340,11 @@ export class LocalDemoRepository implements Repository {
   }
 
   // --- linked-personnel management ---
-  // Mirrors 0010's rules exactly (role_ceiling_allows -- the SAME ceiling
-  // table pending-personnel creation uses -- plus unconditional self-
-  // protection and last-active-admin protection). See requirePersonnelManager
-  // below, shared with the pending-personnel RPCs.
+  // Mirrors 0010's rules exactly (allowedManageRoles / role_ceiling_allows_manage
+  // -- a strict hierarchy, deliberately separate from allowedAssignRoles /
+  // role_ceiling_allows_assign used by pending-personnel below -- plus
+  // unconditional self-protection and last-active-admin protection). See
+  // requirePersonnelManager below, shared with the pending-personnel RPCs.
 
   // Guards the last-active-admin invariant. In the real backend this is a
   // race-safety backstop (see 0010's header) against two CONCURRENT
@@ -361,7 +362,7 @@ export class LocalDemoRepository implements Repository {
     }
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    const ceiling = allowedPendingRoles(actor.role);
+    const ceiling = allowedManageRoles(actor.role);
     if (!ceiling.includes(profile.role) || !ceiling.includes(role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
     }
@@ -384,7 +385,7 @@ export class LocalDemoRepository implements Repository {
     }
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    if (!allowedPendingRoles(actor.role).includes(profile.role)) {
+    if (!allowedManageRoles(actor.role).includes(profile.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
     }
     if (!active && profile.role === 'system_admin' && profile.active && this.countActiveAdmins() <= 1) {
@@ -491,7 +492,7 @@ export class LocalDemoRepository implements Repository {
   async createPendingPersonnel(session: Session, rawInput: PendingPersonnelInput): Promise<PendingPersonnel> {
     const actor = this.requirePersonnelManager(session);
     const input = parseOrThrow(pendingPersonnelInputSchema, rawInput);
-    if (!allowedPendingRoles(actor.role).includes(input.role)) {
+    if (!allowedAssignRoles(actor.role).includes(input.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה להוסיף רישום כוח אדם בתפקיד המבוקש.');
     }
     const expiresAt = this.validateExpiresAt(input.expiresAt);
@@ -548,7 +549,7 @@ export class LocalDemoRepository implements Repository {
     if (row.status !== 'pending') throw new AppError('VALIDATION', 'ניתן לערוך רק רישום ממתין.');
     // The editor's ceiling must cover BOTH the entry's current role and the
     // new one -- a lower role must not take over entries above it.
-    const ceiling = allowedPendingRoles(actor.role);
+    const ceiling = allowedAssignRoles(actor.role);
     if (!ceiling.includes(row.role) || !ceiling.includes(input.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לערוך רישום זה.');
     }
@@ -590,7 +591,7 @@ export class LocalDemoRepository implements Repository {
     const row = this.pendingRows().find((r) => r.id === id);
     if (!row) throw new AppError('NOT_FOUND', 'הרישום לא נמצא.');
     if (row.status !== 'pending') throw new AppError('VALIDATION', 'ניתן לבטל רק רישום ממתין.');
-    if (!allowedPendingRoles(actor.role).includes(row.role)) {
+    if (!allowedAssignRoles(actor.role).includes(row.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לבטל רישום זה.');
     }
     const ts = this.now().toISOString();

@@ -110,25 +110,59 @@ export function hasCapability(
 }
 
 /**
- * Role ceilings. Mirrors the database rule (role_ceiling_allows in 0008,
- * reused by 0010 for linked-profile management) -- the database is
- * authoritative; this exists for the demo backend and for hiding
- * unavailable UI options. ONE ceiling table governs both who a creator may
- * register as pre-provisioned personnel AND who a manager may edit the
- * role of / activate / deactivate once linked:
- *   shift_supervisor     -> technician, shift_supervisor
- *   professional_manager -> + professional_manager (NCO)
+ * Role ceilings: a STRICT hierarchy, not peer-level. Mirrors the database
+ * (role_ceiling_allows_assign in 0008, role_ceiling_allows_manage in
+ * 0010) -- the database is authoritative; this exists for the demo
+ * backend and for hiding unavailable UI options.
+ *
+ *   shift_supervisor     -> technician, viewer
+ *   professional_manager -> shift_supervisor, technician, viewer
  *   system_admin         -> every role, including system_admin
  *   technician / viewer  -> nothing
+ *
+ * Neither role may reach a PEER of the same rank (a shift_supervisor may
+ * not assign/manage another shift_supervisor; a professional_manager may
+ * not assign/manage another professional_manager) -- only system_admin
+ * manages system_admin. `viewer` is included as a manageable lower role
+ * for both non-admin ranks.
+ *
+ * Two DELIBERATELY SEPARATE helpers, even though their matrices are
+ * currently identical: assignment (registering a NEW pending-personnel
+ * entry) and management (editing the role / activating / deactivating an
+ * ALREADY-LINKED profile) are different policies that may diverge later,
+ * exactly as the database keeps role_ceiling_allows_assign and
+ * role_ceiling_allows_manage as two separate functions rather than one
+ * shared one.
  */
-export function allowedPendingRoles(creator: Role): Role[] {
+/** Roles a creator may assign to a NEW pending-personnel entry. Mirrors
+ *  role_ceiling_allows_assign (0008). Kept as an independent function body
+ *  from allowedManageRoles below -- not a shared helper -- so the two can
+ *  be edited (and diverge) independently, exactly like their SQL
+ *  counterparts. */
+export function allowedAssignRoles(creator: Role): Role[] {
   switch (creator) {
     case 'system_admin':
       return ['system_admin', 'professional_manager', 'shift_supervisor', 'technician', 'viewer'];
     case 'professional_manager':
-      return ['professional_manager', 'shift_supervisor', 'technician'];
+      return ['shift_supervisor', 'technician', 'viewer'];
     case 'shift_supervisor':
-      return ['shift_supervisor', 'technician'];
+      return ['technician', 'viewer'];
+    default:
+      return [];
+  }
+}
+
+/** Roles whose ALREADY-LINKED profile a manager may edit/deactivate.
+ *  Mirrors role_ceiling_allows_manage (0010). Independent function body
+ *  from allowedAssignRoles above -- see that function's comment. */
+export function allowedManageRoles(actor: Role): Role[] {
+  switch (actor) {
+    case 'system_admin':
+      return ['system_admin', 'professional_manager', 'shift_supervisor', 'technician', 'viewer'];
+    case 'professional_manager':
+      return ['shift_supervisor', 'technician', 'viewer'];
+    case 'shift_supervisor':
+      return ['technician', 'viewer'];
     default:
       return [];
   }

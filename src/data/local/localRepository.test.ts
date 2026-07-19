@@ -688,11 +688,14 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
       await expect(repo.createPendingPersonnel(viewer, input())).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
-    it('shift supervisor may create technician and shift_supervisor, nothing higher', async () => {
+    it('shift supervisor may create technician and viewer, nothing at or above their own rank', async () => {
       await expect(repo.createPendingPersonnel(supervisor1, input({ role: 'technician' }))).resolves.toBeTruthy();
       await expect(
-        repo.createPendingPersonnel(supervisor1, input({ email: 'b@example.com', role: 'shift_supervisor' })),
+        repo.createPendingPersonnel(supervisor1, input({ email: 'b@example.com', role: 'viewer' })),
       ).resolves.toBeTruthy();
+      await expect(
+        repo.createPendingPersonnel(supervisor1, input({ email: 'peer@example.com', role: 'shift_supervisor' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
       await expect(
         repo.createPendingPersonnel(supervisor1, input({ email: 'c@example.com', role: 'professional_manager' })),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -701,10 +704,16 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
-    it('NCO (professional manager) may additionally create NCOs, but not administrators', async () => {
+    it('NCO (professional manager) may create shift_supervisor, technician and viewer, but not a peer NCO or an administrator', async () => {
       await expect(
-        repo.createPendingPersonnel(manager, input({ role: 'professional_manager' })),
+        repo.createPendingPersonnel(manager, input({ role: 'shift_supervisor' })),
       ).resolves.toBeTruthy();
+      await expect(
+        repo.createPendingPersonnel(manager, input({ email: 'viewer-by-nco@example.com', role: 'viewer' })),
+      ).resolves.toBeTruthy();
+      await expect(
+        repo.createPendingPersonnel(manager, input({ email: 'peer@example.com', role: 'professional_manager' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
       await expect(
         repo.createPendingPersonnel(manager, input({ email: 'e@example.com', role: 'system_admin' })),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -715,9 +724,19 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
     });
 
     it('a supervisor cannot edit or cancel an entry above their ceiling', async () => {
-      const entry = await repo.createPendingPersonnel(manager, input({ role: 'professional_manager' }));
+      const entry = await repo.createPendingPersonnel(admin, input({ role: 'professional_manager' }));
       await expect(
         repo.updatePendingPersonnel(supervisor1, entry.id, input({ role: 'technician' })),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.cancelPendingPersonnel(supervisor1, entry.id)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('a supervisor cannot edit or cancel a PEER shift_supervisor entry', async () => {
+      const entry = await repo.createPendingPersonnel(admin, input({ email: 'peer.entry@example.com', role: 'shift_supervisor' }));
+      await expect(
+        repo.updatePendingPersonnel(supervisor1, entry.id, input({ email: 'peer.entry@example.com', role: 'technician' })),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
       await expect(repo.cancelPendingPersonnel(supervisor1, entry.id)).rejects.toMatchObject({
         code: 'FORBIDDEN',
@@ -743,9 +762,9 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
 
   describe('claiming (the demo stand-in receives the identity the real backend derives itself)', () => {
     it('the exact confirmed email claims the entry and creates the profile with the preassigned role', async () => {
-      const entry = await repo.createPendingPersonnel(supervisor1, input({ role: 'shift_supervisor' }));
+      const entry = await repo.createPendingPersonnel(supervisor1, input({ role: 'viewer' }));
       const profile = repo.claimPendingForIdentity({ authUserId: 'auth-x1', email: 'new.person@example.com' });
-      expect(profile).toMatchObject({ id: 'auth-x1', role: 'shift_supervisor', active: true, fullName: 'חייל חדש' });
+      expect(profile).toMatchObject({ id: 'auth-x1', role: 'viewer', active: true, fullName: 'חייל חדש' });
       const rows = await repo.listPendingPersonnel(supervisor1);
       expect(rows.find((r) => r.id === entry.id)).toMatchObject({ status: 'claimed', claimedBy: 'auth-x1' });
     });
@@ -970,10 +989,23 @@ describe('linked-personnel management (mirrors migration 0010 rules)', () => {
     repo = newRepo({ now: FIXED_NOW });
   });
 
-  it('shift_supervisor may change the role of a technician within ceiling', async () => {
-    await repo.setUserRole(supervisor1, DEMO_USERS.tech1, 'shift_supervisor');
+  it('shift_supervisor may change the role of a technician to viewer, within ceiling', async () => {
+    await repo.setUserRole(supervisor1, DEMO_USERS.tech1, 'viewer');
     const profile = await repo.getProfile(DEMO_USERS.tech1);
-    expect(profile).toMatchObject({ role: 'shift_supervisor' });
+    expect(profile).toMatchObject({ role: 'viewer' });
+  });
+
+  it('shift_supervisor may manage a linked viewer profile', async () => {
+    await expect(repo.setUserActive(supervisor1, DEMO_USERS.viewer, false)).resolves.toBeUndefined();
+  });
+
+  it('shift_supervisor cannot manage a PEER shift_supervisor', async () => {
+    await expect(repo.setUserRole(supervisor1, DEMO_USERS.supervisor2, 'technician')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(repo.setUserActive(supervisor1, DEMO_USERS.supervisor2, false)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
   });
 
   it('shift_supervisor cannot manage a professional_manager (above ceiling)', async () => {
@@ -985,14 +1017,31 @@ describe('linked-personnel management (mirrors migration 0010 rules)', () => {
     });
   });
 
-  it('shift_supervisor cannot promote a technician above their own ceiling', async () => {
+  it('shift_supervisor cannot promote a technician to or above their own rank', async () => {
+    await expect(repo.setUserRole(supervisor1, DEMO_USERS.tech1, 'shift_supervisor')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
     await expect(repo.setUserRole(supervisor1, DEMO_USERS.tech1, 'professional_manager')).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
   });
 
-  it('professional_manager may manage technician, shift_supervisor and professional_manager, not system_admin', async () => {
-    await expect(repo.setUserRole(manager, DEMO_USERS.supervisor1, 'professional_manager')).resolves.toBeUndefined();
+  it('professional_manager may manage shift_supervisor, technician and viewer, not a peer professional_manager or system_admin', async () => {
+    await expect(repo.setUserRole(manager, DEMO_USERS.supervisor1, 'technician')).resolves.toBeUndefined();
+    await expect(repo.setUserActive(manager, DEMO_USERS.viewer, false)).resolves.toBeUndefined();
+  });
+
+  it('professional_manager cannot manage a PEER professional_manager', async () => {
+    await repo.setUserRole(admin, DEMO_USERS.tech2, 'professional_manager');
+    await expect(repo.setUserRole(manager, DEMO_USERS.tech2, 'technician')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(repo.setUserActive(manager, DEMO_USERS.tech2, false)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('professional_manager cannot manage a system_admin', async () => {
     await expect(repo.setUserActive(manager, DEMO_USERS.admin, false)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
