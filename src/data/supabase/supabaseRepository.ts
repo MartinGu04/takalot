@@ -184,21 +184,6 @@ export class SupabaseRepository implements Repository {
     wrap((await this.client.from('locations').update({ archived }).eq('id', id)).error);
   }
 
-  async createUser(_s: Session, fullName: string, role: Role): Promise<Profile> {
-    // Placeholder profile record; real auth invitation is a separate admin action.
-    const data = await this.rpc<Record<string, unknown>>('admin_create_placeholder_profile', {
-      p_full_name: fullName,
-      p_role: role,
-    });
-    return {
-      id: data.id as string,
-      fullName: data.full_name as string,
-      role: data.role as Role,
-      active: data.active as boolean,
-      createdAt: data.created_at as string,
-    };
-  }
-
   async setUserRole(_s: Session, userId: string, role: Role): Promise<void> {
     await this.rpc('admin_set_user_role', { p_user_id: userId, p_role: role });
   }

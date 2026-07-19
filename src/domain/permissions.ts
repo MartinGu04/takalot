@@ -16,6 +16,7 @@ export type Capability =
   | 'create_handover'
   | 'accept_handover'
   | 'manage_users'
+  | 'manage_personnel'
   | 'manage_config'
   | 'view_audit_full'
   | 'view_audit_incidents'
@@ -51,6 +52,7 @@ const matrix: Record<Role, Capability[]> = {
     'create_handover',
     'accept_handover',
     'manage_users',
+    'manage_personnel',
     'manage_config',
     'view_audit_full',
     'view_audit_incidents',
@@ -68,6 +70,7 @@ const matrix: Record<Role, Capability[]> = {
     'export_data',
     'create_handover',
     'accept_handover',
+    'manage_personnel',
     'view_audit_incidents',
     'complete_follow_up',
   ],
@@ -82,6 +85,7 @@ const matrix: Record<Role, Capability[]> = {
     'export_data',
     'create_handover',
     'accept_handover',
+    'manage_personnel',
     'complete_follow_up',
     // 'reopen_incident' is granted only via PolicyFlags.allowSupervisorReopen
   ],
@@ -106,9 +110,12 @@ export function hasCapability(
 }
 
 /**
- * Role ceilings for pre-provisioned personnel entries. Mirrors the database
- * rule (role_ceiling_allows in 0008) -- the database is authoritative; this
- * exists for the demo backend and for hiding unavailable UI options:
+ * Role ceilings. Mirrors the database rule (role_ceiling_allows in 0008,
+ * reused by 0010 for linked-profile management) -- the database is
+ * authoritative; this exists for the demo backend and for hiding
+ * unavailable UI options. ONE ceiling table governs both who a creator may
+ * register as pre-provisioned personnel AND who a manager may edit the
+ * role of / activate / deactivate once linked:
  *   shift_supervisor     -> technician, shift_supervisor
  *   professional_manager -> + professional_manager (NCO)
  *   system_admin         -> every role, including system_admin

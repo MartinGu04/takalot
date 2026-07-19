@@ -20,6 +20,23 @@ export const roleLabels: Record<Role, string> = {
   viewer: 'צפייה בלבד',
 };
 
+/** Short role labels for the כוח אדם (personnel) page only -- deliberately
+ *  more compact than roleLabels (e.g. "נגד" instead of "נגד / מנהל מקצועי"),
+ *  which stays as the general-purpose label used elsewhere in the app. */
+export const personnelRoleLabels: Record<Role, string> = {
+  system_admin: 'מנהל מערכת',
+  professional_manager: 'נגד',
+  shift_supervisor: 'אחמ״ש',
+  technician: 'טכנאי',
+  viewer: 'צפייה בלבד',
+};
+
+export const personnelStatusLabels: Record<'pending' | 'active' | 'inactive', string> = {
+  pending: 'ממתין להתחברות',
+  active: 'פעיל',
+  inactive: 'לא פעיל',
+};
+
 export const severityLabels: Record<Severity, string> = {
   critical: 'קריטית',
   high: 'גבוהה',

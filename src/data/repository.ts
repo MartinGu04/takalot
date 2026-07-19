@@ -106,8 +106,7 @@ export interface Repository {
   renameLocation(session: Session, id: string, name: string): Promise<void>;
   setLocationArchived(session: Session, id: string, archived: boolean): Promise<void>;
 
-  // --- users (admin) ---
-  createUser(session: Session, fullName: string, role: Role): Promise<Profile>;
+  // --- linked-personnel management (role ceilings enforced in the database) ---
   setUserRole(session: Session, userId: string, role: Role): Promise<void>;
   setUserActive(session: Session, userId: string, active: boolean): Promise<void>;
 

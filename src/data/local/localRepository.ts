@@ -339,31 +339,34 @@ export class LocalDemoRepository implements Repository {
     this.persist();
   }
 
-  // --- users ---
+  // --- linked-personnel management ---
+  // Mirrors 0010's rules exactly (role_ceiling_allows -- the SAME ceiling
+  // table pending-personnel creation uses -- plus unconditional self-
+  // protection and last-active-admin protection). See requirePersonnelManager
+  // below, shared with the pending-personnel RPCs.
 
-  async createUser(session: Session, fullName: string, role: Role): Promise<Profile> {
-    const actor = this.requireCap(session, 'manage_users');
-    const profile: Profile = {
-      id: newId(),
-      fullName: this.requireName(fullName),
-      role,
-      active: true,
-      createdAt: this.now().toISOString(),
-    };
-    this.db.profiles.push(profile);
-    this.audit(actor.id, 'user_created', 'profile', profile.id, { after: JSON.stringify(profile) });
-    this.persist();
-    return profile;
+  // Guards the last-active-admin invariant. In the real backend this is a
+  // race-safety backstop (see 0010's header) against two CONCURRENT
+  // requests each removing a different admin at once; this single-
+  // threaded demo repository has no such race, so here it is simply a
+  // direct, always-correct count.
+  private countActiveAdmins(): number {
+    return this.db.profiles.filter((p) => p.role === 'system_admin' && p.active).length;
   }
 
   async setUserRole(session: Session, userId: string, role: Role): Promise<void> {
-    const actor = this.requireCap(session, 'manage_users');
+    const actor = this.requirePersonnelManager(session);
+    if (userId === actor.id) {
+      throw new AppError('FORBIDDEN', 'לא ניתן לשנות את התפקיד של עצמך.');
+    }
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    // A system_admin's role cannot be changed by anyone but themselves is out of
-    // scope; protect against demoting another admin here.
-    if (profile.role === 'system_admin' && profile.id !== actor.id) {
-      throw new AppError('FORBIDDEN', 'לא ניתן לשנות תפקיד של מנהל מערכת אחר.');
+    const ceiling = allowedPendingRoles(actor.role);
+    if (!ceiling.includes(profile.role) || !ceiling.includes(role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
+    }
+    if (profile.role === 'system_admin' && profile.active && role !== 'system_admin' && this.countActiveAdmins() <= 1) {
+      throw new AppError('VALIDATION', 'לא ניתן להוריד בדרגה את מנהל המערכת הפעיל האחרון.');
     }
     const before = profile.role;
     profile.role = role;
@@ -375,11 +378,17 @@ export class LocalDemoRepository implements Repository {
   }
 
   async setUserActive(session: Session, userId: string, active: boolean): Promise<void> {
-    const actor = this.requireCap(session, 'manage_users');
+    const actor = this.requirePersonnelManager(session);
+    if (userId === actor.id) {
+      throw new AppError('FORBIDDEN', 'לא ניתן לשנות את הסטטוס של עצמך.');
+    }
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    if (profile.role === 'system_admin' && profile.id !== actor.id && !active) {
-      throw new AppError('FORBIDDEN', 'לא ניתן להשבית מנהל מערכת אחר.');
+    if (!allowedPendingRoles(actor.role).includes(profile.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
+    }
+    if (!active && profile.role === 'system_admin' && profile.active && this.countActiveAdmins() <= 1) {
+      throw new AppError('VALIDATION', 'לא ניתן להשבית את מנהל המערכת הפעיל האחרון.');
     }
     profile.active = active;
     this.audit(actor.id, active ? 'user_activated' : 'user_deactivated', 'profile', userId);

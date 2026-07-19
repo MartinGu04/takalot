@@ -964,6 +964,125 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
   });
 });
 
+describe('linked-personnel management (mirrors migration 0010 rules)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('shift_supervisor may change the role of a technician within ceiling', async () => {
+    await repo.setUserRole(supervisor1, DEMO_USERS.tech1, 'shift_supervisor');
+    const profile = await repo.getProfile(DEMO_USERS.tech1);
+    expect(profile).toMatchObject({ role: 'shift_supervisor' });
+  });
+
+  it('shift_supervisor cannot manage a professional_manager (above ceiling)', async () => {
+    await expect(repo.setUserRole(supervisor1, DEMO_USERS.manager, 'technician')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(repo.setUserActive(supervisor1, DEMO_USERS.manager, false)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('shift_supervisor cannot promote a technician above their own ceiling', async () => {
+    await expect(repo.setUserRole(supervisor1, DEMO_USERS.tech1, 'professional_manager')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('professional_manager may manage technician, shift_supervisor and professional_manager, not system_admin', async () => {
+    await expect(repo.setUserRole(manager, DEMO_USERS.supervisor1, 'professional_manager')).resolves.toBeUndefined();
+    await expect(repo.setUserActive(manager, DEMO_USERS.admin, false)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('system_admin may manage every role including another system_admin', async () => {
+    await expect(repo.setUserRole(admin, DEMO_USERS.supervisor1, 'system_admin')).resolves.toBeUndefined();
+  });
+
+  it('technician and viewer cannot manage anyone', async () => {
+    await expect(repo.setUserRole(tech1, DEMO_USERS.tech2, 'shift_supervisor')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(repo.setUserActive(viewer, DEMO_USERS.tech1, false)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('no user may change their own role, even system_admin', async () => {
+    await expect(repo.setUserRole(admin, DEMO_USERS.admin, 'professional_manager')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+
+  it('no user may deactivate themselves, even system_admin', async () => {
+    await expect(repo.setUserActive(admin, DEMO_USERS.admin, false)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('demoting a second admin down to one active admin is allowed (2 -> 1 is not the protected transition)', async () => {
+    // Promote a second admin, then demote them back -- going from 2 active
+    // admins to 1 must never be spuriously blocked.
+    await repo.setUserRole(admin, DEMO_USERS.manager, 'system_admin');
+    await expect(repo.setUserRole(admin, DEMO_USERS.manager, 'professional_manager')).resolves.toBeUndefined();
+    const remaining = await repo.getProfile(DEMO_USERS.admin);
+    expect(remaining).toMatchObject({ active: true, role: 'system_admin' });
+  });
+
+  it('deactivating a second admin down to one active admin is allowed (2 -> 1 is not the protected transition)', async () => {
+    await repo.setUserRole(admin, DEMO_USERS.manager, 'system_admin');
+    await expect(repo.setUserActive(admin, DEMO_USERS.manager, false)).resolves.toBeUndefined();
+    const remaining = await repo.getProfile(DEMO_USERS.admin);
+    expect(remaining).toMatchObject({ active: true, role: 'system_admin' });
+  });
+
+  // Given the unconditional self-block above, the ONLY way a single,
+  // synchronous request could ever reach the "would drop to zero active
+  // admins" guard is for the sole remaining admin to act on themselves --
+  // which the self-block already rejects first (see the two tests above:
+  // "no user may change their own role" / "no user may deactivate
+  // themselves"). Acting on a DIFFERENT admin requires the caller to
+  // themselves be an active admin, so caller+target are already two
+  // distinct active-admin rows whenever this guard's condition could
+  // matter -- the count can never actually be <=1 in that case. The
+  // guard's real purpose is closing a RACE between two concurrent
+  // requests removing two different admins at once, which is not
+  // reproducible in this single-threaded demo repository; it is proven
+  // instead with two concurrent SQL sessions against the real migration
+  // (see the verification report).
+  it('the guard never spuriously blocks managing non-admin roles while only one admin is active', async () => {
+    // With only one active admin, demoting/deactivating a non-admin must
+    // remain entirely unaffected by the last-admin rule.
+    await expect(repo.setUserRole(admin, DEMO_USERS.tech1, 'shift_supervisor')).resolves.toBeUndefined();
+    await expect(repo.setUserActive(admin, DEMO_USERS.tech2, false)).resolves.toBeUndefined();
+  });
+
+  it('every role and activation change is audited', async () => {
+    await repo.setUserRole(admin, DEMO_USERS.tech1, 'shift_supervisor');
+    await repo.setUserActive(admin, DEMO_USERS.tech2, false);
+    await repo.setUserActive(admin, DEMO_USERS.tech2, true);
+    const logs = await repo.listAuditLogs(admin, {});
+    const actions = logs.map((l) => l.action);
+    expect(actions).toEqual(
+      expect.arrayContaining(['user_role_changed', 'user_deactivated', 'user_activated']),
+    );
+  });
+});
+
+describe('unified personnel listing across pending + linked (list_personnel mirror, end to end)', () => {
+  it('reflects pending, active and inactive personnel together for a manager', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.createPendingPersonnel(supervisor1, {
+      fullName: 'ממתין חדש',
+      email: 'waiting.person@example.com',
+      role: 'technician',
+    });
+    await repo.setUserActive(admin, DEMO_USERS.tech2, false);
+
+    const list = await repo.listPersonnel(supervisor1);
+    expect(list.some((e) => e.kind === 'pending' && e.email === 'waiting.person@example.com')).toBe(true);
+    expect(list.some((e) => e.kind === 'linked' && e.id === DEMO_USERS.tech1 && e.state === 'active')).toBe(true);
+    expect(list.some((e) => e.kind === 'linked' && e.id === DEMO_USERS.tech2 && e.state === 'inactive')).toBe(true);
+  });
+});
+
 describe('export permission enforcement', () => {
   it('allows export for shift_supervisor and system_admin', async () => {
     const repo = newRepo({ now: FIXED_NOW });
