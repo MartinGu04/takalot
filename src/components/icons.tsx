@@ -65,6 +65,17 @@ export function IconShield(props: IconProps) {
   );
 }
 
+export function IconUsers(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="7.2" cy="7" r="2.4" />
+      <path d="M2.7 16.2c0-2.5 2-4.2 4.5-4.2s4.5 1.7 4.5 4.2" />
+      <circle cx="14.2" cy="6.3" r="1.9" />
+      <path d="M13 11.9c1.9.2 3.7 1.7 3.7 4.3" />
+    </svg>
+  );
+}
+
 export function IconSun(props: IconProps) {
   return (
     <svg {...base(props)}>

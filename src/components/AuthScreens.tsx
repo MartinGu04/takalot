@@ -48,13 +48,13 @@ export function UnauthorizedScreen({
     <Shell>
       <div className="mt-6" data-testid="unauthorized-screen">
         <h2 className="text-lg font-bold text-text-primary">אין הרשאת גישה למערכת</h2>
-        <p className="mt-2 text-sm text-secondary">
-          ההזדהות הצליחה{email ? <> עבור <span dir="ltr" className="font-medium">{email}</span></> : null}, אך
-          לחשבון זה אין פרופיל משתמש פעיל במערכת.
-        </p>
-        <p className="mt-2 text-sm text-muted">
-          גישה ניתנת בהזמנה בלבד. יש לפנות למנהל המערכת כדי להסדיר הרשאה.
-        </p>
+        {email && (
+          <p className="mt-2 text-sm text-secondary">
+            מחובר/ת עם <span dir="ltr" className="font-medium">{email}</span>
+          </p>
+        )}
+        <p className="mt-2 text-sm text-secondary">החשבון הזה אינו רשום בכוח האדם של Nexus.</p>
+        <p className="mt-1 text-sm text-muted">יש לפנות לאחמ״ש, לנגד או למנהל המערכת.</p>
         <Button variant="secondary" className="mt-5 w-full" onClick={onLogout}>
           התנתקות
         </Button>

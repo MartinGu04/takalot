@@ -1,103 +1,10 @@
-// System administrator screen: users, systems/positions, locations, audit log.
+// System administrator screen: systems/positions, locations, audit log.
+// User/personnel management lives on the dedicated כוח אדם page (/personnel).
 import { useState } from 'react';
 import { useSession } from '../auth/AuthContext';
-import { isDemoMode } from '../data';
 import { useProfiles, useSystems, useLocations, useAuditLogs, useAppMutation, repo } from '../data/hooks';
-import { roleLabels } from '../domain/labels';
-import type { Role } from '../domain/types';
-import { Button, Field, Input, Select, Spinner, EmptyState } from '../components/ui';
+import { Button, Field, Input, Spinner, EmptyState } from '../components/ui';
 import { formatDateTime } from '../lib/time';
-
-const ROLES: Role[] = ['system_admin', 'professional_manager', 'shift_supervisor', 'technician', 'viewer'];
-
-function UsersTab() {
-  const session = useSession();
-  const demo = isDemoMode();
-  const { data: profiles, isLoading } = useProfiles();
-  const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState<Role>('technician');
-
-  const createUser = useAppMutation((vars: { name: string; role: Role }) => repo().createUser(session, vars.name, vars.role), {
-    successText: 'המשתמש נוצר.',
-    invalidate: [['profiles']],
-    onSuccess: () => setNewName(''),
-  });
-  const setRole = useAppMutation((vars: { id: string; role: Role }) => repo().setUserRole(session, vars.id, vars.role), {
-    successText: 'התפקיד עודכן.',
-    invalidate: [['profiles']],
-  });
-  const setActive = useAppMutation((vars: { id: string; active: boolean }) => repo().setUserActive(session, vars.id, vars.active), {
-    successText: 'הסטטוס עודכן.',
-    invalidate: [['profiles']],
-  });
-
-  if (isLoading) return <Spinner />;
-
-  return (
-    <div>
-      {demo ? (
-        // Demo-only fictional-user creation. In supabase mode this action is
-        // absent entirely: it would only write a disconnected placeholder
-        // row, which neither creates nor authorizes a real Google user, so
-        // presenting it as "user creation" there would be misleading.
-        <div className="mb-4 flex flex-wrap items-end gap-2 surface p-3">
-          <Field label="שם מלא (משתמש הדגמה)">
-            {(a) => <Input {...a} value={newName} onChange={(e) => setNewName(e.target.value)} />}
-          </Field>
-          <Field label="תפקיד">
-            {(a) => (
-              <Select {...a} value={newRole} onChange={(e) => setNewRole(e.target.value as Role)}>
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>{roleLabels[r]}</option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <Button
-            disabled={!newName.trim() || createUser.isPending}
-            onClick={() => createUser.mutate({ name: newName.trim(), role: newRole })}
-          >
-            הוספת משתמש
-          </Button>
-        </div>
-      ) : (
-        <div
-          className="mb-4 surface p-3 text-sm text-secondary"
-          data-testid="user-provisioning-note"
-        >
-          <p className="font-medium text-text-primary">הוספת משתמש חדש</p>
-          <p className="mt-1">
-            משתמש חדש מוסדר מראש ברישום כוח אדם על ידי גורם מוסמך (אחמ״ש, נגד או מנהל מערכת) —
-            שם, כתובת Google ותפקיד. לאחר ההתחברות הראשונה שלו עם Google, הפרופיל נוצר ומקושר
-            אוטומטית לפי כתובת הדוא״ל שאושרה מראש. משתמשים שכבר קושרו מנוהלים כאן — תפקיד
-            והפעלה/השבתה.
-          </p>
-        </div>
-      )}
-      <div className="flex flex-col gap-2">
-        {(profiles ?? []).map((p) => (
-          <div key={p.id} className="flex flex-wrap items-center gap-2 surface p-3">
-            <span className="font-medium">{p.fullName}</span>
-            <Select
-              className="w-auto"
-              aria-label={`תפקיד ${p.fullName}`}
-              value={p.role}
-              onChange={(e) => setRole.mutate({ id: p.id, role: e.target.value as Role })}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>{roleLabels[r]}</option>
-              ))}
-            </Select>
-            <label className="ms-auto flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={p.active} onChange={(e) => setActive.mutate({ id: p.id, active: e.target.checked })} />
-              פעיל
-            </label>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function ConfigTab({ kind }: { kind: 'systems' | 'locations' }) {
   const session = useSession();
@@ -194,14 +101,13 @@ function AuditTab() {
 }
 
 const TABS = [
-  { key: 'users', label: 'משתמשים' },
   { key: 'systems', label: 'מערכות / עמדות' },
   { key: 'locations', label: 'מיקומים' },
   { key: 'audit', label: 'יומן פעילות' },
 ] as const;
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('users');
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('systems');
 
   return (
     <div>
@@ -224,7 +130,6 @@ export default function AdminPage() {
         ))}
       </div>
       <div className="mt-4">
-        {tab === 'users' && <UsersTab />}
         {tab === 'systems' && <ConfigTab kind="systems" />}
         {tab === 'locations' && <ConfigTab kind="locations" />}
         {tab === 'audit' && <AuditTab />}

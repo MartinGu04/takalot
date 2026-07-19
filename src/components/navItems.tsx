@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react';
 import type { Role } from '../domain/types';
-import { IconAlertTriangle, IconArchive, IconArrowsExchange, IconPulse, IconShield } from './icons';
+import { IconAlertTriangle, IconArchive, IconArrowsExchange, IconPulse, IconShield, IconUsers } from './icons';
 
 export interface NavItem {
   to: string;
@@ -16,6 +16,9 @@ export function navItems(role: Role): NavItem[] {
     { to: '/handovers', label: 'העברת משמרת', icon: IconArrowsExchange },
     { to: '/archive', label: 'ארכיון', icon: IconArchive },
   ];
+  if (['shift_supervisor', 'professional_manager', 'system_admin'].includes(role)) {
+    items.push({ to: '/personnel', label: 'כוח אדם', icon: IconUsers });
+  }
   if (role === 'system_admin') items.push({ to: '/admin', label: 'ניהול', icon: IconShield });
   return items;
 }

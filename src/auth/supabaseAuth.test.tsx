@@ -246,6 +246,17 @@ describe('supabase mode: identity without authorization', () => {
     expect(screen.queryByRole('navigation', { name: 'ניווט ראשי' })).not.toBeInTheDocument();
   });
 
+  it('shows the exact personnel-not-registered copy, never Supabase/database wording', async () => {
+    state.session = { user: { id: 'auth-user-9', email: 'stranger@example.com' } };
+    state.getProfile.mockResolvedValue(null);
+
+    render(<App />);
+    const screenEl = await screen.findByTestId('unauthorized-screen');
+    expect(within(screenEl).getByText('החשבון הזה אינו רשום בכוח האדם של Nexus.')).toBeInTheDocument();
+    expect(within(screenEl).getByText('יש לפנות לאחמ״ש, לנגד או למנהל המערכת.')).toBeInTheDocument();
+    expect(screenEl.textContent).not.toMatch(/supabase|uuid|database|מסד נתונים/i);
+  });
+
   it('treats an INACTIVE profile as unauthorized too', async () => {
     state.session = { user: { id: 'auth-user-9', email: 'off@example.com' } };
     state.getProfile.mockResolvedValue({ ...ACTIVE_PROFILE, active: false });
@@ -278,20 +289,6 @@ describe('supabase mode: profile check failure', () => {
     state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
     await user.click(screen.getByRole('button', { name: 'ניסיון חוזר' }));
     await screen.findByRole('heading', { name: 'מצב נוכחי' });
-  });
-});
-
-describe('supabase mode: admin users page', () => {
-  it('offers no create-user action and explains manual provisioning instead', async () => {
-    state.session = { user: { id: 'auth-admin-1', email: 'admin@example.com' } };
-    state.getProfile.mockResolvedValue({ ...ACTIVE_PROFILE, id: 'auth-admin-1', role: 'system_admin' });
-    window.history.pushState({}, '', '/admin');
-
-    render(<App />);
-    // The manual-provisioning explanation replaces the demo-only create form.
-    expect(await screen.findByTestId('user-provisioning-note')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'הוספת משתמש' })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/שם מלא/)).not.toBeInTheDocument();
   });
 });
 

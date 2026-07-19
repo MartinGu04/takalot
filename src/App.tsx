@@ -23,6 +23,7 @@ const HandoverCreatePage = lazy(() => import('./pages/HandoverCreatePage'));
 const HandoverDetailPage = lazy(() => import('./pages/HandoverDetailPage'));
 const ArchivePage = lazy(() => import('./pages/ArchivePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const PersonnelPage = lazy(() => import('./pages/PersonnelPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
@@ -84,6 +85,7 @@ function AppRoutes() {
           />
           <Route path="/handovers/:id" element={<RequireAuth><HandoverDetailPage /></RequireAuth>} />
           <Route path="/archive" element={<RequireAuth><ArchivePage /></RequireAuth>} />
+          <Route path="/personnel" element={<RequireAuth cap="manage_personnel"><PersonnelPage /></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth cap="manage_users"><AdminPage /></RequireAuth>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
