@@ -103,6 +103,11 @@ describe('incident card content and structure', () => {
     expect(cardScope.getByText('קריטית')).toBeInTheDocument(); // severity badge
     expect(cardScope.getByText('בטיפול')).toBeInTheDocument(); // status badge (in_progress)
     expect(cardScope.getByText(/עודכן/)).toBeInTheDocument(); // last-updated metadata line
+    // Second line: labeled system/location, not scattered elsewhere.
+    expect(cardScope.getByText(/מערכת:/)).toBeInTheDocument();
+    expect(cardScope.getByText(/מיקום:/)).toBeInTheDocument();
+    expect(cardScope.getByText('מערכת אלפא')).toBeInTheDocument();
+    expect(cardScope.getByText('אתר 1')).toBeInTheDocument();
   });
 
   it('the contextual "open" affordance is not the only way to reach the incident -- the whole card is a real link', async () => {

@@ -8,6 +8,35 @@ function urgentCard(page: import('@playwright/test').Page) {
   return page.locator('a.incident-card', { hasText: INC1_IMPACT });
 }
 
+test.describe('incident card content hierarchy', () => {
+  test('number+severity on the first line, labeled system/location on the second, above the description', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    const card = urgentCard(page);
+    const numberLine = card.locator('span', { hasText: '2026-001' }).first().locator('..');
+    await expect(numberLine).toContainText('קריטית'); // severity badge shares the first line
+    const systemLocationLine = card.getByText(/מערכת:.*מיקום:/);
+    await expect(systemLocationLine).toBeVisible();
+    await expect(systemLocationLine).toContainText('מערכת אלפא');
+    await expect(systemLocationLine).toContainText('אתר 1');
+
+    const numberBox = await numberLine.boundingBox();
+    const sysLocBox = await systemLocationLine.boundingBox();
+    const descriptionBox = await card.getByText(INC1_IMPACT).boundingBox();
+    expect(numberBox && sysLocBox && descriptionBox).toBeTruthy();
+    if (numberBox && sysLocBox && descriptionBox) {
+      expect(sysLocBox.y).toBeGreaterThan(numberBox.y);
+      expect(descriptionBox.y).toBeGreaterThan(sysLocBox.y);
+    }
+  });
+
+  test('closed/archive cards inherit the same header hierarchy', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/archive');
+    const closedCard = page.locator('a.incident-card').first();
+    await expect(closedCard.getByText(/מערכת:.*מיקום:/)).toBeVisible();
+  });
+});
+
 test.describe('incident card structure', () => {
   test('desktop: metadata sits in a stable column beside the main content, not scattered across the card width', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });

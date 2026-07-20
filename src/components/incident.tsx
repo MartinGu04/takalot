@@ -96,14 +96,19 @@ export function IncidentCard({
       <IconChevronLeft className="absolute end-3 top-4 size-4 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
-        {/* Main content: identity, description, severity, next-action state. */}
+        {/* Main content: identity, description, severity, next-action state.
+            Line 1: number + severity. Line 2: system/location (labeled).
+            Then the description -- nothing scattered across the card width. */}
         <div className="min-w-0 flex-1 pe-6 sm:pe-8">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base font-extrabold text-brand-700 dark:text-brand-400">{incident.number}</span>
             <SeverityBadge severity={incident.severity} />
-            <span className="min-w-0 break-words font-semibold text-text-primary">{systemName}</span>
-            <span className="shrink-0 text-sm text-muted">{locationName}</span>
           </div>
+          <p className="mt-1 truncate text-sm text-muted">
+            מערכת: <span className="font-medium text-text-secondary">{systemName}</span>
+            {' · '}
+            מיקום: <span className="font-medium text-text-secondary">{locationName}</span>
+          </p>
           <p className="mt-1.5 line-clamp-2 break-words text-sm text-secondary">{incident.operationalImpact}</p>
           <div className="mt-2">
             <NextUpdateNote incident={incident} now={now} />

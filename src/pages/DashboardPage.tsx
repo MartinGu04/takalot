@@ -88,7 +88,7 @@ function Stat({
 }) {
   const t = statToneStyles[value > 0 ? tone : 'brand'];
   return (
-    <div className="surface flex min-w-0 items-center gap-3 p-4">
+    <div className="surface flex min-w-0 items-center gap-3 p-4 sm:p-5">
       <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
         <Icon className="size-5" />
       </span>
@@ -157,7 +157,7 @@ export default function DashboardPage() {
         {summarySentence(derived.open, derived.overdue)}
       </p>
 
-      <div className="mt-4 flex flex-col gap-2.5 sm:grid sm:grid-cols-[4fr_3fr_3fr]">
+      <div className="mt-4 flex flex-col gap-2.5 sm:grid sm:grid-cols-3 sm:items-stretch">
         <PrimaryStat
           icon={IconPulse}
           label="תקלות פתוחות"

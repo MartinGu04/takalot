@@ -142,15 +142,19 @@ test.describe('dashboard KPI responsive layout', () => {
     }
   });
 
-  test('desktop: the primary card is visibly wider than each secondary card', async ({ page }) => {
+  test('desktop: the three metric cards have equal physical dimensions (width and height)', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAs(page, DEMO_USERS.supervisor1);
 
     const primaryBox = await page.getByRole('button', { name: 'תקלות פתוחות' }).boundingBox();
     const criticalBox = await page.getByText('קריטיות / גבוהות').locator('..').locator('..').boundingBox();
-    expect(primaryBox && criticalBox).toBeTruthy();
-    if (primaryBox && criticalBox) {
-      expect(primaryBox.width).toBeGreaterThan(criticalBox.width * 1.1);
+    const overdueBox = await page.getByText('עדכונים באיחור', { exact: true }).locator('..').locator('..').boundingBox();
+    expect(primaryBox && criticalBox && overdueBox).toBeTruthy();
+    if (primaryBox && criticalBox && overdueBox) {
+      expect(primaryBox.width).toBeCloseTo(criticalBox.width, 0);
+      expect(criticalBox.width).toBeCloseTo(overdueBox.width, 0);
+      expect(primaryBox.height).toBeCloseTo(criticalBox.height, 0);
+      expect(criticalBox.height).toBeCloseTo(overdueBox.height, 0);
     }
   });
 });
