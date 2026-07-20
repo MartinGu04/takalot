@@ -82,6 +82,40 @@ test.describe('contextual affordance is keyboard-accessible', () => {
   });
 });
 
+test.describe('critical vs overdue accents are visually distinct', () => {
+  test('the critical+overdue card gets the red critical treatment', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    const card = urgentCard(page);
+    await expect(card).toHaveClass(/incident-card-accent-critical/);
+    await expect(card).not.toHaveClass(/incident-card-accent-overdue/);
+  });
+});
+
+test.describe('mobile stat labels wrap instead of truncating', () => {
+  test('"עדכונים באיחור" and "קריטיות / גבוהות" render without an ellipsis at 375px', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    await loginAs(page, DEMO_USERS.admin);
+    for (const label of ['עדכונים באיחור', 'קריטיות / גבוהות']) {
+      const el = page.getByText(label, { exact: true });
+      await expect(el).toBeVisible();
+      const overflow = await el.evaluate((node) => getComputedStyle(node).textOverflow);
+      expect(overflow).not.toBe('ellipsis');
+      const noClip = await el.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+      expect(noClip).toBe(true);
+    }
+  });
+});
+
+test.describe('long handler name is accessible on desktop even when the column truncates it', () => {
+  test('the handler name carries a title attribute with the full text', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAs(page, DEMO_USERS.admin);
+    const card = urgentCard(page);
+    const handler = card.getByText('עומר פרץ (דמו)', { exact: true });
+    await expect(handler).toHaveAttribute('title', 'עומר פרץ (דמו)');
+  });
+});
+
 test.describe('hover lifts modestly without scaling', () => {
   test('hover translates the card up a few pixels and does not scale it', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });

@@ -57,22 +57,34 @@ describe('summarizeDashboard: metric grounding', () => {
 });
 
 describe('summarizeDashboard: needsAttention / openRest -- no duplicate rendering', () => {
-  it('needsAttention is exactly the open-and-critical incidents; openRest is every other open incident', () => {
+  it('needsAttention is open AND (critical OR overdue); openRest is every other open incident', () => {
     const incidents = [
-      makeIncident({ id: 'c1', severity: 'critical' }),
-      makeIncident({ id: 'h1', severity: 'high' }),
-      makeIncident({ id: 'm1', severity: 'medium' }),
-      makeIncident({ id: 'l1', severity: 'low' }),
+      makeIncident({ id: 'c1', severity: 'critical' }), // critical, not overdue
+      makeIncident({ id: 'h1', severity: 'high' }), // neither -- excluded
+      makeIncident({ id: 'm1', severity: 'medium' }), // neither -- excluded
+      makeIncident({ id: 'l1', severity: 'low' }), // neither -- excluded
     ];
     const s = summarizeDashboard(incidents, NOW);
     expect(s.needsAttention.map((i) => i.id)).toEqual(['c1']);
     expect(s.openRest.map((i) => i.id).sort()).toEqual(['h1', 'l1', 'm1']);
   });
 
+  it('an overdue but non-critical incident qualifies for needsAttention too', () => {
+    const incidents = [
+      makeIncident({ id: 'overdue-medium', severity: 'medium', nextUpdateDue: '2026-01-10T10:00:00.000Z' }), // overdue
+      makeIncident({ id: 'overdue-high', severity: 'high', nextUpdateDue: '2026-01-10T10:00:00.000Z' }), // overdue
+      makeIncident({ id: 'not-overdue-high', severity: 'high' }), // high alone -- excluded
+    ];
+    const s = summarizeDashboard(incidents, NOW);
+    expect(s.needsAttention.map((i) => i.id).sort()).toEqual(['overdue-high', 'overdue-medium']);
+    expect(s.openRest.map((i) => i.id)).toEqual(['not-overdue-high']);
+  });
+
   it('no incident id ever appears in both needsAttention and openRest', () => {
     const incidents = [
       makeIncident({ id: 'c1', severity: 'critical' }),
       makeIncident({ id: 'c2', severity: 'critical' }),
+      makeIncident({ id: 'overdue1', severity: 'low', nextUpdateDue: '2026-01-10T10:00:00.000Z' }),
       makeIncident({ id: 'h1', severity: 'high' }),
     ];
     const s = summarizeDashboard(incidents, NOW);
@@ -81,7 +93,7 @@ describe('summarizeDashboard: needsAttention / openRest -- no duplicate renderin
     expect(overlap).toEqual([]);
   });
 
-  it('high severity alone does not qualify for needsAttention (distinct from the criticalOrHigh stat)', () => {
+  it('high severity alone (not overdue, not critical) does not qualify for needsAttention (distinct from the criticalOrHigh stat)', () => {
     const incidents = [makeIncident({ id: 'h1', severity: 'high' })];
     const s = summarizeDashboard(incidents, NOW);
     expect(s.needsAttention).toEqual([]);

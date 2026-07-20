@@ -83,10 +83,12 @@ describe('information architecture: urgent, open, recently-closed', () => {
 });
 
 describe('critical-severity visual marker', () => {
-  it('gives the critical/overdue incident the accent marker class, and a plain open incident none', async () => {
+  it('gives the critical+overdue incident the critical accent (red takes precedence), and a plain open incident none', async () => {
     await loginAs('login-u-admin');
+    // inc-1 is both critical and overdue -- the critical (red) treatment must win.
     const criticalCard = within(main()).getByText(INC1_TEXT).closest('a.incident-card') as HTMLElement;
-    expect(criticalCard.className).toMatch(/incident-card-accent/);
+    expect(criticalCard.className).toMatch(/incident-card-accent-critical/);
+    expect(criticalCard.className).not.toMatch(/incident-card-accent-overdue/);
 
     const plainCard = within(main()).getByText(INC3_TEXT).closest('a.incident-card') as HTMLElement;
     expect(plainCard.className).not.toMatch(/incident-card-accent/);

@@ -79,12 +79,15 @@ export function IncidentCard({
   now: Date;
 }) {
   const overdue = isOverdue(incident, now);
-  const accented = overdue || incident.severity === 'critical';
+  const critical = incident.severity === 'critical';
+  // Critical severity takes precedence over overdue -- an incident that is
+  // both never gets a mixed or double treatment, just the critical (red) one.
+  const accentClass = critical ? 'incident-card-accent-critical' : overdue ? 'incident-card-accent-overdue' : '';
   const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
   return (
     <Link
       to={`/incidents/${incident.id}`}
-      className={`incident-card group ${accented ? 'incident-card-accent' : ''}`}
+      className={`incident-card group ${accentClass}`}
     >
       {/* Contextual "open" affordance -- purely decorative on top of the
           card-wide link, so it only needs to be visible on hover/focus, not
@@ -115,9 +118,14 @@ export function IncidentCard({
         {/* Metadata: a stable, vertically stacked column -- current status,
             handler, last-touched time -- instead of labels scattered across
             the full card width. */}
-        <div className="flex shrink-0 flex-col items-start gap-1.5 sm:w-40 sm:items-end sm:border-s sm:border-hairline sm:ps-4 sm:text-end">
+        <div className="flex shrink-0 flex-col items-start gap-1.5 sm:w-48 sm:items-end sm:border-s sm:border-hairline sm:ps-4 sm:text-end">
           <StatusBadge status={incident.status} />
-          <span className="max-w-full truncate text-sm font-medium text-text-primary">
+          {/* title= keeps the full handler name accessible (hover tooltip)
+              when the compact column truncates a long one. */}
+          <span
+            className="max-w-full truncate text-sm font-medium text-text-primary"
+            title={hasOwner ? ownerDisplay(incident, profiles) : undefined}
+          >
             {hasOwner ? ownerDisplay(incident, profiles) : 'ללא גורם מטפל'}
           </span>
           <span className="text-xs text-muted">עודכן {formatRelative(incident.lastUpdateAt, now)}</span>

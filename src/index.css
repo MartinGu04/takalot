@@ -197,10 +197,16 @@ body {
   .incident-card:focus-visible {
     @apply outline-2 outline-offset-2 outline-brand-600;
   }
-  /* Thin accent line + extremely subtle tint for a critical-severity or
-     overdue incident -- deliberately restrained, never a thick outline. */
-  .incident-card-accent {
+  /* Thin accent line + extremely subtle tint -- deliberately restrained,
+     never a thick outline. Two distinct, non-interchangeable signals: red is
+     reserved for critical severity, amber for "overdue but not critical" so
+     the two causes stay visually distinguishable. When both apply, the
+     critical (red) treatment wins -- see the class order in incident.tsx. */
+  .incident-card-accent-critical {
     @apply border-s-2 border-s-red-500 bg-red-50/30 dark:border-s-red-500 dark:bg-red-950/10;
+  }
+  .incident-card-accent-overdue {
+    @apply border-s-2 border-s-amber-500 bg-amber-50/30 dark:border-s-amber-500 dark:bg-amber-950/10;
   }
 }
 

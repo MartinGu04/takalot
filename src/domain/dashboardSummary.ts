@@ -10,8 +10,9 @@ export interface DashboardSummary {
   open: Incident[];
   overdue: Incident[];
   criticalOrHigh: Incident[];
-  /** "דורש טיפול עכשיו" -- one existing, defensible rule: an open incident
-   *  at critical severity. Priority-sorted. */
+  /** "דורש טיפול עכשיו" -- open AND (critical severity OR overdue). High
+   *  severity alone does not qualify (that's the separate criticalOrHigh
+   *  stat). Priority-sorted. */
   needsAttention: Incident[];
   /** "תקלות פתוחות" -- every other open incident, priority-sorted. Excludes
    *  anything already in `needsAttention` so no incident renders as a full
@@ -28,7 +29,7 @@ export function summarizeDashboard(incidents: Incident[], now: Date, recentlyClo
   const criticalOrHigh = open.filter((i) => i.severity === 'critical' || i.severity === 'high');
 
   const needsAttention = sortByPriority(
-    open.filter((i) => i.severity === 'critical'),
+    open.filter((i) => i.severity === 'critical' || isOverdue(i, now)),
     now,
   );
   const needsAttentionIds = new Set(needsAttention.map((i) => i.id));

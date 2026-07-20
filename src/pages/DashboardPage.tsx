@@ -62,12 +62,12 @@ function PrimaryStat({
       onClick={onClick}
       className="surface-interactive flex min-w-0 items-center gap-4 p-4 text-right sm:p-5"
     >
-      <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-400">
-        <Icon className="size-7" />
+      <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-400 sm:size-16">
+        <Icon className="size-7 sm:size-8" />
       </span>
       <div className="min-w-0">
-        <div className="text-4xl font-extrabold leading-tight text-text-primary">{value}</div>
-        <div className="truncate text-sm font-medium text-secondary">{label}</div>
+        <div className="text-4xl font-extrabold leading-tight text-text-primary sm:text-5xl">{value}</div>
+        <div className="truncate text-sm font-medium text-secondary sm:text-base">{label}</div>
       </div>
     </button>
   );
@@ -94,7 +94,10 @@ function Stat({
       </span>
       <div className="min-w-0">
         <div className={`text-3xl font-extrabold leading-none ${t.value}`}>{value}</div>
-        <div className="mt-1 truncate text-sm font-semibold text-secondary">{label}</div>
+        {/* Deliberately no truncate: "עדכונים באיחור" / "קריטיות / גבוהות" must
+            wrap to two lines on narrow screens rather than lose text to an
+            ellipsis -- these are operational labels, not decoration. */}
+        <div className="mt-1 text-sm font-semibold leading-snug text-secondary">{label}</div>
       </div>
     </div>
   );
