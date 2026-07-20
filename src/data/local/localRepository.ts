@@ -12,6 +12,8 @@ import type {
   IncidentEvent,
   IncidentUpdate,
   LocationRecord,
+  PendingPersonnel,
+  PersonnelEntry,
   Profile,
   Role,
   SystemRecord,
@@ -19,7 +21,7 @@ import type {
 } from '../../domain/types';
 import { isOpen } from '../../domain/types';
 import { reportedToOpsLabels } from '../../domain/labels';
-import { hasCapability, canTechnicianUpdate, type Capability } from '../../domain/permissions';
+import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
 import { isOverdue, sortByPriority } from '../../domain/overdue';
 import {
@@ -28,6 +30,7 @@ import {
   correctionSchema,
   createHandoverSchema,
   createIncidentSchema,
+  pendingPersonnelInputSchema,
   reopenIncidentSchema,
   technicianUpdateSchema,
   updateIncidentSchema,
@@ -36,6 +39,7 @@ import {
   type CorrectionInput,
   type CreateHandoverInput,
   type CreateIncidentInput,
+  type PendingPersonnelInput,
   type ReopenIncidentInput,
   type TechnicianUpdateInput,
   type UpdateIncidentInput,
@@ -335,31 +339,35 @@ export class LocalDemoRepository implements Repository {
     this.persist();
   }
 
-  // --- users ---
+  // --- linked-personnel management ---
+  // Mirrors 0010's rules exactly (allowedManageRoles / role_ceiling_allows_manage
+  // -- a strict hierarchy, deliberately separate from allowedAssignRoles /
+  // role_ceiling_allows_assign used by pending-personnel below -- plus
+  // unconditional self-protection and last-active-admin protection). See
+  // requirePersonnelManager below, shared with the pending-personnel RPCs.
 
-  async createUser(session: Session, fullName: string, role: Role): Promise<Profile> {
-    const actor = this.requireCap(session, 'manage_users');
-    const profile: Profile = {
-      id: newId(),
-      fullName: this.requireName(fullName),
-      role,
-      active: true,
-      createdAt: this.now().toISOString(),
-    };
-    this.db.profiles.push(profile);
-    this.audit(actor.id, 'user_created', 'profile', profile.id, { after: JSON.stringify(profile) });
-    this.persist();
-    return profile;
+  // Guards the last-active-admin invariant. In the real backend this is a
+  // race-safety backstop (see 0010's header) against two CONCURRENT
+  // requests each removing a different admin at once; this single-
+  // threaded demo repository has no such race, so here it is simply a
+  // direct, always-correct count.
+  private countActiveAdmins(): number {
+    return this.db.profiles.filter((p) => p.role === 'system_admin' && p.active).length;
   }
 
   async setUserRole(session: Session, userId: string, role: Role): Promise<void> {
-    const actor = this.requireCap(session, 'manage_users');
+    const actor = this.requirePersonnelManager(session);
+    if (userId === actor.id) {
+      throw new AppError('FORBIDDEN', 'לא ניתן לשנות את התפקיד של עצמך.');
+    }
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    // A system_admin's role cannot be changed by anyone but themselves is out of
-    // scope; protect against demoting another admin here.
-    if (profile.role === 'system_admin' && profile.id !== actor.id) {
-      throw new AppError('FORBIDDEN', 'לא ניתן לשנות תפקיד של מנהל מערכת אחר.');
+    const ceiling = allowedManageRoles(actor.role);
+    if (!ceiling.includes(profile.role) || !ceiling.includes(role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
+    }
+    if (profile.role === 'system_admin' && profile.active && role !== 'system_admin' && this.countActiveAdmins() <= 1) {
+      throw new AppError('VALIDATION', 'לא ניתן להוריד בדרגה את מנהל המערכת הפעיל האחרון.');
     }
     const before = profile.role;
     profile.role = role;
@@ -371,15 +379,298 @@ export class LocalDemoRepository implements Repository {
   }
 
   async setUserActive(session: Session, userId: string, active: boolean): Promise<void> {
-    const actor = this.requireCap(session, 'manage_users');
+    const actor = this.requirePersonnelManager(session);
+    if (userId === actor.id) {
+      throw new AppError('FORBIDDEN', 'לא ניתן לשנות את הסטטוס של עצמך.');
+    }
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    if (profile.role === 'system_admin' && profile.id !== actor.id && !active) {
-      throw new AppError('FORBIDDEN', 'לא ניתן להשבית מנהל מערכת אחר.');
+    if (!allowedManageRoles(actor.role).includes(profile.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
+    }
+    if (!active && profile.role === 'system_admin' && profile.active && this.countActiveAdmins() <= 1) {
+      throw new AppError('VALIDATION', 'לא ניתן להשבית את מנהל המערכת הפעיל האחרון.');
     }
     profile.active = active;
     this.audit(actor.id, active ? 'user_activated' : 'user_deactivated', 'profile', userId);
     this.persist();
+  }
+
+  // --- pre-provisioned personnel ---
+  // Faithful mirror of the 0008 backend rules (role ceilings, normalized
+  // emails, claimable-uniqueness, single-claim, fail-closed matching) so
+  // the enforcement is unit-testable in-process. The database remains the
+  // authority in supabase mode.
+
+  private pendingRows(): PendingPersonnel[] {
+    // Databases persisted before this model existed lack the array.
+    if (!this.db.pendingPersonnel) this.db.pendingPersonnel = [];
+    return this.db.pendingPersonnel;
+  }
+
+  private requirePersonnelManager(session: Session): Profile {
+    const actor = this.requireSession(session);
+    if (!['shift_supervisor', 'professional_manager', 'system_admin'].includes(actor.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל רישומי כוח אדם.');
+    }
+    return actor;
+  }
+
+  /** Demo email registry: a linked profile's Google email is known through
+   *  the claimed entry that created it (in supabase mode auth.users is the
+   *  authority, read server-side only). */
+  private linkedEmailOf(profileId: string): string | null {
+    const claimed = this.pendingRows().find((r) => r.status === 'claimed' && r.claimedBy === profileId);
+    return claimed ? claimed.email : null;
+  }
+
+  /** Mirrors 0008's lazy expiry retirement: an expired pending row for this
+   *  email is atomically retired (status 'expired' + audit) so it never
+   *  permanently blocks a replacement entry. */
+  private retireExpiredPending(email: string, actorId: string, excludeId?: string): void {
+    const nowIso = this.now().toISOString();
+    const corpse = this.pendingRows().find(
+      (r) =>
+        r.email === email &&
+        r.id !== excludeId &&
+        r.status === 'pending' &&
+        r.expiresAt !== null &&
+        r.expiresAt <= nowIso,
+    );
+    if (!corpse) return;
+    corpse.status = 'expired';
+    corpse.updatedAt = nowIso;
+    this.audit(actorId, 'personnel_pending_expired', 'pending_personnel', corpse.id, {
+      before: JSON.stringify({ email: corpse.email }),
+    });
+  }
+
+  private validateExpiresAt(expiresAt: string | null | undefined): string | null {
+    if (!expiresAt) return null;
+    if (expiresAt <= this.now().toISOString()) {
+      throw new AppError('VALIDATION', 'מועד התפוגה חייב להיות עתידי.');
+    }
+    return expiresAt;
+  }
+
+  async listPendingPersonnel(session: Session): Promise<PendingPersonnel[]> {
+    this.requirePersonnelManager(session);
+    return this.pendingRows()
+      .map((r) => ({ ...r }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listPersonnel(session: Session): Promise<PersonnelEntry[]> {
+    // Mirrors list_personnel(): manager roles only; unified pending+linked
+    // view; emails resolved here, never by the caller; no UUID entry needed.
+    this.requirePersonnelManager(session);
+    const nowIso = this.now().toISOString();
+    const pending: PersonnelEntry[] = this.pendingRows()
+      .filter((r) => r.status === 'pending' && (!r.expiresAt || r.expiresAt > nowIso))
+      .map((r) => ({
+        kind: 'pending' as const,
+        id: r.id,
+        fullName: r.fullName,
+        email: r.email,
+        role: r.role,
+        state: 'pending' as const,
+        createdAt: r.createdAt,
+      }));
+    const linked: PersonnelEntry[] = this.db.profiles.map((p) => ({
+      kind: 'linked' as const,
+      id: p.id,
+      fullName: p.fullName,
+      email: this.linkedEmailOf(p.id),
+      role: p.role,
+      state: p.active ? ('active' as const) : ('inactive' as const),
+      createdAt: p.createdAt,
+    }));
+    const byCreatedDesc = (a: PersonnelEntry, b: PersonnelEntry) => b.createdAt.localeCompare(a.createdAt);
+    return [...linked.sort(byCreatedDesc), ...pending.sort(byCreatedDesc)];
+  }
+
+  async createPendingPersonnel(session: Session, rawInput: PendingPersonnelInput): Promise<PendingPersonnel> {
+    const actor = this.requirePersonnelManager(session);
+    const input = parseOrThrow(pendingPersonnelInputSchema, rawInput);
+    if (!allowedAssignRoles(actor.role).includes(input.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה להוסיף רישום כוח אדם בתפקיד המבוקש.');
+    }
+    const expiresAt = this.validateExpiresAt(input.expiresAt);
+    // An email already linked to an existing profile -- active OR inactive
+    // -- must not get a new pending identity: a pending entry must never
+    // silently reactivate or replace a deactivated profile.
+    if (
+      this.pendingRows().some(
+        (r) => r.status === 'claimed' && r.email === input.email && r.claimedBy !== null
+          && this.db.profiles.some((p) => p.id === r.claimedBy),
+      )
+    ) {
+      throw new AppError('VALIDATION', 'לכתובת דוא״ל זו כבר קיים משתמש מקושר במערכת.');
+    }
+    // Lazy retirement of an EXPIRED pending row occupying the claimable
+    // slot -- an expired entry must never permanently block re-inviting.
+    this.retireExpiredPending(input.email, actor.id);
+    if (this.pendingRows().some((r) => r.status === 'pending' && r.email === input.email)) {
+      throw new AppError('VALIDATION', 'כבר קיים רישום ממתין לכתובת דוא״ל זו.');
+    }
+    const ts = this.now().toISOString();
+    const row: PendingPersonnel = {
+      id: newId(),
+      fullName: input.fullName.trim(),
+      email: input.email,
+      role: input.role,
+      status: 'pending',
+      createdBy: actor.id,
+      createdAt: ts,
+      updatedAt: ts,
+      expiresAt,
+      claimedBy: null,
+      claimedAt: null,
+      cancelledBy: null,
+      cancelledAt: null,
+    };
+    this.pendingRows().push(row);
+    this.audit(actor.id, 'personnel_pending_created', 'pending_personnel', row.id, {
+      after: JSON.stringify({ email: row.email, role: row.role, fullName: row.fullName }),
+    });
+    this.persist();
+    return { ...row };
+  }
+
+  async updatePendingPersonnel(
+    session: Session,
+    id: string,
+    rawInput: PendingPersonnelInput,
+  ): Promise<PendingPersonnel> {
+    const actor = this.requirePersonnelManager(session);
+    const input = parseOrThrow(pendingPersonnelInputSchema, rawInput);
+    const row = this.pendingRows().find((r) => r.id === id);
+    if (!row) throw new AppError('NOT_FOUND', 'הרישום לא נמצא.');
+    if (row.status !== 'pending') throw new AppError('VALIDATION', 'ניתן לערוך רק רישום ממתין.');
+    // The editor's ceiling must cover BOTH the entry's current role and the
+    // new one -- a lower role must not take over entries above it.
+    const ceiling = allowedAssignRoles(actor.role);
+    if (!ceiling.includes(row.role) || !ceiling.includes(input.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לערוך רישום זה.');
+    }
+    const expiresAt = this.validateExpiresAt(input.expiresAt);
+    if (
+      input.email !== row.email &&
+      this.pendingRows().some(
+        (r) => r.status === 'claimed' && r.email === input.email && r.claimedBy !== null
+          && this.db.profiles.some((p) => p.id === r.claimedBy),
+      )
+    ) {
+      throw new AppError('VALIDATION', 'לכתובת דוא״ל זו כבר קיים משתמש מקושר במערכת.');
+    }
+    // Same lazy retirement as create: moving onto an email whose previous
+    // pending entry expired must not be blocked by that corpse.
+    this.retireExpiredPending(input.email, actor.id, id);
+    if (
+      input.email !== row.email &&
+      this.pendingRows().some((r) => r.id !== id && r.status === 'pending' && r.email === input.email)
+    ) {
+      throw new AppError('VALIDATION', 'כבר קיים רישום ממתין לכתובת דוא״ל זו.');
+    }
+    const before = { email: row.email, role: row.role, fullName: row.fullName };
+    row.fullName = input.fullName.trim();
+    row.email = input.email;
+    row.role = input.role;
+    row.expiresAt = expiresAt;
+    row.updatedAt = this.now().toISOString();
+    this.audit(actor.id, 'personnel_pending_updated', 'pending_personnel', row.id, {
+      before: JSON.stringify(before),
+      after: JSON.stringify({ email: row.email, role: row.role, fullName: row.fullName }),
+    });
+    this.persist();
+    return { ...row };
+  }
+
+  async cancelPendingPersonnel(session: Session, id: string): Promise<void> {
+    const actor = this.requirePersonnelManager(session);
+    const row = this.pendingRows().find((r) => r.id === id);
+    if (!row) throw new AppError('NOT_FOUND', 'הרישום לא נמצא.');
+    if (row.status !== 'pending') throw new AppError('VALIDATION', 'ניתן לבטל רק רישום ממתין.');
+    if (!allowedAssignRoles(actor.role).includes(row.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לבטל רישום זה.');
+    }
+    const ts = this.now().toISOString();
+    row.status = 'cancelled';
+    row.cancelledBy = actor.id;
+    row.cancelledAt = ts;
+    row.updatedAt = ts;
+    this.audit(actor.id, 'personnel_pending_cancelled', 'pending_personnel', row.id, {
+      before: JSON.stringify({ email: row.email, role: row.role }),
+    });
+    this.persist();
+  }
+
+  async claimPendingProfile(): Promise<Profile | null> {
+    // Demo sessions have no external identity provider, so there is never
+    // anything to claim through the production interface method.
+    return null;
+  }
+
+  async bootstrapFirstAdmin(): Promise<Profile | null> {
+    // The demo database is always seeded with an active system_admin, so
+    // the one-time bootstrap window (a fresh, zero-profile production
+    // database) never exists here -- permanently fail closed, exactly as
+    // the backend does once an active admin exists.
+    return null;
+  }
+
+  /**
+   * Demo/test stand-in for the server-side claim: the `identity` argument
+   * plays the role the backend derives itself from auth.uid()/auth.users/
+   * auth.identities (in supabase mode the client can supply nothing -- the
+   * RPC takes no arguments). Mirrors 0008's rules: normalization,
+   * pending-only, unexpired-only, single-claim, role from the entry, audit
+   * record, plus the identity preconditions -- a CONFIRMED email on a
+   * GOOGLE provider identity -- and the inactive-profile fail-close: a
+   * deactivated existing profile is never returned as authorization and is
+   * never reactivated or replaced by a pending entry.
+   */
+  claimPendingForIdentity(identity: {
+    authUserId: string;
+    email: string;
+    /** Defaults mirror the healthy path; tests override to prove fail-close. */
+    provider?: string;
+    emailConfirmed?: boolean;
+  }): Profile | null {
+    const existing = this.db.profiles.find((p) => p.id === identity.authUserId);
+    if (existing) {
+      // Deactivation is authorization revocation: fail closed, and leave
+      // both the profile and any pending entry untouched.
+      return existing.active ? { ...existing } : null;
+    }
+    if ((identity.provider ?? 'google') !== 'google') return null;
+    if (!(identity.emailConfirmed ?? true)) return null;
+
+    const email = identity.email.trim().toLowerCase();
+    const nowIso = this.now().toISOString();
+    const row = this.pendingRows().find(
+      (r) => r.email === email && r.status === 'pending' && (!r.expiresAt || r.expiresAt > nowIso),
+    );
+    if (!row) return null;
+
+    row.status = 'claimed';
+    row.claimedBy = identity.authUserId;
+    row.claimedAt = nowIso;
+    row.updatedAt = nowIso;
+    const profile: Profile = {
+      id: identity.authUserId,
+      fullName: row.fullName,
+      role: row.role,
+      active: true,
+      createdAt: nowIso,
+    };
+    this.db.profiles.push(profile);
+    this.audit(identity.authUserId, 'personnel_pending_claimed', 'pending_personnel', row.id, {
+      before: JSON.stringify({ email: row.email, role: row.role }),
+      after: JSON.stringify({ profileId: identity.authUserId }),
+    });
+    this.persist();
+    return { ...profile };
   }
 
   // --- incidents: queries ---

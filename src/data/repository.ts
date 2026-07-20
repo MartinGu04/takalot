@@ -11,6 +11,8 @@ import type {
   IncidentStatus,
   IncidentUpdate,
   LocationRecord,
+  PendingPersonnel,
+  PersonnelEntry,
   Profile,
   ReportedToOps,
   Role,
@@ -23,6 +25,7 @@ import type {
   CorrectionInput,
   CreateHandoverInput,
   CreateIncidentInput,
+  PendingPersonnelInput,
   ReopenIncidentInput,
   TechnicianUpdateInput,
   UpdateIncidentInput,
@@ -103,10 +106,39 @@ export interface Repository {
   renameLocation(session: Session, id: string, name: string): Promise<void>;
   setLocationArchived(session: Session, id: string, archived: boolean): Promise<void>;
 
-  // --- users (admin) ---
-  createUser(session: Session, fullName: string, role: Role): Promise<Profile>;
+  // --- linked-personnel management (role ceilings enforced in the database) ---
   setUserRole(session: Session, userId: string, role: Role): Promise<void>;
   setUserActive(session: Session, userId: string, active: boolean): Promise<void>;
+
+  // --- pre-provisioned personnel (supabase-mode onboarding) ---
+  listPendingPersonnel(session: Session): Promise<PendingPersonnel[]>;
+  createPendingPersonnel(session: Session, input: PendingPersonnelInput): Promise<PendingPersonnel>;
+  updatePendingPersonnel(session: Session, id: string, input: PendingPersonnelInput): Promise<PendingPersonnel>;
+  cancelPendingPersonnel(session: Session, id: string): Promise<void>;
+  /**
+   * Attempts to claim the authenticated identity's matching pending entry.
+   * Takes no identity/email arguments by design: the backend derives
+   * auth.uid() and the verified email itself. Returns the resulting (or
+   * already-existing) profile, or null when nothing matches -- the caller
+   * stays unauthorized in that case.
+   */
+  claimPendingProfile(): Promise<Profile | null>;
+  /**
+   * Unified management-safe listing of pending entries AND already-linked
+   * profiles (with their normalized Google emails, resolved server-side --
+   * the client never queries auth.users). Restricted to shift_supervisor /
+   * professional_manager / system_admin; everyone else is rejected.
+   */
+  listPersonnel(session: Session): Promise<PersonnelEntry[]>;
+  /**
+   * One-time first-administrator bootstrap for a fresh database (no
+   * profiles at all). Takes no arguments by design: the backend verifies
+   * the confirmed Google identity server-side against a server-side-only
+   * configured email, succeeds at most once ever, and fails closed
+   * (null) in every other case. Not a self-registration path -- every
+   * later user goes through pending_personnel.
+   */
+  bootstrapFirstAdmin(): Promise<Profile | null>;
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;

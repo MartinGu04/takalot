@@ -224,3 +224,31 @@ export const createHandoverSchema = z.object({
 });
 
 export type CreateHandoverInput = z.infer<typeof createHandoverSchema>;
+
+export const roleSchema = z.enum([
+  'system_admin',
+  'professional_manager',
+  'shift_supervisor',
+  'technician',
+  'viewer',
+]);
+
+/** Pre-provisioned personnel entry. The email is normalized (trim +
+ *  lowercase) at parse time; the database enforces the same rule again. */
+export const pendingPersonnelInputSchema = z.object({
+  fullName: nonBlank(120, 'שם מלא'),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3, 'כתובת הדוא״ל אינה תקינה')
+    .max(320, 'כתובת הדוא״ל אינה תקינה')
+    .refine((v) => v.indexOf('@') > 0, 'כתובת הדוא״ל אינה תקינה'),
+  role: roleSchema,
+  /** Optional expiry (ISO timestamp). Must be in the future at write time --
+   *  the repository/database enforce that; expired entries are not
+   *  claimable and are lazily retired when a replacement is created. */
+  expiresAt: z.string().datetime({ offset: true, message: 'מועד התפוגה אינו תקין' }).nullish(),
+});
+
+export type PendingPersonnelInput = z.infer<typeof pendingPersonnelInputSchema>;

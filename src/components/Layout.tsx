@@ -10,7 +10,7 @@ import { useSession } from '../auth/AuthContext';
 import { Sidebar } from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
 import { navItems } from './navItems';
-import { IconBell, IconLogOut, IconPlus } from './icons';
+import { IconBell, IconLogOut, IconPlus, IconUsers } from './icons';
 import { NexusMark } from './NexusMark';
 import { FloatingPopover } from './FloatingPopover';
 
@@ -203,6 +203,16 @@ function MobileUserMenu() {
           <span className="text-sm text-muted">מצב תצוגה</span>
           <ThemeToggle />
         </div>
+        {hasCapability(user.role, 'manage_personnel') && (
+          <Link
+            to="/personnel"
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm text-text-secondary hover:bg-surface-hover"
+            onClick={() => setOpen(false)}
+          >
+            <IconUsers className="size-4" />
+            כוח אדם
+          </Link>
+        )}
         <button
           type="button"
           className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-right text-sm text-red-700 hover:bg-surface-hover dark:text-red-400"

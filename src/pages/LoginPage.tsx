@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { getRepository, isDemoMode } from '../data';
@@ -9,16 +9,50 @@ import { Button, Spinner } from '../components/ui';
 import { RoleBadge } from '../components/RoleBadge';
 import { NexusMark } from '../components/NexusMark';
 
+/** Reads an OAuth provider error forwarded back on the redirect URL
+ *  (Supabase passes failures as error/error_description in the query or
+ *  hash). Returns a display message, or null when the landing is clean. */
+function oauthErrorFromUrl(): string | null {
+  const fromParams = (params: URLSearchParams) =>
+    params.get('error_description') ?? (params.get('error') ? 'ההתחברות דרך Google נכשלה.' : null);
+  const query = fromParams(new URLSearchParams(window.location.search));
+  if (query) return query;
+  const hash = window.location.hash.startsWith('#')
+    ? fromParams(new URLSearchParams(window.location.hash.slice(1)))
+    : null;
+  return hash;
+}
+
+function GoogleGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.45a5.52 5.52 0 0 1-2.4 3.62v3h3.88c2.27-2.09 3.57-5.17 3.57-8.81z" />
+      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.94-2.91l-3.88-3c-1.07.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.95H1.28v3.1A12 12 0 0 0 12 24z" />
+      <path fill="#FBBC05" d="M5.29 14.29A7.2 7.2 0 0 1 4.91 12c0-.8.14-1.57.38-2.29v-3.1H1.28a12 12 0 0 0 0 10.78l4.01-3.1z" />
+      <path fill="#EA4335" d="M12 4.77c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.61l4.01 3.1C6.23 6.88 8.88 4.77 12 4.77z" />
+    </svg>
+  );
+}
+
 export default function LoginPage() {
-  const { login, sessionExpired } = useAuth();
+  const { login, loginWithGoogle, sessionExpired } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState('');
+  const [redirecting, setRedirecting] = useState(false);
   const demo = isDemoMode();
+
+  // Surface a provider failure carried back on the redirect (e.g. the user
+  // canceled the Google consent screen).
+  const oauthError = useMemo(() => (demo ? null : oauthErrorFromUrl()), [demo]);
+  useEffect(() => {
+    if (oauthError) setError(oauthError);
+  }, [oauthError]);
 
   // In demo mode the login screen doubles as the demo-user picker. This is an
   // explicitly labeled demo control, not real authentication.
   const { data: profiles, isLoading } = useQuery({
     queryKey: ['login-profiles'],
+    enabled: demo,
     queryFn: async () => {
       const repo = getRepository();
       if (repo.mode !== 'demo') return [] as Profile[];
@@ -27,12 +61,24 @@ export default function LoginPage() {
     },
   });
 
-  const handleLogin = async (userId: string) => {
+  const handleDemoLogin = async (userId: string) => {
     try {
       await login(userId);
       navigate('/');
     } catch {
       setError('לא ניתן להתחבר עם משתמש זה.');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    setRedirecting(true);
+    try {
+      await loginWithGoogle();
+      // The browser navigates away to Google; the spinner covers the gap.
+    } catch {
+      setRedirecting(false);
+      setError('לא ניתן להתחיל את תהליך ההתחברות. יש לבדוק את החיבור ולנסות שוב.');
     }
   };
 
@@ -73,7 +119,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       className="surface-interactive flex w-full items-center gap-3 px-4 py-3 text-right"
-                      onClick={() => handleLogin(p.id)}
+                      onClick={() => handleDemoLogin(p.id)}
                       data-testid={`login-${p.id}`}
                     >
                       <span
@@ -91,11 +137,26 @@ export default function LoginPage() {
             )}
           </>
         ) : (
-          <div className="mt-6 text-center text-sm text-secondary">
-            <p>ההתחברות מתבצעת בהזמנה בלבד דרך ספק ההזדהות.</p>
-            <Button className="mt-4 w-full" disabled>
-              התחברות (נדרשת הגדרת Supabase)
+          <div className="mt-6 text-center">
+            <Button
+              className="w-full justify-center gap-2.5"
+              onClick={handleGoogleLogin}
+              disabled={redirecting}
+              data-testid="google-login-button"
+            >
+              {redirecting ? (
+                'מעביר להזדהות…'
+              ) : (
+                <>
+                  <GoogleGlyph />
+                  התחברות עם Google
+                </>
+              )}
             </Button>
+            <p className="mt-4 text-xs text-muted">
+              הגישה בהזמנה בלבד: התחברות Google מזהה אתכם, אך נדרש גם פרופיל משתמש פעיל שהוגדר על ידי
+              מנהל המערכת.
+            </p>
           </div>
         )}
         {error && (
@@ -104,9 +165,11 @@ export default function LoginPage() {
           </p>
         )}
       </div>
-      <p className="mt-4 max-w-md text-center text-xs text-muted">
-        אב־טיפוס להדגמה בלבד. נתונים פיקטיביים. פריסה מבצעית מחייבת אישור ובדיקת אבטחה נפרדים.
-      </p>
+      {demo && (
+        <p className="mt-4 max-w-md text-center text-xs text-muted">
+          אב־טיפוס להדגמה בלבד. נתונים פיקטיביים. פריסה מבצעית מחייבת אישור ובדיקת אבטחה נפרדים.
+        </p>
+      )}
     </div>
   );
 }

@@ -19,36 +19,92 @@ with two implementations:
   (localStorage), but *enforces the same rules a real backend would*:
   permissions, status transitions, optimistic concurrency, atomic incident
   numbering, and an append-only audit log. It is not a UI convenience layer.
-- **Supabase repository** (`src/data/supabase`) — wired to the SQL schema in
-  `supabase/migrations/`, ready to connect. Not exercised against a live
-  project in this build (no credentials were available).
+- **Supabase repository** (`src/data/supabase`) — the production data layer:
+  real Google authentication (Supabase Auth) and the hosted database, via the
+  SQL schema, RPCs, and RLS in `supabase/migrations/`.
 
-The app **automatically runs in demo mode** whenever
-`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` are absent, and shows a
-persistent "מצב הדגמה" (demo mode) banner + a demo-only role switcher in the
-top bar. Neither the banner nor the switcher is ever presented as production
-authentication.
+Mode selection (`src/data/appMode.ts`) is strict:
+
+- Valid `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` → **supabase mode**.
+- `VITE_DEMO_MODE=true` → **demo mode** (explicit development/test fallback;
+  shows the persistent "מצב הדגמה" banner + demo-only role switcher).
+- No configuration in a dev/test build → demo mode (development fallback).
+- No or partial configuration in a **production build** → a hard
+  configuration-error screen. Production **never** silently falls back to
+  demo data. A key that looks like a server secret (`sb_secret_…`, or a JWT
+  with `role=service_role`) is refused outright.
+
+### Authentication and authorization (supabase mode)
+
+Sign-in is Google OAuth via Supabase Auth. **Identity is not authorization**:
+after Google proves who you are, you must also match an **active row in
+`public.profiles`** (readable under RLS only by active members). No profile →
+a clear unauthorized-access screen with logout; profiles are provisioned by
+an administrator only and are never auto-created by a successful login.
+Application roles come from that profiles row — the database is the source
+of truth.
 
 ## Setup and run
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173, demo mode (no env vars needed)
+VITE_DEMO_MODE=true npm run dev   # http://localhost:5173, explicit demo mode
 ```
 
-Pick any demo user on the login screen — role is shown next to the name.
+(Plain `npm run dev` with no env vars also falls back to demo in
+development.) Pick any demo user on the login screen — role is shown next to
+the name.
 
 ### Environment variables
 
 | Variable | Required for | Notes |
 |---|---|---|
-| `VITE_SUPABASE_URL` | Supabase mode | Project URL. Omit to stay in demo mode. |
-| `VITE_SUPABASE_ANON_KEY` | Supabase mode | Public anon key only. **Never** put a service-role key in client env vars. |
+| `VITE_SUPABASE_URL` | Supabase mode | Project URL (https). |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase mode | Public (publishable) key only — `sb_publishable_…` or the legacy JWT-shaped public key. **Never** put a service-role key, database password, or OAuth client secret in client env vars. |
+| `VITE_DEMO_MODE` | Demo fallback | `true` explicitly enables the local demo repository (development/tests only — the e2e suite sets it). |
 
-Copy `.env.local` (create it, gitignored) with both variables set to switch
-to the Supabase repository. Auth itself (inviting real users, session
-handling) is Supabase Auth's responsibility and is out of scope for this
-build beyond the RLS/RPC contracts already written.
+Create a gitignored `.env.local` with the two Supabase variables to run
+against the hosted project.
+
+### First administrator (one-time bootstrap, supabase mode)
+
+A fresh database has zero profiles, so nobody can create or claim pending
+entries yet. The project owner performs exactly **one** manual setup
+action, in the Supabase SQL editor, before the first login (server-side
+only — never in frontend code or a `VITE_*` variable, and no auth UUID is
+ever involved):
+
+```sql
+insert into public.bootstrap_admin_config (email)
+values ('owner.account@gmail.com');
+```
+
+Then the owner signs in once with Google, normally. The backend verifies
+the confirmed Google identity server-side against that address and creates
+the single first `system_admin` profile — at most once, ever (race-safe;
+permanently closed afterwards). Knowing the email grants nothing: the
+caller must *be* the verified Google account behind it, and the configured
+address is unreadable by clients. Every subsequent user is provisioned
+through the pending-personnel flow below.
+
+### Provisioning a new authorized user (supabase mode)
+
+1. An authorized creator (shift supervisor, NCO, or system administrator)
+   registers the person as a **pending personnel entry** — full name, Google
+   email, and intended role — *before* they ever sign in. Role ceilings are
+   enforced in the database: a supervisor may register technicians and
+   supervisors; an NCO additionally NCOs; only a system administrator may
+   register any role. Technicians cannot register anyone.
+2. The person signs in once with Google. On that first authenticated
+   session the backend **automatically and atomically claims** the matching
+   entry: it derives the identity from `auth.uid()`, reads the *verified*
+   email server-side from `auth.users` (client input plays no part),
+   creates the `public.profiles` row with the preassigned role, and marks
+   the entry claimed. No invitation link, no manual UUID handling, no
+   dashboard step.
+3. No valid matching entry (none, cancelled, expired, already claimed, or a
+   different Google account) → the user stays on the unauthorized-access
+   screen. Nothing is ever auto-created from a Google identity alone.
 
 ## Database migrations (Supabase)
 

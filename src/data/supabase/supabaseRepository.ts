@@ -1,10 +1,7 @@
 // SupabaseRepository: production-ready data layer wired to the SQL schema in
 // /supabase/migrations. Authorization is enforced by RLS policies and SECURITY
 // DEFINER RPCs in the database — not by this client code.
-//
-// NOTE: this implementation is ready for connection but has NOT been executed
-// against a live Supabase project in this build (no credentials available).
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AppNotification,
   AuditLog,
@@ -15,6 +12,8 @@ import type {
   IncidentEvent,
   IncidentUpdate,
   LocationRecord,
+  PendingPersonnel,
+  PersonnelEntry,
   Profile,
   Role,
   SystemRecord,
@@ -25,6 +24,7 @@ import type {
   CorrectionInput,
   CreateHandoverInput,
   CreateIncidentInput,
+  PendingPersonnelInput,
   ReopenIncidentInput,
   TechnicianUpdateInput,
   UpdateIncidentInput,
@@ -92,12 +92,30 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   reopenCount: r.reopen_count as number,
 });
 
+const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
+  id: r.id as string,
+  fullName: r.full_name as string,
+  email: r.email as string,
+  role: r.role as Role,
+  status: r.status as PendingPersonnel['status'],
+  createdBy: r.created_by as string,
+  createdAt: r.created_at as string,
+  updatedAt: r.updated_at as string,
+  expiresAt: r.expires_at as string | null,
+  claimedBy: r.claimed_by as string | null,
+  claimedAt: r.claimed_at as string | null,
+  cancelledBy: r.cancelled_by as string | null,
+  cancelledAt: r.cancelled_at as string | null,
+});
+
 export class SupabaseRepository implements Repository {
   readonly mode = 'supabase' as const;
   private client: SupabaseClient;
 
-  constructor(url: string, anonKey: string) {
-    this.client = createClient(url, anonKey);
+  /** Takes the SHARED client (src/data/supabase/client.ts) so every request
+   *  carries the signed-in user's JWT -- RLS and the RPCs authorize from it. */
+  constructor(client: SupabaseClient) {
+    this.client = client;
   }
 
   private async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
@@ -166,27 +184,97 @@ export class SupabaseRepository implements Repository {
     wrap((await this.client.from('locations').update({ archived }).eq('id', id)).error);
   }
 
-  async createUser(_s: Session, fullName: string, role: Role): Promise<Profile> {
-    // Placeholder profile record; real auth invitation is a separate admin action.
-    const data = await this.rpc<Record<string, unknown>>('admin_create_placeholder_profile', {
-      p_full_name: fullName,
-      p_role: role,
-    });
-    return {
-      id: data.id as string,
-      fullName: data.full_name as string,
-      role: data.role as Role,
-      active: data.active as boolean,
-      createdAt: data.created_at as string,
-    };
-  }
-
   async setUserRole(_s: Session, userId: string, role: Role): Promise<void> {
     await this.rpc('admin_set_user_role', { p_user_id: userId, p_role: role });
   }
 
   async setUserActive(_s: Session, userId: string, active: boolean): Promise<void> {
     await this.rpc('admin_set_user_active', { p_user_id: userId, p_active: active });
+  }
+
+  // --- pre-provisioned personnel ---
+
+  async listPendingPersonnel(_s: Session): Promise<PendingPersonnel[]> {
+    // RLS restricts rows to the manager roles; writes are RPC-only.
+    const { data, error } = await this.client
+      .from('pending_personnel')
+      .select('*')
+      .order('created_at', { ascending: false });
+    wrap(error);
+    return (data ?? []).map(mapPendingPersonnel);
+  }
+
+  async createPendingPersonnel(_s: Session, input: PendingPersonnelInput): Promise<PendingPersonnel> {
+    const data = await this.rpc<Record<string, unknown>>('create_pending_personnel', { p_input: input });
+    return mapPendingPersonnel(data);
+  }
+
+  async updatePendingPersonnel(_s: Session, id: string, input: PendingPersonnelInput): Promise<PendingPersonnel> {
+    const data = await this.rpc<Record<string, unknown>>('update_pending_personnel', {
+      p_id: id,
+      p_input: input,
+    });
+    return mapPendingPersonnel(data);
+  }
+
+  async cancelPendingPersonnel(_s: Session, id: string): Promise<void> {
+    await this.rpc('cancel_pending_personnel', { p_id: id });
+  }
+
+  async claimPendingProfile(): Promise<Profile | null> {
+    // Deliberately parameterless: the RPC derives auth.uid() itself and
+    // reads the verified email from auth.users -- nothing the client sends
+    // can influence which entry is claimed or which role is assigned.
+    const { data, error } = await this.client.rpc('claim_pending_personnel');
+    if (error) {
+      // "No matching entry" is the expected fail-closed outcome for an
+      // unprovisioned identity -- signalled as null, not as a failure.
+      if (/not_found/.test(error.message)) return null;
+      wrap(error);
+    }
+    if (!data) return null;
+    const r = data as Record<string, unknown>;
+    return {
+      id: r.id as string,
+      fullName: r.full_name as string,
+      role: r.role as Role,
+      active: r.active as boolean,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  async bootstrapFirstAdmin(): Promise<Profile | null> {
+    // Deliberately parameterless, like the claim RPC: identity, confirmed
+    // email, Google provider and the configured bootstrap address are all
+    // verified server-side. Every rejection (window closed, wrong email,
+    // unverified identity) comes back as null -- fail closed.
+    const { data, error } = await this.client.rpc('bootstrap_first_admin');
+    wrap(error);
+    if (!data) return null;
+    const r = data as Record<string, unknown>;
+    return {
+      id: r.id as string,
+      fullName: r.full_name as string,
+      role: r.role as Role,
+      active: r.active as boolean,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  async listPersonnel(_s: Session): Promise<PersonnelEntry[]> {
+    // SECURITY DEFINER RPC: resolves linked profiles' Google emails
+    // server-side (the client has no access to auth.users) and rejects
+    // every caller below the manager roles.
+    const rows = await this.rpc<Record<string, unknown>[]>('list_personnel', {});
+    return (rows ?? []).map((r) => ({
+      kind: r.kind as PersonnelEntry['kind'],
+      id: r.id as string,
+      fullName: r.full_name as string,
+      email: (r.email as string | null) ?? null,
+      role: r.role as Role,
+      state: r.state as PersonnelEntry['state'],
+      createdAt: r.created_at as string,
+    }));
   }
 
   async listIncidents(
