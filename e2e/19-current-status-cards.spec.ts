@@ -1,0 +1,102 @@
+import { test, expect } from '@playwright/test';
+import { loginAs, DEMO_USERS } from './helpers';
+
+// inc-1 (critical, overdue) is the accented card used throughout.
+const INC1_IMPACT = 'אין יכולת הפעלה מלאה של מערכת אלפא. נדרש מעקף ידני.';
+
+function urgentCard(page: import('@playwright/test').Page) {
+  return page.locator('a.incident-card', { hasText: INC1_IMPACT });
+}
+
+test.describe('incident card structure', () => {
+  test('desktop: metadata sits in a stable column beside the main content, not scattered across the card width', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAs(page, DEMO_USERS.admin);
+
+    const card = urgentCard(page);
+    const cardBox = await card.boundingBox();
+    const statusBadge = card.getByText('בטיפול', { exact: true });
+    const statusBox = await statusBadge.boundingBox();
+    const description = card.getByText(INC1_IMPACT);
+    const descriptionBox = await description.boundingBox();
+    expect(cardBox && statusBox && descriptionBox).toBeTruthy();
+    if (cardBox && statusBox && descriptionBox) {
+      // Metadata (status) sits clearly to one side (the document is RTL, so
+      // the metadata column renders to the LEFT of the main content), not
+      // overlapping the description's horizontal range -- a real two-column split.
+      expect(statusBox.x + statusBox.width).toBeLessThan(descriptionBox.x + 10);
+    }
+  });
+
+  test('mobile: the card stacks vertically instead of forcing the desktop two-column split', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await loginAs(page, DEMO_USERS.admin);
+
+    const card = urgentCard(page);
+    const description = card.getByText(INC1_IMPACT);
+    const statusBadge = card.getByText('בטיפול', { exact: true });
+    const descriptionBox = await description.boundingBox();
+    const statusBox = await statusBadge.boundingBox();
+    expect(descriptionBox && statusBox).toBeTruthy();
+    if (descriptionBox && statusBox) {
+      // Metadata renders BELOW the main content on mobile, not beside it.
+      expect(statusBox.y).toBeGreaterThan(descriptionBox.y + descriptionBox.height - 5);
+    }
+
+    const before = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(before).toBeLessThanOrEqual(390);
+  });
+
+  test('long system/handler names do not cause horizontal overflow on mobile', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 900 });
+    await loginAs(page, DEMO_USERS.admin);
+    const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(overflowX).toBe(false);
+  });
+});
+
+test.describe('contextual affordance is keyboard-accessible', () => {
+  test('the trailing chevron becomes visible on keyboard focus, not only on mouse hover', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    const card = urgentCard(page);
+    const chevron = card.locator('svg').first();
+    await expect(chevron).toHaveCSS('opacity', '0');
+
+    // Real keyboard navigation (Tab), not a scripted .focus() call, so the
+    // browser actually sets the focus-visible flag Tailwind's
+    // group-focus-visible: variant depends on -- inc-1 is the sole card in
+    // "דורש טיפול עכשיו", immediately after the primary stat in tab order.
+    await page.getByRole('button', { name: /תקלות פתוחות/ }).focus();
+    await page.keyboard.press('Tab');
+    await expect(card).toBeFocused();
+    await expect(chevron).toHaveCSS('opacity', '1');
+  });
+
+  test('the card is reachable and activatable by keyboard alone', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    const card = urgentCard(page);
+    await card.focus();
+    await expect(card).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/incidents\/inc-1/);
+  });
+});
+
+test.describe('hover lifts modestly without scaling', () => {
+  test('hover translates the card up a few pixels and does not scale it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAs(page, DEMO_USERS.admin);
+    const card = urgentCard(page);
+    const before = await card.boundingBox();
+    await card.hover();
+    await page.waitForTimeout(250); // let the 200ms transition finish
+    const after = await card.boundingBox();
+    expect(before && after).toBeTruthy();
+    if (before && after) {
+      expect(after.width).toBeCloseTo(before.width, 0); // no horizontal scale
+      const lift = before.y - after.y;
+      expect(lift).toBeGreaterThan(1);
+      expect(lift).toBeLessThan(6);
+    }
+  });
+});
