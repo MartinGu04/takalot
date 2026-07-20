@@ -65,22 +65,6 @@ export function NextUpdateNote({ incident, now }: { incident: Incident; now: Dat
   );
 }
 
-const severityValueColor: Record<Severity, string> = {
-  critical: 'text-red-700 dark:text-red-400',
-  high: 'text-orange-700 dark:text-orange-400',
-  medium: 'text-text-primary',
-  low: 'text-text-primary',
-};
-
-/** Labeled "label: value" field — value emphasized, label kept secondary. */
-function MetaField({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
-  return (
-    <div className="text-sm text-secondary">
-      {label}: <span className={`font-semibold ${valueClassName ?? 'text-text-primary'}`}>{value}</span>
-    </div>
-  );
-}
-
 export function IncidentCard({
   incident,
   profiles,
@@ -95,32 +79,63 @@ export function IncidentCard({
   now: Date;
 }) {
   const overdue = isOverdue(incident, now);
+  const critical = incident.severity === 'critical';
+  // Critical severity takes precedence over overdue -- an incident that is
+  // both never gets a mixed or double treatment, just the critical (red) one.
+  const accentClass = critical ? 'incident-card-accent-critical' : overdue ? 'incident-card-accent-overdue' : '';
   const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
   return (
     <Link
       to={`/incidents/${incident.id}`}
-      className={`surface-interactive group relative block p-3.5 pe-8 ${
-        overdue ? 'border-s-4 border-s-red-500 bg-red-50/40 dark:border-s-red-500 dark:bg-red-950/20' : ''
-      }`}
+      className={`incident-card group ${accentClass}`}
     >
-      <IconChevronLeft className="absolute inset-y-0 end-2.5 my-auto size-4 text-muted opacity-0 transition-[opacity,transform] group-hover:-translate-x-0.5 group-hover:opacity-100" />
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-base font-extrabold text-brand-700 dark:text-brand-400">{incident.number}</span>
-        <span className="font-semibold text-text-primary">{systemName}</span>
-        <span className="text-sm text-muted">{locationName}</span>
+      {/* Contextual "open" affordance -- purely decorative on top of the
+          card-wide link, so it only needs to be visible on hover/focus, not
+          reachable separately: the whole card is always the real, always-
+          tappable action, on every input method. */}
+      <IconChevronLeft className="absolute end-3 top-4 size-4 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+        {/* Main content: identity, description, severity, next-action state.
+            Line 1: number + severity. Line 2: system/location (labeled).
+            Then the description -- nothing scattered across the card width. */}
+        <div className="min-w-0 flex-1 pe-6 sm:pe-8">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-extrabold text-brand-700 dark:text-brand-400">{incident.number}</span>
+            <SeverityBadge severity={incident.severity} />
+          </div>
+          <p className="mt-1 truncate text-sm text-muted">
+            מערכת: <span className="font-medium text-text-secondary">{systemName}</span>
+            {' · '}
+            מיקום: <span className="font-medium text-text-secondary">{locationName}</span>
+          </p>
+          <p className="mt-1.5 line-clamp-2 break-words text-sm text-secondary">{incident.operationalImpact}</p>
+          <div className="mt-2">
+            <NextUpdateNote incident={incident} now={now} />
+          </div>
+          {incident.followUpRequired && !incident.followUpCompletedAt && (
+            <p className="mt-2 text-sm font-medium text-orange-700 dark:text-orange-400">
+              נדרשות פעולות המשך — כשירות לא מלאה
+            </p>
+          )}
+        </div>
+
+        {/* Metadata: a stable, vertically stacked column -- current status,
+            handler, last-touched time -- instead of labels scattered across
+            the full card width. */}
+        <div className="flex shrink-0 flex-col items-start gap-1.5 sm:w-48 sm:items-end sm:border-s sm:border-hairline sm:ps-4 sm:text-end">
+          <StatusBadge status={incident.status} />
+          {/* title= keeps the full handler name accessible (hover tooltip)
+              when the compact column truncates a long one. */}
+          <span
+            className="max-w-full truncate text-sm font-medium text-text-primary"
+            title={hasOwner ? ownerDisplay(incident, profiles) : undefined}
+          >
+            {hasOwner ? ownerDisplay(incident, profiles) : 'ללא גורם מטפל'}
+          </span>
+          <span className="text-xs text-muted">עודכן {formatRelative(incident.lastUpdateAt, now)}</span>
+        </div>
       </div>
-      <p className="mt-1.5 line-clamp-2 text-sm text-secondary">{incident.operationalImpact}</p>
-      <div className="mt-2.5 grid grid-cols-1 gap-1 sm:grid-cols-3 sm:gap-3">
-        <MetaField label="חומרה" value={severityLabels[incident.severity]} valueClassName={severityValueColor[incident.severity]} />
-        <MetaField label="סטטוס נוכחי" value={statusLabels[incident.status]} />
-        <MetaField label="גורם מטפל" value={hasOwner ? ownerDisplay(incident, profiles) : 'אין'} />
-      </div>
-      <p className="mt-2 text-xs text-muted">עדכון אחרון: {formatRelative(incident.lastUpdateAt, now)}</p>
-      {incident.followUpRequired && !incident.followUpCompletedAt && (
-        <p className="mt-2 text-sm font-medium text-orange-700 dark:text-orange-400">
-          נדרשות פעולות המשך — כשירות לא מלאה
-        </p>
-      )}
     </Link>
   );
 }
