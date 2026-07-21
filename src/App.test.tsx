@@ -28,10 +28,13 @@ describe('RTL layout', () => {
     const links = within(bottomNav).getAllByRole('link');
     // "פתיחת תקלה" is an extra floating action, not a primary destination link with text nav item styling —
     // it is still an <a>, so assert the four labeled destinations are present and total stays small.
+    // supervisor1 is authorized for כוח אדם, which fills the slot freed by removing העברת משמרת from
+    // primary navigation (the handover page/route are untouched, just not linked from here).
     const destinationLabels = links.map((l) => l.textContent);
     expect(destinationLabels).toEqual(
-      expect.arrayContaining(['מצב נוכחי', 'תקלות', 'העברת משמרת', 'ארכיון']),
+      expect.arrayContaining(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם']),
     );
+    expect(destinationLabels).not.toContain('העברת משמרת');
     expect(links.length).toBeLessThanOrEqual(5); // 4 destinations + prominent create action
   });
 
@@ -43,9 +46,9 @@ describe('RTL layout', () => {
 
     const sidebarNav = await screen.findByRole('navigation', { name: 'ניווט ראשי' });
     const links = within(sidebarNav).getAllByRole('link');
-    expect(links.map((l) => l.textContent)).toEqual(
-      expect.arrayContaining(['מצב נוכחי', 'תקלות', 'העברת משמרת', 'ארכיון']),
-    );
+    const labels = links.map((l) => l.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם']));
+    expect(labels).not.toContain('העברת משמרת');
   });
 });
 

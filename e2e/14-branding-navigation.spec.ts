@@ -20,7 +20,9 @@ test.describe('desktop sidebar', () => {
     await expect(sidebar).toBeVisible();
 
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'העברת משמרת', 'ארכיון', 'כוח אדם', 'ניהול']);
+    // העברת משמרת is deliberately not a primary destination -- the /handovers
+    // page/route are untouched, just not linked from navigation.
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול']);
 
     // Mobile bottom nav must not also be visible at desktop width.
     await expect(page.getByRole('navigation', { name: 'ניווט תחתון' })).toBeHidden();

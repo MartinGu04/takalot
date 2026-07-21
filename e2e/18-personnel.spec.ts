@@ -67,11 +67,13 @@ test.describe('mobile', () => {
   test('shift_supervisor reaches כוח אדם from the mobile user menu; the add form opens as a bottom sheet', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
 
-    // Bottom nav is capped at the first 4 destinations; כוח אדם is reached
-    // via the mobile user menu, same pattern as other secondary destinations.
+    // כוח אדם is also reached via the mobile user menu (a secondary, redundant
+    // entry point alongside the bottom nav) -- scope to the popover panel
+    // since supervisor1 is authorized and the same link now also appears in
+    // the bottom nav itself.
     await expect(page.getByRole('navigation', { name: 'ניווט תחתון' })).toBeVisible();
     await page.getByLabel('תפריט משתמש').click();
-    await page.getByRole('link', { name: 'כוח אדם' }).click();
+    await page.locator('.popover-panel').getByRole('link', { name: 'כוח אדם' }).click();
     await expect(page.getByRole('heading', { name: 'כוח אדם' })).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);

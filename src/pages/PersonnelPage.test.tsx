@@ -37,7 +37,11 @@ async function loginAs(userTestId: string) {
 
 async function openPersonnel(userTestId: string) {
   const user = await loginAs(userTestId);
-  await user.click(screen.getByRole('link', { name: 'כוח אדם' }));
+  // כוח אדם is now reachable from both the desktop sidebar and the mobile
+  // bottom nav (jsdom renders both regardless of the md: breakpoint) --
+  // scope to the desktop sidebar landmark to click just one.
+  const sidebarNav = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+  await user.click(within(sidebarNav).getByRole('link', { name: 'כוח אדם' }));
   await screen.findByRole('heading', { name: 'כוח אדם' });
   return user;
 }
@@ -46,24 +50,27 @@ function rowFor(fullName: string): HTMLElement {
   return within(main()).getByText(fullName).closest('[data-personnel-row]') as HTMLElement;
 }
 
+// כוח אדם is reachable from both the desktop sidebar and (for authorized
+// roles) the mobile bottom nav -- jsdom renders both regardless of the md:
+// breakpoint, so "shows כוח אדם" means at least one link exists, not exactly one.
 describe('navigation visibility: shift_supervisor', () => {
   it('shows כוח אדם', async () => {
     await loginAs('login-u-supervisor-1');
-    expect(screen.getByRole('link', { name: 'כוח אדם' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'כוח אדם' }).length).toBeGreaterThan(0);
   });
 });
 
 describe('navigation visibility: professional_manager', () => {
   it('shows כוח אדם', async () => {
     await loginAs('login-u-manager');
-    expect(screen.getByRole('link', { name: 'כוח אדם' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'כוח אדם' }).length).toBeGreaterThan(0);
   });
 });
 
 describe('navigation visibility: system_admin', () => {
   it('shows כוח אדם', async () => {
     await loginAs('login-u-admin');
-    expect(screen.getByRole('link', { name: 'כוח אדם' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'כוח אדם' }).length).toBeGreaterThan(0);
   });
 });
 
