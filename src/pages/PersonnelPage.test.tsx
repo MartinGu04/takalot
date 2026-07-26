@@ -374,11 +374,14 @@ describe('permanent deletion', () => {
     await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
     const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
     expect(within(dialog).getByText(/בלתי הפיכה/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/חשבון ההתחברות של Google.*יימחק/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/חשבון ההתחברות הנוכחי של המשתמש ל-Nexus.*Supabase Auth/)).toBeInTheDocument();
     expect(within(dialog).getByText(/יסומן לצמיתות כ"נמחק"/)).toBeInTheDocument();
     // Split across nodes (the "לא" is a bold <span>) -- match on the <li>'s
     // full text content instead of a single text node.
     expect(dialog.textContent).toMatch(/היה מעורב בהם\s*לא\s*יימחקו/);
+    // Must not say or imply that Nexus deletes the person's Google account.
+    expect(dialog.textContent).not.toMatch(/Google.*יימחק/);
+    expect(within(dialog).getByText(/אינה מוחקת את חשבון ה-Google החיצוני/)).toBeInTheDocument();
   });
 
   it('a system_admin can permanently delete a technician (no open incidents): success, נמחק badge, controls hidden', async () => {
@@ -406,6 +409,8 @@ describe('permanent deletion', () => {
     expect(within(rowEl).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
     expect(within(rowEl).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
     expect(within(rowEl).queryByRole('button', { name: 'הפעלה' })).not.toBeInTheDocument();
+    // The recovery-only action IS offered to an authorized manager.
+    expect(within(rowEl).getByRole('button', { name: 'ווידוא הסרת חשבון ההתחברות' })).toBeInTheDocument();
   });
 
   it('deletion is blocked while the target owns an open incident, with the safe business message', async () => {
@@ -433,5 +438,109 @@ describe('permanent deletion', () => {
     await within(main()).findByText('דנה לוי (דמו)');
     expect(within(rowFor('דנה לוי (דמו)')).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
     expect(within(rowFor('יואב כהן (דמו)')).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+  });
+
+  describe('DELETE_INCOMPLETE recovery', () => {
+    // The demo repository cannot naturally produce a partial Auth-delete
+    // failure (that's an Edge Function/Supabase Auth concern), so the
+    // FIRST call is stubbed to perform the real tombstone (via the
+    // captured original implementation) and then reject with
+    // DELETE_INCOMPLETE, exactly like a real 502 with the DB step already
+    // committed. Every other call (including the recovery retry) falls
+    // through to the real, unmodified implementation.
+    async function stubOneDeleteFailure() {
+      // Both imported dynamically, AFTER this test's vi.resetModules(), so
+      // this AppError is the SAME class the app's own module graph uses --
+      // a statically/pre-reset-imported AppError would fail `instanceof`
+      // checks inside the app's error handling and silently fall back to
+      // a generic error instead of DELETE_INCOMPLETE.
+      const { LocalDemoRepository } = await import('../data/local/localRepository');
+      const { AppError } = await import('../data/repository');
+      const original = LocalDemoRepository.prototype.deleteUser;
+      const spy = vi.spyOn(LocalDemoRepository.prototype, 'deleteUser').mockImplementationOnce(async function (
+        this: InstanceType<typeof LocalDemoRepository>,
+        ...args: Parameters<typeof original>
+      ) {
+        await original.apply(this, args);
+        throw new AppError(
+          'DELETE_INCOMPLETE',
+          'המשתמש הושבת ונחסם בבטחה, אך מחיקת חשבון ההתחברות נכשלה. יש לנסות שוב.',
+        );
+      });
+      return spy;
+    }
+
+    it('refreshes the row to deleted, offers the recovery-only action, and a retry clears the error with a success toast', async () => {
+      await stubOneDeleteFailure();
+      const user = await openPersonnel('login-u-admin');
+      await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+      await within(main()).findByText('מאיה רוזן (דמו)');
+      await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
+      const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+      await user.type(within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/), 'מאיה רוזן (דמו)');
+      await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+      expect(
+        await screen.findByText('המשתמש הושבת ונחסם בבטחה, אך מחיקת חשבון ההתחברות נכשלה. יש לנסות שוב.'),
+      ).toBeInTheDocument();
+      // The dialog closes and the row already reflects the real (committed)
+      // tombstone -- this is the exact contradiction being fixed: a
+      // deleted row must expose a way to retry the Auth step.
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת משתמש לצמיתות' })).not.toBeInTheDocument());
+      await user.click(screen.getByRole('tab', { name: /^לא פעילים/ }));
+      const row = await within(main()).findByText('מאיה רוזן (דמו)');
+      const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
+      expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
+      const recoverButton = within(rowEl).getByRole('button', { name: 'ווידוא הסרת חשבון ההתחברות' });
+      expect(within(rowEl).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'הפעלה' })).not.toBeInTheDocument();
+
+      // The recovery action invokes delete-user again with the SAME
+      // profile id -- this time (no stub queued) the real, idempotent
+      // no-op path runs and succeeds.
+      await user.click(recoverButton);
+      const recoveryDialog = await screen.findByRole('dialog', { name: 'ווידוא הסרת חשבון ההתחברות' });
+      expect(within(recoveryDialog).getByText(/כבר נמחק לצמיתות ומושבת/)).toBeInTheDocument();
+      await user.click(within(recoveryDialog).getByRole('button', { name: 'ניסיון חוזר' }));
+
+      expect(await screen.findByText('חשבון ההתחברות אומת כמוסר (או שכבר לא היה קיים).')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'ווידוא הסרת חשבון ההתחברות' })).not.toBeInTheDocument(),
+      );
+      // Still deleted, still no ordinary controls, after a successful retry.
+      const rowAfter = rowFor('מאיה רוזן (דמו)');
+      expect(within(rowAfter).getByText('נמחק')).toBeInTheDocument();
+      expect(within(rowAfter).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
+      expect(within(rowAfter).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+    });
+
+    it('does not offer the recovery action to an out-of-ceiling actor for an already-deleted profile', async () => {
+      // Tombstone a professional_manager (no incidents owned) as admin first.
+      let user = await openPersonnel('login-u-admin');
+      await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+      await within(main()).findByText('דנה לוי (דמו)');
+      await user.click(within(rowFor('דנה לוי (דמו)')).getByRole('button', { name: 'מחיקה' }));
+      const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+      await user.type(within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/), 'דנה לוי (דמו)');
+      await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת משתמש לצמיתות' })).not.toBeInTheDocument());
+
+      // Now view the same (already-deleted) profile as a shift_supervisor,
+      // who is out of ceiling for a professional_manager either way. Log
+      // out (same mounted app, no re-render) and sign in as a different
+      // demo user instead of calling openPersonnel again.
+      await user.click(screen.getByRole('button', { name: 'התנתקות' }));
+      await user.click(await screen.findByTestId('login-u-supervisor-1'));
+      await screen.findByRole('heading', { name: 'מצב נוכחי' });
+      await user.click(within(screen.getByRole('navigation', { name: 'ניווט ראשי' })).getByRole('link', { name: 'כוח אדם' }));
+      await screen.findByRole('heading', { name: 'כוח אדם' });
+      await user.click(screen.getByRole('tab', { name: /^לא פעילים/ }));
+      const row = await within(main()).findByText('דנה לוי (דמו)');
+      const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
+      expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'ווידוא הסרת חשבון ההתחברות' })).not.toBeInTheDocument();
+    });
   });
 });

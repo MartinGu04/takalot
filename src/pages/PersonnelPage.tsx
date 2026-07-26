@@ -42,6 +42,7 @@ export default function PersonnelPage() {
   const [cancelingEntry, setCancelingEntry] = useState<PersonnelEntry | null>(null);
   const [deactivatingEntry, setDeactivatingEntry] = useState<PersonnelEntry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<PersonnelEntry | null>(null);
+  const [recoveringEntry, setRecoveringEntry] = useState<PersonnelEntry | null>(null);
   const [roleChangeRequest, setRoleChangeRequest] = useState<{ entry: PersonnelEntry; newRole: Role } | null>(null);
   // Which linked row currently has its role/status controls expanded --
   // the controls are hidden by default so the list stays scannable with
@@ -112,6 +113,23 @@ export default function PersonnelPage() {
         setDeletingEntry(null);
         setExpandedId(null);
       }
+      toast(error.message, 'error');
+    },
+  });
+
+  // Recovery-only action for an already-tombstoned profile: calls the
+  // SAME repo().deleteUser() -- the RPC no-ops on the (already
+  // authorized) already-deleted profile and only retries/verifies the
+  // Auth-account removal. No new backend call, no re-deletion of the
+  // Nexus profile.
+  const retryAuthDeleteMutation = useAppMutation((id: string) => repo().deleteUser(session, id), {
+    invalidate: [['personnel'], ['profiles']],
+    successText: 'חשבון ההתחברות אומת כמוסר (או שכבר לא היה קיים).',
+    onSuccess: () => setRecoveringEntry(null),
+    onError: (error) => {
+      // A repeat DELETE_INCOMPLETE here means the same genuine Auth
+      // failure persists -- keep the dialog open so it can be retried
+      // again, same as any other error.
       toast(error.message, 'error');
     },
   });
@@ -253,6 +271,11 @@ export default function PersonnelPage() {
             // repeated delete action -- the frontend just doesn't offer
             // them (the database rejects all three regardless).
             const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state !== 'deleted';
+            // Recovery-only: the SAME role-ceiling/self exclusion as
+            // canManage, but for an already-tombstoned profile -- offers
+            // nothing except retrying/verifying Auth-account removal
+            // (never role, activation, edit, or repeated deletion).
+            const canRecoverAuth = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state === 'deleted';
             const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
             const expanded = canManage && expandedId === entry.id;
             return (
@@ -292,6 +315,11 @@ export default function PersonnelPage() {
                           מחיקה
                         </Button>
                       </>
+                    )}
+                    {canRecoverAuth && (
+                      <Button variant="ghost" className="px-2" onClick={() => setRecoveringEntry(entry)}>
+                        ווידוא הסרת חשבון ההתחברות
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -386,6 +414,16 @@ export default function PersonnelPage() {
         onClose={() => setDeletingEntry(null)}
         submitting={deleteMutation.isPending}
         onConfirm={() => deletingEntry && deleteMutation.mutate(deletingEntry.id)}
+      />
+
+      <ConfirmDialog
+        open={!!recoveringEntry}
+        onClose={() => setRecoveringEntry(null)}
+        title="ווידוא הסרת חשבון ההתחברות"
+        message={`הפרופיל של ${recoveringEntry?.fullName ?? ''} ב-Nexus כבר נמחק לצמיתות ומושבת -- פעולה זו אינה מוחקת אותו מחדש. היא רק מנסה שוב לוודא שחשבון ההתחברות שלו הוסר מ-Supabase Auth.`}
+        confirmLabel="ניסיון חוזר"
+        submitting={retryAuthDeleteMutation.isPending}
+        onConfirm={() => recoveringEntry && retryAuthDeleteMutation.mutate(recoveringEntry.id)}
       />
 
       <ConfirmDialog

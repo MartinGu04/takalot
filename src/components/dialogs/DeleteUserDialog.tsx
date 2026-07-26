@@ -41,12 +41,13 @@ export function DeleteUserDialog({
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
           <p className="font-semibold">פעולה בלתי הפיכה — לא ניתן לבטל אותה דרך ניהול כוח אדם הרגיל.</p>
           <ul className="mt-2 list-inside list-disc space-y-1">
-            <li>חשבון ההתחברות של Google עבור משתמש זה יימחק.</li>
-            <li>רישום איש הצוות ב-Nexus יסומן לצמיתות כ"נמחק" ולא ניתן יהיה להשתמש בו מחדש.</li>
+            <li>חשבון ההתחברות הנוכחי של המשתמש ל-Nexus יימחק מ-Supabase Auth.</li>
+            <li>רישום איש הצוות ב-Nexus יסומן לצמיתות כ"נמחק", יישאר קיים לצמיתות (כולל שם ותפקיד) ולא ניתן יהיה להשתמש בו מחדש.</li>
             <li>
               תקלות, עדכונים, אירועים, התראות ורישומי ביקורת שהמשתמש היה מעורב בהם{' '}
               <span className="font-semibold">לא</span> יימחקו — הם יישארו כרשומה היסטורית, כולל שיוך שמו.
             </li>
+            <li>פעולה זו אינה מוחקת את חשבון ה-Google החיצוני של האדם — היא מסירה רק את הגישה שלו ל-Nexus.</li>
           </ul>
         </div>
 
