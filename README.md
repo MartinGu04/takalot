@@ -148,9 +148,19 @@ authorized delete requests racing the same target safe.
 
 Deploying it (`supabase functions deploy delete-user`) is a separate,
 explicit operational step — not run as part of any code change here. No
-manual secrets are needed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
-`SUPABASE_SERVICE_ROLE_KEY` are injected automatically into every Edge
-Function's environment by the Supabase platform.
+manual secrets are needed: the platform injects `SUPABASE_URL` and the
+current API-key variables automatically into every Edge Function's
+environment. The function prefers the **current** key variables —
+`SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS` (JSON dictionaries;
+it reads the `"default"` entry of each) — and falls back to the **legacy**
+`SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` single-value variables
+only if the current variable, or its `"default"` entry, is absent. This
+keeps it working across both older and current Supabase projects without
+any manual configuration either way.
+
+The platform's default JWT verification stays enabled for this function
+(no `verify_jwt = false`) — it is always called with an authenticated
+user's own JWT in the `Authorization` header, never anonymously.
 
 ## Demo mode
 

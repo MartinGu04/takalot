@@ -49,12 +49,34 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // admin_delete_user() raises plain-text exceptions with the same
 // permission:/not_found:/validation: prefixes the frontend already parses
 // (supabaseRepository.ts's wrap()) -- mapped to stable HTTP status codes
-// here rather than relying only on the message text.
-function statusForRpcError(message: string): number {
+// here rather than relying only on the message text. Anything that does
+// NOT match one of these known, safe business-error prefixes is treated
+// as unrecognized (see the null return) -- its raw text must never reach
+// the client (a Postgres/PostgREST error can carry schema/query detail).
+function statusForKnownRpcError(message: string): number | null {
   if (/^permission:/.test(message)) return 403;
   if (/^not_found:/.test(message)) return 404;
   if (/^validation:/.test(message)) return 409;
-  return 500;
+  return null;
+}
+
+// Resolves the current Supabase API-key environment variables first
+// (SUPABASE_PUBLISHABLE_KEYS / SUPABASE_SECRET_KEYS -- JSON dictionaries
+// keyed by name, "default" being the active key), falling back to the
+// legacy single-value variables only if the JSON variable or its
+// "default" entry is absent -- kept for deployment compatibility.
+function resolveKey(jsonEnvVar: string, legacyEnvVar: string): string | undefined {
+  const raw = Deno.env.get(jsonEnvVar);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const value = parsed?.default;
+      if (typeof value === 'string' && value.length > 0) return value;
+    } catch {
+      // Malformed JSON: fall through to the legacy variable below.
+    }
+  }
+  return Deno.env.get(legacyEnvVar);
 }
 
 Deno.serve(async (req: Request) => {
@@ -86,9 +108,10 @@ Deno.serve(async (req: Request) => {
   // caller (body, headers, anywhere in the request) would simply be
   // ignored; there is no code path that reads one from the request.
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const anonKey = resolveKey('SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_ANON_KEY');
+  const serviceRoleKey = resolveKey('SUPABASE_SECRET_KEYS', 'SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
+    console.error('delete-user: missing required environment configuration (url/publishable/secret key)');
     return json(500, { error: 'server_misconfigured', message: 'Function environment is not configured.' });
   }
 
@@ -101,7 +124,16 @@ Deno.serve(async (req: Request) => {
 
   const { error: rpcError } = await callerClient.rpc('admin_delete_user', { p_user_id: userId });
   if (rpcError) {
-    return json(statusForRpcError(rpcError.message), { error: 'db_step_failed', message: rpcError.message });
+    const knownStatus = statusForKnownRpcError(rpcError.message);
+    if (knownStatus === null) {
+      // Not one of the RPC's own permission:/not_found:/validation:
+      // business errors -- could be a raw Postgres/PostgREST error
+      // (constraint detail, column names, etc.). Log it server-side only
+      // and return a generic message; never forward the raw text.
+      console.error('delete-user: unrecognized admin_delete_user error:', rpcError.message);
+      return json(500, { error: 'internal_error', message: 'An unexpected error occurred.' });
+    }
+    return json(knownStatus, { error: 'db_step_failed', message: rpcError.message });
   }
 
   // Only past this point does the service-role key get used, and only
@@ -117,7 +149,9 @@ Deno.serve(async (req: Request) => {
     if (!alreadyAbsent) {
       // A genuine failure here is always safe to retry: the profile is
       // already tombstoned, so it has no access regardless of whether
-      // the Auth account still exists.
+      // the Auth account still exists. Log server-side only; the client
+      // gets a generic, safe, retryable message -- never the raw error.
+      console.error('delete-user: Auth admin.deleteUser failed:', authError.message);
       return json(502, {
         error: 'auth_delete_failed',
         message: 'Profile was tombstoned but the Auth account could not be deleted. Safe to retry.',
