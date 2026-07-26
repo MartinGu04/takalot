@@ -121,6 +121,37 @@ in order. All lifecycle mutations (create/update/close/reopen/assign/handover)
 go through the RPCs in `0002_functions.sql` — the client never writes
 incident rows directly, so authorization lives in the database, not the UI.
 
+## Server-side operations (Supabase Edge Functions)
+
+`supabase/functions/delete-user/` is the one place the service-role key is
+used — it never reaches the browser or any client bundle. Deleting a person
+is two separate steps, both required, in this order:
+
+1. **`admin_delete_user(p_user_id uuid)`** (migration `0013`) — a normal
+   `SECURITY DEFINER` RPC, authorized exactly like `admin_set_user_role`/
+   `admin_set_user_active`: role-ceiling checked, self-deletion and the last
+   active `system_admin` blocked, and a target that still owns an open
+   incident is rejected (reassign first via the existing `assign_incident`
+   RPC — there is no separate reassignment mechanism). On success it
+   tombstones the profile (`deleted_at`/`deleted_by`, deactivated) and
+   writes an audit entry. It does **not** delete the Auth account — it
+   can only prove the profile was tombstoned, so its audit action is
+   `user_tombstoned`, not `user_deleted`.
+2. **The Edge Function** calls that RPC using a client scoped to the
+   *caller's own JWT* — every check above runs as the real caller, not as
+   the function — and only if it succeeds, uses a second, separate
+   service-role client to delete the Supabase Auth account.
+
+Both steps are idempotent and safe to retry as a whole (an already-absent
+Auth account is treated as success, not failure), which also makes two
+authorized delete requests racing the same target safe.
+
+Deploying it (`supabase functions deploy delete-user`) is a separate,
+explicit operational step — not run as part of any code change here. No
+manual secrets are needed: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and
+`SUPABASE_SERVICE_ROLE_KEY` are injected automatically into every Edge
+Function's environment by the Supabase platform.
+
 ## Demo mode
 
 Fictional users covering every role (see `src/data/local/seed.ts`,
