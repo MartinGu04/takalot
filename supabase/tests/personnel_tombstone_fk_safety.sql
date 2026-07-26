@@ -133,6 +133,14 @@ begin
     ('bootstrap_admin_config.consumed_by preserved after Auth user deletion', case when v_count = 1 then 'PASS' else 'FAIL' end, 'rows=' || v_count);
 
   -- ===== 3. Tombstone the (now Auth-less) profile =====
+  -- a2 still owns the open incident f110; migration 0014 now blocks
+  -- deactivating the internal owner of an open incident (unrelated to what
+  -- this suite tests -- it tests tombstone mechanics via a raw UPDATE that
+  -- deliberately bypasses admin_delete_user's own open-incident guard).
+  -- Reassign away to a1 (the acting admin, untouched by this test) first;
+  -- none of the "survives" assertions below depend on incidents.owner_user_id.
+  update incidents set owner_user_id = '00000000-0000-0000-0000-0000000000a1'
+    where id = '00000000-0000-0000-0000-00000000f110';
   update profiles set deleted_at = now(), deleted_by = '00000000-0000-0000-0000-0000000000a1', active = false
     where id = '00000000-0000-0000-0000-0000000000a2';
 
