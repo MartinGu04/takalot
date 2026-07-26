@@ -280,6 +280,7 @@ describe('linked user management and safety rules', () => {
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
   });
 
   it("no controls or עריכה toggle are shown for the signed-in user's own row (no self-service)", async () => {
@@ -291,6 +292,7 @@ describe('linked user management and safety rules', () => {
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
   });
 
   it('the sole active system_admin cannot be managed away: after returning to one active admin, that admin has no self-service controls', async () => {
@@ -333,5 +335,212 @@ describe('search', () => {
     await user.type(screen.getByLabelText('חיפוש לפי שם או כתובת Google'), 'עומר');
     expect(within(main()).getByText('עומר פרץ (דמו)')).toBeInTheDocument();
     expect(within(main()).queryByText('אלון ברק (דמו)')).not.toBeInTheDocument();
+  });
+});
+
+describe('permanent deletion', () => {
+  it('the confirm button stays disabled until the exact name is typed, and is re-armed on reopen', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('מאיה רוזן (דמו)');
+    const row = rowFor('מאיה רוזן (דמו)');
+    await user.click(within(row).getByRole('button', { name: 'מחיקה' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+    const confirmButton = within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' });
+    expect(confirmButton).toBeDisabled();
+
+    const typedField = within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/);
+    await user.type(typedField, 'שם שגוי');
+    expect(confirmButton).toBeDisabled();
+
+    await user.clear(typedField);
+    await user.type(typedField, 'מאיה רוזן (דמו)');
+    expect(confirmButton).not.toBeDisabled();
+
+    // Closing and reopening must not leave the typed text (or the armed
+    // confirm button) behind for the next target.
+    await user.click(within(dialog).getByRole('button', { name: 'ביטול' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת משתמש לצמיתות' })).not.toBeInTheDocument());
+    await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
+    const reopenedDialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+    expect(within(reopenedDialog).getByRole('button', { name: 'מחיקה לצמיתות' })).toBeDisabled();
+  });
+
+  it('the warning explains what deletion does and does not do', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('מאיה רוזן (דמו)');
+    await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+    expect(within(dialog).getByText(/בלתי הפיכה/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/חשבון ההתחברות הנוכחי של המשתמש ל-Nexus.*Supabase Auth/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/יסומן לצמיתות כ"נמחק"/)).toBeInTheDocument();
+    // Split across nodes (the "לא" is a bold <span>) -- match on the <li>'s
+    // full text content instead of a single text node.
+    expect(dialog.textContent).toMatch(/היה מעורב בהם\s*לא\s*יימחקו/);
+    // Must not say or imply that Nexus deletes the person's Google account.
+    expect(dialog.textContent).not.toMatch(/Google.*יימחק/);
+    expect(within(dialog).getByText(/אינה מוחקת את חשבון ה-Google החיצוני/)).toBeInTheDocument();
+  });
+
+  it('a system_admin can permanently delete a technician (no open incidents): success, נמחק badge, controls hidden', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('מאיה רוזן (דמו)');
+    await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+    await user.type(within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/), 'מאיה רוזן (דמו)');
+    await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+    expect(await screen.findByText('המשתמש נמחק לצמיתות. חשבון ההתחברות הוסר.')).toBeInTheDocument();
+    await waitFor(() => expect(within(main()).queryByText('מאיה רוזן (דמו)')).not.toBeInTheDocument());
+
+    // Deleted profiles are not hidden -- they surface under the existing
+    // לא פעילים tab (no new filter/tab introduced), with a נמחק badge and
+    // no management controls.
+    await user.click(screen.getByRole('tab', { name: /^לא פעילים/ }));
+    const row = await within(main()).findByText('מאיה רוזן (דמו)');
+    const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
+    expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
+    expect(within(rowEl).getByText('אחמ״ש')).toBeInTheDocument(); // historical role preserved
+    expect(within(rowEl).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
+    expect(within(rowEl).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+    expect(within(rowEl).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+    expect(within(rowEl).queryByRole('button', { name: 'הפעלה' })).not.toBeInTheDocument();
+    // The recovery-only action IS offered to an authorized manager.
+    expect(within(rowEl).getByRole('button', { name: 'ווידוא הסרת חשבון ההתחברות' })).toBeInTheDocument();
+  });
+
+  it('deletion is blocked while the target owns an open incident, with the safe business message', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    // עומר פרץ (tech1) owns open incidents in the seed data.
+    await within(main()).findByText('עומר פרץ (דמו)');
+    await user.click(within(rowFor('עומר פרץ (דמו)')).getByRole('button', { name: 'מחיקה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+    await user.type(within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/), 'עומר פרץ (דמו)');
+    await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+    expect(await screen.findByText('יש לשנות גורם מטפל בתקלות פתוחות לפני מחיקת המשתמש.')).toBeInTheDocument();
+    // The dialog stays open on error (consistent with the rest of the
+    // app's confirmation flows) and nothing changed: closing it manually
+    // still shows the profile as active, unaffected.
+    await user.click(within(dialog).getByRole('button', { name: 'ביטול' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת משתמש לצמיתות' })).not.toBeInTheDocument());
+    expect(within(main()).getByText('עומר פרץ (דמו)')).toBeInTheDocument();
+  });
+
+  it("a shift_supervisor cannot see מחיקה for a professional_manager (above ceiling); never for their own row", async () => {
+    const user = await openPersonnel('login-u-supervisor-1');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('דנה לוי (דמו)');
+    expect(within(rowFor('דנה לוי (דמו)')).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+    expect(within(rowFor('יואב כהן (דמו)')).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+  });
+
+  describe('DELETE_INCOMPLETE recovery', () => {
+    // The demo repository cannot naturally produce a partial Auth-delete
+    // failure (that's an Edge Function/Supabase Auth concern), so the
+    // FIRST call is stubbed to perform the real tombstone (via the
+    // captured original implementation) and then reject with
+    // DELETE_INCOMPLETE, exactly like a real 502 with the DB step already
+    // committed. Every other call (including the recovery retry) falls
+    // through to the real, unmodified implementation.
+    async function stubOneDeleteFailure() {
+      // Both imported dynamically, AFTER this test's vi.resetModules(), so
+      // this AppError is the SAME class the app's own module graph uses --
+      // a statically/pre-reset-imported AppError would fail `instanceof`
+      // checks inside the app's error handling and silently fall back to
+      // a generic error instead of DELETE_INCOMPLETE.
+      const { LocalDemoRepository } = await import('../data/local/localRepository');
+      const { AppError } = await import('../data/repository');
+      const original = LocalDemoRepository.prototype.deleteUser;
+      const spy = vi.spyOn(LocalDemoRepository.prototype, 'deleteUser').mockImplementationOnce(async function (
+        this: InstanceType<typeof LocalDemoRepository>,
+        ...args: Parameters<typeof original>
+      ) {
+        await original.apply(this, args);
+        throw new AppError(
+          'DELETE_INCOMPLETE',
+          'המשתמש הושבת ונחסם בבטחה, אך מחיקת חשבון ההתחברות נכשלה. יש לנסות שוב.',
+        );
+      });
+      return spy;
+    }
+
+    it('refreshes the row to deleted, offers the recovery-only action, and a retry clears the error with a success toast', async () => {
+      await stubOneDeleteFailure();
+      const user = await openPersonnel('login-u-admin');
+      await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+      await within(main()).findByText('מאיה רוזן (דמו)');
+      await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
+      const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+      await user.type(within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/), 'מאיה רוזן (דמו)');
+      await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+      expect(
+        await screen.findByText('המשתמש הושבת ונחסם בבטחה, אך מחיקת חשבון ההתחברות נכשלה. יש לנסות שוב.'),
+      ).toBeInTheDocument();
+      // The dialog closes and the row already reflects the real (committed)
+      // tombstone -- this is the exact contradiction being fixed: a
+      // deleted row must expose a way to retry the Auth step.
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת משתמש לצמיתות' })).not.toBeInTheDocument());
+      await user.click(screen.getByRole('tab', { name: /^לא פעילים/ }));
+      const row = await within(main()).findByText('מאיה רוזן (דמו)');
+      const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
+      expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
+      const recoverButton = within(rowEl).getByRole('button', { name: 'ווידוא הסרת חשבון ההתחברות' });
+      expect(within(rowEl).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'הפעלה' })).not.toBeInTheDocument();
+
+      // The recovery action invokes delete-user again with the SAME
+      // profile id -- this time (no stub queued) the real, idempotent
+      // no-op path runs and succeeds.
+      await user.click(recoverButton);
+      const recoveryDialog = await screen.findByRole('dialog', { name: 'ווידוא הסרת חשבון ההתחברות' });
+      expect(within(recoveryDialog).getByText(/כבר נמחק לצמיתות ומושבת/)).toBeInTheDocument();
+      await user.click(within(recoveryDialog).getByRole('button', { name: 'ניסיון חוזר' }));
+
+      expect(await screen.findByText('חשבון ההתחברות אומת כמוסר (או שכבר לא היה קיים).')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'ווידוא הסרת חשבון ההתחברות' })).not.toBeInTheDocument(),
+      );
+      // Still deleted, still no ordinary controls, after a successful retry.
+      const rowAfter = rowFor('מאיה רוזן (דמו)');
+      expect(within(rowAfter).getByText('נמחק')).toBeInTheDocument();
+      expect(within(rowAfter).queryByRole('button', { name: 'עריכה' })).not.toBeInTheDocument();
+      expect(within(rowAfter).queryByRole('button', { name: 'מחיקה' })).not.toBeInTheDocument();
+    });
+
+    it('does not offer the recovery action to an out-of-ceiling actor for an already-deleted profile', async () => {
+      // Tombstone a professional_manager (no incidents owned) as admin first.
+      let user = await openPersonnel('login-u-admin');
+      await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+      await within(main()).findByText('דנה לוי (דמו)');
+      await user.click(within(rowFor('דנה לוי (דמו)')).getByRole('button', { name: 'מחיקה' }));
+      const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
+      await user.type(within(dialog).getByLabelText(/^להמשך, יש להקליד את השם המדויק/), 'דנה לוי (דמו)');
+      await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת משתמש לצמיתות' })).not.toBeInTheDocument());
+
+      // Now view the same (already-deleted) profile as a shift_supervisor,
+      // who is out of ceiling for a professional_manager either way. Log
+      // out (same mounted app, no re-render) and sign in as a different
+      // demo user instead of calling openPersonnel again.
+      await user.click(screen.getByRole('button', { name: 'התנתקות' }));
+      await user.click(await screen.findByTestId('login-u-supervisor-1'));
+      await screen.findByRole('heading', { name: 'מצב נוכחי' });
+      await user.click(within(screen.getByRole('navigation', { name: 'ניווט ראשי' })).getByRole('link', { name: 'כוח אדם' }));
+      await screen.findByRole('heading', { name: 'כוח אדם' });
+      await user.click(screen.getByRole('tab', { name: /^לא פעילים/ }));
+      const row = await within(main()).findByText('דנה לוי (דמו)');
+      const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
+      expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
+      expect(within(rowEl).queryByRole('button', { name: 'ווידוא הסרת חשבון ההתחברות' })).not.toBeInTheDocument();
+    });
   });
 });

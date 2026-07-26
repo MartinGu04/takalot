@@ -40,6 +40,45 @@ import type {
 } from '../repository';
 import { isOverdue, sortByPriority } from '../../domain/overdue';
 
+// Maps a failed delete-user Edge Function invocation to an AppError. The
+// function's response body is JSON ({ error, message, retryable? }); a
+// FunctionsHttpError's `context` is the raw fetch Response, so the body
+// must be read asynchronously. Status codes are stable and checked first;
+// the safe business message from a 409 (validation, e.g. the open-
+// incident guard) is the only server-provided text ever surfaced to the
+// user -- everything else gets a fixed Hebrew message here, never the
+// function's raw (English, internal) text.
+async function mapDeleteUserError(error: unknown): Promise<AppError> {
+  const context = (error as { context?: unknown } | null | undefined)?.context;
+  let status: number | undefined;
+  let body: { error?: string; message?: string } | undefined;
+  if (context && typeof context === 'object' && 'status' in context) {
+    status = (context as { status?: number }).status;
+    try {
+      body = await (context as Response).json();
+    } catch {
+      // No JSON body available -- fall through to the generic mapping below.
+    }
+  }
+
+  if (status === 403) {
+    return new AppError('FORBIDDEN', 'אין לך הרשאה מספקת למחוק משתמש זה.');
+  }
+  if (status === 404) {
+    return new AppError('NOT_FOUND', 'המשתמש כבר אינו קיים.');
+  }
+  if (status === 409) {
+    return new AppError('VALIDATION', body?.message || 'לא ניתן למחוק את המשתמש כעת.');
+  }
+  if (status === 502 && body?.error === 'auth_delete_failed') {
+    return new AppError(
+      'DELETE_INCOMPLETE',
+      'המשתמש הושבת ונחסם בבטחה, אך מחיקת חשבון ההתחברות נכשלה. יש לנסות שוב.',
+    );
+  }
+  return new AppError('NETWORK', 'אירעה שגיאה בלתי צפויה במחיקת המשתמש. נא לנסות שוב.');
+}
+
 function wrap(error: { message: string; code?: string } | null): void {
   if (!error) return;
   if (error.code === 'PGRST301' || /jwt/i.test(error.message)) {
@@ -192,6 +231,16 @@ export class SupabaseRepository implements Repository {
     await this.rpc('admin_set_user_active', { p_user_id: userId, p_active: active });
   }
 
+  async deleteUser(_s: Session, userId: string): Promise<void> {
+    // The shared client (src/data/supabase/client.ts) automatically attaches
+    // the current session's access token to every function invocation --
+    // admin_delete_user() inside the function therefore runs as THIS
+    // caller, under the exact same RPC checks as any other call. No
+    // service-role or secret key is ever requested, handled, or sent here.
+    const { error } = await this.client.functions.invoke('delete-user', { body: { userId } });
+    if (error) throw await mapDeleteUserError(error);
+  }
+
   // --- pre-provisioned personnel ---
 
   async listPendingPersonnel(_s: Session): Promise<PendingPersonnel[]> {
@@ -266,7 +315,7 @@ export class SupabaseRepository implements Repository {
     // server-side (the client has no access to auth.users) and rejects
     // every caller below the manager roles.
     const rows = await this.rpc<Record<string, unknown>[]>('list_personnel', {});
-    return (rows ?? []).map((r) => ({
+    const entries: PersonnelEntry[] = (rows ?? []).map((r) => ({
       kind: r.kind as PersonnelEntry['kind'],
       id: r.id as string,
       fullName: r.full_name as string,
@@ -275,6 +324,28 @@ export class SupabaseRepository implements Repository {
       state: r.state as PersonnelEntry['state'],
       createdAt: r.created_at as string,
     }));
+
+    // list_personnel() predates the tombstone model (migration 0012) and
+    // does not distinguish a deleted profile from a merely deactivated one
+    // -- both come back as state 'inactive'. RLS (profiles_select) already
+    // lets any active member read every profiles row, so a plain,
+    // additional select for just the tombstoned ids is enough to upgrade
+    // their display state to 'deleted' here -- no new RPC or migration.
+    const linkedIds = entries.filter((e) => e.kind === 'linked').map((e) => e.id);
+    if (linkedIds.length > 0) {
+      const { data: deletedRows, error } = await this.client
+        .from('profiles')
+        .select('id')
+        .in('id', linkedIds)
+        .not('deleted_at', 'is', null);
+      wrap(error);
+      const deletedIds = new Set((deletedRows ?? []).map((r) => r.id as string));
+      for (const e of entries) {
+        if (e.kind === 'linked' && deletedIds.has(e.id)) e.state = 'deleted';
+      }
+    }
+
+    return entries;
   }
 
   async listIncidents(

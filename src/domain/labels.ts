@@ -31,10 +31,11 @@ export const personnelRoleLabels: Record<Role, string> = {
   viewer: 'צפייה בלבד',
 };
 
-export const personnelStatusLabels: Record<'pending' | 'active' | 'inactive', string> = {
+export const personnelStatusLabels: Record<'pending' | 'active' | 'inactive' | 'deleted', string> = {
   pending: 'ממתין להתחברות',
   active: 'פעיל',
   inactive: 'לא פעיל',
+  deleted: 'נמחק',
 };
 
 export const severityLabels: Record<Severity, string> = {

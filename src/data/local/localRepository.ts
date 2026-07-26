@@ -366,6 +366,11 @@ export class LocalDemoRepository implements Repository {
     if (!ceiling.includes(profile.role) || !ceiling.includes(role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
     }
+    // Mirrors migration 0012: a tombstoned profile's role is permanent
+    // history, not an editable field.
+    if (profile.deletedAt) {
+      throw new AppError('VALIDATION', 'לא ניתן לשנות תפקיד למשתמש שנמחק.');
+    }
     if (profile.role === 'system_admin' && profile.active && role !== 'system_admin' && this.countActiveAdmins() <= 1) {
       throw new AppError('VALIDATION', 'לא ניתן להוריד בדרגה את מנהל המערכת הפעיל האחרון.');
     }
@@ -388,11 +393,46 @@ export class LocalDemoRepository implements Repository {
     if (!allowedManageRoles(actor.role).includes(profile.role)) {
       throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
     }
+    // Mirrors migration 0012: a tombstoned profile cannot be reactivated,
+    // and there is nothing left to (de)activate.
+    if (profile.deletedAt) {
+      throw new AppError('VALIDATION', 'לא ניתן לשנות סטטוס למשתמש שנמחק.');
+    }
     if (!active && profile.role === 'system_admin' && profile.active && this.countActiveAdmins() <= 1) {
       throw new AppError('VALIDATION', 'לא ניתן להשבית את מנהל המערכת הפעיל האחרון.');
     }
     profile.active = active;
     this.audit(actor.id, active ? 'user_activated' : 'user_deactivated', 'profile', userId);
+    this.persist();
+  }
+
+  async deleteUser(session: Session, userId: string): Promise<void> {
+    // Mirrors migration 0013's admin_delete_user(): same authorization
+    // shape as setUserRole/setUserActive above, plus the open-incident
+    // guard, plus tombstoning instead of just deactivating. Idempotent,
+    // but only after every permission check has passed -- see the SQL
+    // migration's header for why.
+    const actor = this.requirePersonnelManager(session);
+    if (userId === actor.id) {
+      throw new AppError('FORBIDDEN', 'לא ניתן למחוק את עצמך.');
+    }
+    const profile = this.db.profiles.find((p) => p.id === userId);
+    if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
+    if (!allowedManageRoles(actor.role).includes(profile.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה למחוק משתמש בתפקיד זה.');
+    }
+    if (profile.deletedAt) return; // already deleted: authorized no-op, safe to retry
+    if (profile.role === 'system_admin' && profile.active && this.countActiveAdmins() <= 1) {
+      throw new AppError('VALIDATION', 'לא ניתן למחוק את מנהל המערכת הפעיל האחרון.');
+    }
+    const hasOpenIncident = this.db.incidents.some((i) => i.ownerUserId === userId && isOpen(i.status));
+    if (hasOpenIncident) {
+      throw new AppError('VALIDATION', 'יש לשנות גורם מטפל בתקלות פתוחות לפני מחיקת המשתמש.');
+    }
+    profile.active = false;
+    profile.deletedAt = this.now().toISOString();
+    profile.deletedBy = actor.id;
+    this.audit(actor.id, 'user_tombstoned', 'profile', userId);
     this.persist();
   }
 
@@ -482,7 +522,7 @@ export class LocalDemoRepository implements Repository {
       fullName: p.fullName,
       email: this.linkedEmailOf(p.id),
       role: p.role,
-      state: p.active ? ('active' as const) : ('inactive' as const),
+      state: p.deletedAt ? ('deleted' as const) : p.active ? ('active' as const) : ('inactive' as const),
       createdAt: p.createdAt,
     }));
     const byCreatedDesc = (a: PersonnelEntry, b: PersonnelEntry) => b.createdAt.localeCompare(a.createdAt);
