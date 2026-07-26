@@ -48,6 +48,12 @@ export interface Profile {
   role: Role;
   active: boolean;
   createdAt: string; // ISO UTC
+  /** Set once the profile has been permanently deleted (tombstoned) via
+   *  the server-side delete-user flow. Optional: absent/undefined for any
+   *  profile that has never been deleted, and for data shaped before this
+   *  field existed. */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
 }
 
 export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled' | 'expired';
@@ -83,8 +89,11 @@ export interface PersonnelEntry {
   /** Normalized Google email; null for a linked profile with no auth identity. */
   email: string | null;
   role: Role;
-  /** 'pending' for pending entries; 'active' | 'inactive' for linked profiles. */
-  state: 'pending' | 'active' | 'inactive';
+  /** 'pending' for pending entries; 'active' | 'inactive' | 'deleted' for
+   *  linked profiles. 'deleted' means permanently tombstoned via the
+   *  server-side delete-user flow -- the name/role shown are permanent
+   *  historical record, not a live, manageable account. */
+  state: 'pending' | 'active' | 'inactive' | 'deleted';
   createdAt: string;
 }
 

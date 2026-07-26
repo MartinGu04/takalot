@@ -38,7 +38,11 @@ export type ErrorCode =
   | 'CONFLICT' // optimistic concurrency: incident changed since page load
   | 'INVALID_TRANSITION'
   | 'SESSION_EXPIRED'
-  | 'NETWORK';
+  | 'NETWORK'
+  // The profile was deactivated and tombstoned successfully, but deleting
+  // the Auth account failed and must be retried (server-side delete-user
+  // flow). Distinct from NETWORK: the DB step already succeeded.
+  | 'DELETE_INCOMPLETE';
 
 /** Application error with a user-facing Hebrew message. */
 export class AppError extends Error {
@@ -109,6 +113,19 @@ export interface Repository {
   // --- linked-personnel management (role ceilings enforced in the database) ---
   setUserRole(session: Session, userId: string, role: Role): Promise<void>;
   setUserActive(session: Session, userId: string, active: boolean): Promise<void>;
+  /**
+   * Permanently deletes login access for a linked profile: deactivates and
+   * tombstones the profile, then (supabase mode, via the server-side
+   * delete-user function) deletes the Supabase Auth account. Does not
+   * remove or anonymize any historical data -- incidents, updates,
+   * events, notifications, and audit entries keep referencing the
+   * permanent profile row exactly as before. Idempotent: calling this
+   * again on an already-deleted profile is a safe no-op (useful for
+   * retrying after a DELETE_INCOMPLETE error). The database/Edge Function
+   * is the real authorization boundary; the frontend only hides the
+   * action when it already knows it would be rejected.
+   */
+  deleteUser(session: Session, userId: string): Promise<void>;
 
   // --- pre-provisioned personnel (supabase-mode onboarding) ---
   listPendingPersonnel(session: Session): Promise<PendingPersonnel[]>;

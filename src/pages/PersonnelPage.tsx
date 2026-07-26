@@ -6,16 +6,17 @@
 // in demo mode so this page is fully testable in CI without a real
 // backend).
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../auth/AuthContext';
 import { repo, useAppMutation } from '../data/hooks';
 import { allowedAssignRoles, allowedManageRoles } from '../domain/permissions';
 import { personnelRoleLabels, personnelStatusLabels } from '../domain/labels';
 import type { PersonnelEntry, Role } from '../domain/types';
 import type { PendingPersonnelInput } from '../domain/schemas';
-import { Badge, Button, EmptyState, ErrorState, Input, Select, Spinner } from '../components/ui';
+import { Badge, Button, EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
 import { PersonnelFormDialog } from '../components/dialogs/PersonnelFormDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { DeleteUserDialog } from '../components/dialogs/DeleteUserDialog';
 import { IconPlus } from '../components/icons';
 
 type Tab = 'pending' | 'active' | 'inactive';
@@ -40,6 +41,7 @@ export default function PersonnelPage() {
   const [editingEntry, setEditingEntry] = useState<PersonnelEntry | null>(null);
   const [cancelingEntry, setCancelingEntry] = useState<PersonnelEntry | null>(null);
   const [deactivatingEntry, setDeactivatingEntry] = useState<PersonnelEntry | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState<PersonnelEntry | null>(null);
   const [roleChangeRequest, setRoleChangeRequest] = useState<{ entry: PersonnelEntry; newRole: Role } | null>(null);
   // Which linked row currently has its role/status controls expanded --
   // the controls are hidden by default so the list stays scannable with
@@ -90,6 +92,30 @@ export default function PersonnelPage() {
     },
   });
 
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const deleteMutation = useAppMutation((id: string) => repo().deleteUser(session, id), {
+    invalidate: [['personnel'], ['profiles']],
+    successText: 'המשתמש נמחק לצמיתות. חשבון ההתחברות הוסר.',
+    onSuccess: () => {
+      setDeletingEntry(null);
+      setExpandedId(null);
+    },
+    onError: (error) => {
+      // DELETE_INCOMPLETE means the database half already succeeded (the
+      // profile IS deactivated and tombstoned) -- only the Auth-account
+      // deletion failed and needs a retry. Refresh personnel data so the
+      // list reflects that, in addition to explaining what to do next.
+      if (error.code === 'DELETE_INCOMPLETE') {
+        queryClient.invalidateQueries({ queryKey: ['personnel'] });
+        queryClient.invalidateQueries({ queryKey: ['profiles'] });
+        setDeletingEntry(null);
+        setExpandedId(null);
+      }
+      toast(error.message, 'error');
+    },
+  });
+
   const roleChangeMutation = useAppMutation(
     (vars: { id: string; role: Role }) => repo().setUserRole(session, vars.id, vars.role),
     {
@@ -107,7 +133,10 @@ export default function PersonnelPage() {
     return {
       pending: all.filter((e) => e.kind === 'pending').length,
       active: all.filter((e) => e.kind === 'linked' && e.state === 'active').length,
-      inactive: all.filter((e) => e.kind === 'linked' && e.state === 'inactive').length,
+      // Deleted (tombstoned) profiles have no live login access, same as
+      // deactivated ones -- shown under the existing "לא פעילים" tab
+      // rather than a new filter/tab, distinguished by the נמחק badge.
+      inactive: all.filter((e) => e.kind === 'linked' && (e.state === 'inactive' || e.state === 'deleted')).length,
     };
   }, [data]);
 
@@ -121,7 +150,7 @@ export default function PersonnelPage() {
     const byTab = all.filter((e) => {
       if (tab === 'pending') return e.kind === 'pending';
       if (tab === 'active') return e.kind === 'linked' && e.state === 'active';
-      return e.kind === 'linked' && e.state === 'inactive';
+      return e.kind === 'linked' && (e.state === 'inactive' || e.state === 'deleted');
     });
     const q = search.trim().toLowerCase();
     if (!q) return byTab;
@@ -219,7 +248,11 @@ export default function PersonnelPage() {
               );
             }
 
-            const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId;
+            // A tombstoned profile is permanent history, not manageable
+            // personnel: no עריכה toggle, no role/active controls, and no
+            // repeated delete action -- the frontend just doesn't offer
+            // them (the database rejects all three regardless).
+            const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state !== 'deleted';
             const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
             const expanded = canManage && expandedId === entry.id;
             return (
@@ -235,19 +268,30 @@ export default function PersonnelPage() {
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
-                    <Badge color={entry.state === 'active' ? 'green' : 'neutral'}>
-                      {entry.state === 'active' ? personnelStatusLabels.active : personnelStatusLabels.inactive}
+                    <Badge color={entry.state === 'active' ? 'green' : entry.state === 'deleted' ? 'red' : 'neutral'}>
+                      {personnelStatusLabels[entry.state]}
                     </Badge>
                     {entry.id === session.userId && <Badge color="blue">אתה</Badge>}
                     {canManage && (
-                      <Button
-                        variant="ghost"
-                        className="px-2"
-                        aria-expanded={expanded}
-                        onClick={() => setExpandedId(expanded ? null : entry.id)}
-                      >
-                        עריכה
-                      </Button>
+                      <>
+                        <Button
+                          variant="ghost"
+                          className="px-2"
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedId(expanded ? null : entry.id)}
+                        >
+                          עריכה
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="px-2 text-red-700 dark:text-red-400"
+                          disabled={soleActiveAdmin}
+                          title={soleActiveAdmin ? 'לא ניתן למחוק את מנהל המערכת הפעיל האחרון' : undefined}
+                          onClick={() => setDeletingEntry(entry)}
+                        >
+                          מחיקה
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -335,6 +379,13 @@ export default function PersonnelPage() {
         danger
         submitting={deactivateMutation.isPending}
         onConfirm={() => deactivatingEntry && deactivateMutation.mutate(deactivatingEntry.id)}
+      />
+
+      <DeleteUserDialog
+        entry={deletingEntry}
+        onClose={() => setDeletingEntry(null)}
+        submitting={deleteMutation.isPending}
+        onConfirm={() => deletingEntry && deleteMutation.mutate(deletingEntry.id)}
       />
 
       <ConfirmDialog
