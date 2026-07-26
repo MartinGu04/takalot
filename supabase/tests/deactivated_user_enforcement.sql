@@ -97,6 +97,12 @@ begin
   reset role;
 
   -- ===== Deactivate both users (as an admin would) =====
+  -- e4 owns the open incident f010; migration 0014 now blocks deactivating
+  -- the internal owner of an open incident (unrelated to what this suite
+  -- tests), so reassign it away first -- to e1, who is untouched by this
+  -- test -- before the raw deactivation below.
+  update incidents set owner_user_id = '00000000-0000-0000-0000-0000000000e1'
+    where id = '00000000-0000-0000-0000-00000000f010';
   update profiles set active = false
     where id in ('00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4');
 
