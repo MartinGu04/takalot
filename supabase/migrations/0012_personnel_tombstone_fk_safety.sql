@@ -72,15 +72,14 @@ alter table public.pending_personnel
   foreign key (claimed_by) references public.profiles (id)
   deferrable initially deferred;
 
--- bootstrap_first_admin() already inserts the profiles row before updating
--- consumed_by, so this one has no ordering dependency -- deferrable is
--- added anyway for uniformity with the sibling FK above and as a
--- forward-compatible safeguard against reordering.
+-- bootstrap_first_admin() already inserts the profiles row BEFORE updating
+-- consumed_by, so this one has no ordering dependency -- kept as a normal
+-- immediate (NOT DEFERRABLE) foreign key. Deferring it would weaken
+-- constraint checking with no corresponding need.
 alter table public.bootstrap_admin_config drop constraint bootstrap_admin_config_consumed_by_fkey;
 alter table public.bootstrap_admin_config
   add constraint bootstrap_admin_config_consumed_by_fkey
-  foreign key (consumed_by) references public.profiles (id)
-  deferrable initially deferred;
+  foreign key (consumed_by) references public.profiles (id);
 
 -- =====================================================================
 -- 3. Tombstone fields on profiles

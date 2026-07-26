@@ -7,8 +7,14 @@
 --     through the management RPCs, and the DB-level CHECK backstops that
 --     even against a raw UPDATE.
 --  4. Active/unrelated users are unaffected.
---  5. No FK referencing auth.users(id) anywhere in the schema still
---     cascades.
+--  5. No ON DELETE CASCADE exists from any Nexus-owned (public schema)
+--     table to auth.users; public.profiles has no FK to auth.users;
+--     claimed_by/consumed_by reference public.profiles(id); claimed_by
+--     remains DEFERRABLE INITIALLY DEFERRED (required by claim ordering)
+--     and consumed_by is a normal immediate FK (no such dependency).
+--     This intentionally does NOT assert anything about Supabase-managed
+--     internal Auth-schema constraints (e.g. auth.identities), which are
+--     outside Nexus's ownership.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -80,6 +86,7 @@ declare
   v_active boolean;
   v_deleted_at timestamptz;
   v_role text;
+  v_bool boolean;
 begin
   -- ===== 1/2. Delete the Auth user; confirm it succeeds and history stays =====
   begin
@@ -183,25 +190,46 @@ begin
   end;
   reset role;
 
-  -- ===== 5. No remaining cascade path from auth.users =====
+  -- ===== 5. No destructive cascade path from Auth deletion into Nexus data =====
+  -- Scoped to Nexus-owned (public schema) referencing tables only. This
+  -- deliberately does NOT assert anything about Supabase-managed internal
+  -- Auth-schema constraints (e.g. auth.identities), which Nexus does not
+  -- own or control.
   select count(*) into v_count
-  from pg_constraint
-  where confrelid = 'auth.users'::regclass and confdeltype = 'c';
+  from pg_constraint c
+  join pg_class r on r.oid = c.conrelid
+  join pg_namespace n on n.oid = r.relnamespace
+  where c.confrelid = 'auth.users'::regclass
+    and c.confdeltype = 'c'
+    and n.nspname = 'public';
   insert into results (test, result, detail) values
-    ('no ON DELETE CASCADE remains anywhere referencing auth.users', case when v_count = 0 then 'PASS' else 'FAIL' end, 'cascades=' || v_count);
+    ('no ON DELETE CASCADE from any public (Nexus-owned) table to auth.users',
+      case when v_count = 0 then 'PASS' else 'FAIL' end, 'cascades=' || v_count);
 
   select count(*) into v_count
   from pg_constraint
   where conrelid = 'public.profiles'::regclass and confrelid = 'auth.users'::regclass;
   insert into results (test, result, detail) values
-    ('profiles no longer has any FK to auth.users', case when v_count = 0 then 'PASS' else 'FAIL' end, 'remaining=' || v_count);
+    ('public.profiles has no FK to auth.users', case when v_count = 0 then 'PASS' else 'FAIL' end, 'remaining=' || v_count);
 
   select count(*) into v_count
   from pg_constraint
   where conname in ('pending_personnel_claimed_by_fkey', 'bootstrap_admin_config_consumed_by_fkey')
     and confrelid = 'public.profiles'::regclass;
   insert into results (test, result, detail) values
-    ('claimed_by/consumed_by now reference profiles, not auth.users', case when v_count = 2 then 'PASS' else 'FAIL' end, 'matching=' || v_count);
+    ('claimed_by/consumed_by reference public.profiles(id)', case when v_count = 2 then 'PASS' else 'FAIL' end, 'matching=' || v_count);
+
+  select condeferrable and condeferred into v_bool
+  from pg_constraint where conname = 'pending_personnel_claimed_by_fkey';
+  insert into results (test, result, detail) values
+    ('pending_personnel_claimed_by_fkey is DEFERRABLE INITIALLY DEFERRED',
+      case when v_bool then 'PASS' else 'FAIL' end, 'deferred=' || v_bool);
+
+  select condeferrable or condeferred into v_bool
+  from pg_constraint where conname = 'bootstrap_admin_config_consumed_by_fkey';
+  insert into results (test, result, detail) values
+    ('bootstrap_admin_config_consumed_by_fkey is a normal immediate FK (not deferrable)',
+      case when v_bool = false then 'PASS' else 'FAIL' end, 'deferrable_or_deferred=' || v_bool);
 end $$;
 
 select * from results order by id;
