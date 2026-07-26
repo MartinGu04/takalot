@@ -31,9 +31,25 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+// One shared, explicit CORS header set -- used identically for the
+// OPTIONS preflight, every success response, and every error response
+// (via json() below), so the browser never sees a mismatch between them.
+//
+// supabase-js's client (used by callerClient.rpc(...) from the browser via
+// functions.invoke()) always sends 'apikey' and 'x-client-info' in
+// addition to 'authorization'/'content-type' -- omitting either from
+// Access-Control-Allow-Headers fails the preflight and the POST request
+// never reaches this handler at all. A pinned-version SDK import (e.g.
+// `npm:@supabase/supabase-js@2/cors`) was considered instead of this
+// literal list, but this function targets `npm:@supabase/supabase-js@2`
+// (unpinned patch version) for the Deno/Supabase Edge Runtime, which is a
+// different resolution environment than this repo's Node install -- an
+// explicit, dependency-free header list is the safer choice here.
+// Functional method handling is unaffected either way: only POST (and the
+// OPTIONS preflight itself) does anything below.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
