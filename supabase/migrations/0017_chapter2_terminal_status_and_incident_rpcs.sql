@@ -9,13 +9,20 @@
 -- `status <> 'closed'` as "the only terminal status" or "the definition of
 -- open" is corrected here to also account for 'cancelled'. Each function
 -- below is reproduced in full (`create or replace function` requires the
--- complete body) with EXACTLY ONE guard condition changed relative to its
--- current active definition -- re-verified against the actual currently
--- active bodies immediately before writing this file, since `create_incident`,
+-- complete body) -- re-verified against the actual currently active bodies
+-- immediately before writing this file, since `create_incident`,
 -- `update_incident`, and `close_incident` were superseded by 0004
 -- (readiness/recipient), not 0002, and `admin_set_user_active` was superseded
--- by 0014 (deactivation guard), not 0002. No other behavior in any of these
--- functions is changed.
+-- by 0014 (deactivation guard), not 0002. Relative to that current active
+-- definition, each reproduced function contains exactly: the approved
+-- terminal/open predicate change (widening a `status = 'closed'`/
+-- `status <> 'closed'` guard to also cover 'cancelled', or -- for
+-- `create_incident` -- replacing the closed/reopened blocklist with the
+-- approved pre-cutover allowlist); the corresponding user-facing Hebrew
+-- error-message text update where the guard's own error message named
+-- "closed" specifically (e.g. "או מבוטלת" / "or cancelled" appended);
+-- otherwise unchanged executable logic, including all pre-existing inline
+-- comments.
 --
 -- ===== New RPCs =====
 -- cancel_incident, add_incident_report, and set_incident_status_check are
@@ -403,6 +410,9 @@ begin
   else
     -- Incomplete readiness: the incident stays active as "כשירות חלקית" --
     -- it is never marked closed while follow-up is still outstanding.
+    -- readiness_at_close is left untouched: it only ever describes readiness
+    -- AT AN ACTUAL CLOSE, and this incident has not closed (also enforced by
+    -- incident_closed_requires_full_readiness).
     select coalesce((select full_name from profiles where id = v_new_owner), v_new_owner_ext, 'ללא') into v_owner_label;
 
     update incidents set
@@ -577,8 +587,14 @@ begin
     raise exception 'permission: לא ניתן למחוק את עצמך';
   end if;
 
+  -- Same lock, same key, same ordering discipline as
+  -- admin_set_user_role/admin_set_user_active: every personnel management
+  -- write serializes here BEFORE resolving anything else, so a concurrent
+  -- role change / (de)activation / delete against related targets can
+  -- never race past each other.
   perform pg_advisory_xact_lock(hashtext('personnel_management_write')::bigint);
 
+  -- Resolve the CALLER's own authorization only after the lock is held.
   v_actor_role := public.my_role();
   if v_actor_role is null then
     raise exception 'permission: אין הרשאה לנהל אנשי צוות';
@@ -593,10 +609,14 @@ begin
     raise exception 'permission: אין הרשאה למחוק משתמש בתפקיד זה';
   end if;
 
+  -- Authorization is now fully established. Only now may an
+  -- already-tombstoned target short-circuit to success (see header).
   if v_target.deleted_at is not null then
     return;
   end if;
 
+  -- The last ACTIVE system_admin may not be deleted by anyone -- same
+  -- protection admin_set_user_active applies to deactivation.
   if v_target.role = 'system_admin' and v_target.active then
     select count(*) into v_active_admins from public.profiles where role = 'system_admin' and active;
     if v_active_admins <= 1 then
@@ -604,6 +624,8 @@ begin
     end if;
   end if;
 
+  -- NULL-safe against a null status (incidents.status is NOT NULL today,
+  -- but this is correct regardless).
   select count(*) into v_open_incidents
   from public.incidents where owner_user_id = p_user_id and public.is_incident_open(status);
   if v_open_incidents > 0 then
@@ -650,18 +672,28 @@ begin
     raise exception 'permission: לא ניתן לשנות את הסטטוס של עצמך';
   end if;
 
+  -- Same lock, same reasoning as admin_set_user_role -- and the SAME key,
+  -- so a concurrent role change and activation change on related targets
+  -- also serialize against each other.
   perform pg_advisory_xact_lock(hashtext('personnel_management_write')::bigint);
 
+  -- Resolve the CALLER's own authorization only after the lock is held --
+  -- see admin_set_user_role and the header for why.
   v_actor_role := public.my_role();
   if v_actor_role is null then
     raise exception 'permission: אין הרשאה לנהל אנשי צוות';
   end if;
 
+  -- FOR UPDATE: see the concurrency argument above. Held until this
+  -- transaction ends, covering every check below including the
+  -- open-incident check.
   select * into v_target from public.profiles where id = p_user_id for update;
   if not found then
     raise exception 'not_found: המשתמש לא נמצא';
   end if;
 
+  -- A tombstoned profile is not personnel to manage: it cannot be
+  -- reactivated, and there is nothing left to deactivate.
   if v_target.deleted_at is not null then
     raise exception 'validation: לא ניתן לשנות סטטוס למשתמש שנמחק';
   end if;
@@ -670,12 +702,18 @@ begin
     raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
   end if;
 
+  -- Internal-owner invariant (Chapter 2, PR1): a currently-active internal
+  -- owner (גורם מטפל פנימי) of an open incident can never be deactivated
+  -- until that incident is reassigned. Checked here, on top of the target
+  -- still being currently active, for a clean, translated error; the
+  -- trigger above is the unconditional backstop for every other path.
   if not p_active and v_target.active and exists (
     select 1 from public.incidents where owner_user_id = p_user_id and public.is_incident_open(status)
   ) then
     raise exception 'validation: לא ניתן להשבית משתמש המשמש כגורם מטפל פנימי בתקלה פעילה — יש להעביר את הטיפול לגורם מטפל פנימי אחר לפני ההשבתה';
   end if;
 
+  -- The last ACTIVE system_admin may not be deactivated by anyone.
   if not p_active and v_target.role = 'system_admin' and v_target.active then
     select count(*) into v_active_admins from public.profiles where role = 'system_admin' and active;
     if v_active_admins <= 1 then
