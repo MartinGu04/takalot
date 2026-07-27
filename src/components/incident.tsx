@@ -23,6 +23,10 @@ const statusColor: Record<IncidentStatus, 'red' | 'orange' | 'green' | 'blue' | 
   resolved_pending_close: 'orange',
   closed: 'green',
   reopened: 'blue',
+  cancelled: 'neutral',
+  waiting_equipment: 'orange',
+  waiting_information: 'orange',
+  waiting_validation: 'orange',
 };
 
 export function StatusBadge({ status }: { status: IncidentStatus }) {

@@ -17,6 +17,27 @@ import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { isoToLocalInput, localInputToIso } from '../../lib/time';
 
+/** Statuses this dropdown must not offer as an update target.
+ *  closed/reopened: reachable only through their own dedicated flows (long
+ *  standing).
+ *  cancelled: reachable only through its own dedicated flow, not yet
+ *  exposed in any UI.
+ *  waiting_equipment/waiting_information/waiting_validation: exist as enum
+ *  values and are fully supported for reading/rendering/filtering, but the
+ *  backend's is_valid_transition (migration 0017) does not yet allow
+ *  transitioning into any of them from any status -- offering them here
+ *  would present an option the backend always rejects. Temporary and
+ *  pre-cutover: remove this exclusion once a backend PR extends
+ *  is_valid_transition's target whitelist. */
+const NOT_YET_SELECTABLE_UPDATE_TARGETS = new Set([
+  'closed',
+  'reopened',
+  'cancelled',
+  'waiting_equipment',
+  'waiting_information',
+  'waiting_validation',
+]);
+
 export function UpdateDialog({
   open,
   onClose,
@@ -163,7 +184,13 @@ export function UpdateDialog({
                 {(a) => (
                   <Select {...a} value={status} onChange={(e) => setStatus(e.target.value as Incident['status'])}>
                     {Object.entries(statusLabels)
-                      .filter(([k]) => k !== 'closed' && k !== 'reopened')
+                      // The incident's OWN current status must always render
+                      // as an option (so a historical/externally-inserted
+                      // incident already in e.g. waiting_equipment still
+                      // shows a correctly selected dropdown) -- only a
+                      // DIFFERENT not-yet-selectable status is hidden as a
+                      // choice.
+                      .filter(([k]) => k === incident.status || !NOT_YET_SELECTABLE_UPDATE_TARGETS.has(k))
                       .map(([k, v]) => (
                         <option key={k} value={k}>{v}</option>
                       ))}

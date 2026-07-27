@@ -39,4 +39,34 @@ describe('status transitions', () => {
     expect(canTransition('resolved_pending_close', 'in_progress')).toBe(true);
     expect(canTransition('resolved_pending_close', 'waiting_external')).toBe(false);
   });
+
+  describe('cancelled (Chapter 2)', () => {
+    it('never allows a self-transition on an already-cancelled incident (terminal, matches is_valid_transition)', () => {
+      expect(canTransition('cancelled', 'cancelled')).toBe(false);
+    });
+
+    it('never allows transitioning out of cancelled', () => {
+      expect(canTransition('cancelled', 'in_progress')).toBe(false);
+      expect(canTransition('cancelled', 'new')).toBe(false);
+    });
+
+    it('never allows a direct transition to cancelled (reachable only through its own dedicated flow)', () => {
+      expect(canTransition('in_progress', 'cancelled')).toBe(false);
+      expect(canTransition('new', 'cancelled')).toBe(false);
+    });
+  });
+
+  describe('waiting_equipment / waiting_information / waiting_validation (Chapter 2)', () => {
+    it('are not reachable as a transition target from any status yet (backend gap, not a frontend omission)', () => {
+      expect(canTransition('in_progress', 'waiting_equipment')).toBe(false);
+      expect(canTransition('new', 'waiting_information')).toBe(false);
+      expect(canTransition('monitoring', 'waiting_validation')).toBe(false);
+    });
+
+    it('still allow outgoing transitions to every normal active target, matching any other non-terminal status', () => {
+      expect(canTransition('waiting_equipment', 'in_progress')).toBe(true);
+      expect(canTransition('waiting_information', 'monitoring')).toBe(true);
+      expect(canTransition('waiting_validation', 'resolved_pending_close')).toBe(true);
+    });
+  });
 });

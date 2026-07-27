@@ -18,6 +18,7 @@ export interface FilterState {
 export const ALL_STATUSES: IncidentStatus[] = [
   'new', 'acknowledged', 'in_progress', 'waiting_external', 'waiting_test',
   'monitoring', 'partial_readiness', 'resolved_pending_close', 'closed', 'reopened',
+  'cancelled', 'waiting_equipment', 'waiting_information', 'waiting_validation',
 ];
 export const ALL_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 

@@ -1,6 +1,7 @@
 // Central permission matrix. The data layer (local demo backend and Supabase RLS)
 // enforces these rules; the UI only uses them to hide unavailable actions.
 import type { Role, Incident } from './types';
+import { isOpen } from './types';
 
 export type Capability =
   | 'view_all_incidents'
@@ -170,7 +171,7 @@ export function allowedManageRoles(actor: Role): Role[] {
 
 /** Technicians may add technical updates only to incidents assigned to them. */
 export function canTechnicianUpdate(userId: string, incident: Incident): boolean {
-  return incident.ownerUserId === userId && incident.status !== 'closed';
+  return incident.ownerUserId === userId && isOpen(incident.status);
 }
 
 /** Fields technicians may never change. */

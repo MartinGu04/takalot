@@ -130,4 +130,9 @@ describe('technician update restrictions', () => {
     const incident = makeIncident({ ownerUserId: 'tech-1', status: 'closed' });
     expect(canTechnicianUpdate('tech-1', incident)).toBe(false);
   });
+
+  it('denies a technician updating a cancelled incident even if assigned to them (Chapter 2 terminal status)', () => {
+    const incident = makeIncident({ ownerUserId: 'tech-1', status: 'cancelled' });
+    expect(canTechnicianUpdate('tech-1', incident)).toBe(false);
+  });
 });
