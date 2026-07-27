@@ -208,6 +208,29 @@ begin
       case when is_valid_transition('in_progress', 'in_progress') = true then 'PASS' else 'FAIL' end, '');
 
   -- =====================================================================
+  -- 1b. is_incident_open must work when the CALLER's search_path is empty --
+  --     this is the exact failure mode that broke admin_delete_user/
+  --     prevent_deactivation_with_open_incidents/admin_set_user_active
+  --     before this function was pinned to `set search_path = public`.
+  --     `set local search_path` is scoped to this transaction and is reset
+  --     immediately after, so it cannot affect anything else in this suite.
+  -- =====================================================================
+  set local search_path = '';
+  insert into results (test, result, detail) values
+    ('is_incident_open(in_progress) = true under an empty caller search_path',
+      case when public.is_incident_open('in_progress') = true then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_incident_open(monitoring) = true under an empty caller search_path (legacy-open status)',
+      case when public.is_incident_open('monitoring') = true then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_incident_open(closed) = false under an empty caller search_path',
+      case when public.is_incident_open('closed') = false then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_incident_open(cancelled) = false under an empty caller search_path',
+      case when public.is_incident_open('cancelled') = false then 'PASS' else 'FAIL' end, '');
+  reset search_path;
+
+  -- =====================================================================
   -- 2. create_incident -- pre-cutover allowlist
   -- =====================================================================
   perform pg_temp.as_user('00000000-0000-0000-0000-0000000000d1');

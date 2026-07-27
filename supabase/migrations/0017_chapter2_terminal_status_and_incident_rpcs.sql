@@ -538,21 +538,30 @@ end;
 $$;
 
 -- =====================================================================
--- 9. admin_delete_user -- active definition is 0013's.
+-- 9. is_incident_open -- active definition is 0016's, corrected here.
 -- =====================================================================
--- Uses `not public.is_incident_terminal(status)` rather than
--- `public.is_incident_open(status)`: is_incident_open (0016) has no
--- explicit `set search_path`, so it inherits whatever search_path is
--- ambient AT CALL TIME rather than freezing one at creation -- and its own
--- body calls `is_incident_terminal` UNQUALIFIED. Called from a
--- `search_path = ''` function (this one), that inherited empty search_path
--- makes is_incident_open's internal call fail to resolve
--- ("function is_incident_terminal(...) does not exist") -- discovered by
--- actually running this migration's test suite, not by inspection alone.
--- is_incident_terminal itself has no internal name resolution at all (a
--- pure literal comparison), so calling it directly and negating is
--- unaffected by this issue and exactly equivalent to is_incident_open's own
--- definition (`not is_incident_terminal(p_status)`).
+-- 0016's original body (`select not is_incident_terminal(p_status);`) has no
+-- explicit `set search_path`, so it inherits whatever search_path is ambient
+-- AT CALL TIME rather than freezing one at creation, and its internal call
+-- to `is_incident_terminal` is UNQUALIFIED. Called from a `search_path = ''`
+-- function, that inherited empty search_path makes the internal call fail
+-- to resolve ("function is_incident_terminal(...) does not exist") --
+-- discovered by actually running this migration's test suite, not by
+-- inspection alone. Fixed here with the identical logic, pinned to
+-- `search_path = public`, matching the same minimal, non-logic-changing
+-- pattern already used for `refresh_incident_search_text` and
+-- `severity_rank`/`severity_level_distance` below. admin_delete_user,
+-- prevent_deactivation_with_open_incidents, and admin_set_user_active now
+-- call this canonical helper directly instead of the temporary
+-- `not public.is_incident_terminal(status)` equivalent.
+create or replace function public.is_incident_open(p_status incident_status) returns boolean
+language sql immutable set search_path = public as $$
+  select not is_incident_terminal(p_status);
+$$;
+
+-- =====================================================================
+-- 10. admin_delete_user -- active definition is 0013's.
+-- =====================================================================
 create or replace function public.admin_delete_user(p_user_id uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -596,7 +605,7 @@ begin
   end if;
 
   select count(*) into v_open_incidents
-  from public.incidents where owner_user_id = p_user_id and not public.is_incident_terminal(status);
+  from public.incidents where owner_user_id = p_user_id and public.is_incident_open(status);
   if v_open_incidents > 0 then
     raise exception 'validation: יש לשנות גורם מטפל בתקלות פתוחות לפני מחיקת המשתמש';
   end if;
@@ -610,13 +619,13 @@ end;
 $$;
 
 -- =====================================================================
--- 10. prevent_deactivation_with_open_incidents -- active definition is 0014's.
+-- 11. prevent_deactivation_with_open_incidents -- active definition is 0014's.
 -- =====================================================================
 create or replace function public.prevent_deactivation_with_open_incidents() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
   if old.active and not new.active and exists (
-    select 1 from public.incidents where owner_user_id = old.id and not public.is_incident_terminal(status)
+    select 1 from public.incidents where owner_user_id = old.id and public.is_incident_open(status)
   ) then
     raise exception 'validation: לא ניתן להשבית משתמש המשמש כגורם מטפל פנימי בתקלה פעילה — יש להעביר את הטיפול לגורם מטפל פנימי אחר לפני ההשבתה';
   end if;
@@ -625,7 +634,7 @@ end;
 $$;
 
 -- =====================================================================
--- 11. admin_set_user_active -- active definition is 0014's.
+-- 12. admin_set_user_active -- active definition is 0014's.
 -- =====================================================================
 create or replace function public.admin_set_user_active(p_user_id uuid, p_active boolean) returns void
 language plpgsql security definer set search_path = '' as $$
@@ -662,7 +671,7 @@ begin
   end if;
 
   if not p_active and v_target.active and exists (
-    select 1 from public.incidents where owner_user_id = p_user_id and not public.is_incident_terminal(status)
+    select 1 from public.incidents where owner_user_id = p_user_id and public.is_incident_open(status)
   ) then
     raise exception 'validation: לא ניתן להשבית משתמש המשמש כגורם מטפל פנימי בתקלה פעילה — יש להעביר את הטיפול לגורם מטפל פנימי אחר לפני ההשבתה';
   end if;
@@ -681,8 +690,8 @@ end;
 $$;
 
 -- =====================================================================
--- 12. assert_active_profile_if_set -- new internal helper.
---     Never granted to authenticated/anon (section 16 below): callable only
+-- 13. assert_active_profile_if_set -- new internal helper.
+--     Never granted to authenticated/anon (section 19 below): callable only
 --     from inside another SECURITY DEFINER function's body, which executes
 --     under the OWNING role's privileges regardless of the invoking client's
 --     own grants.
@@ -704,7 +713,7 @@ end;
 $$;
 
 -- =====================================================================
--- 13. cancel_incident -- new
+-- 14. cancel_incident -- new
 -- =====================================================================
 create or replace function public.cancel_incident(p_incident_id uuid, p_input jsonb) returns incidents
 language plpgsql security definer set search_path = '' as $$
@@ -770,7 +779,7 @@ end;
 $$;
 
 -- =====================================================================
--- 14. add_incident_report -- new
+-- 15. add_incident_report -- new
 -- =====================================================================
 create or replace function public.add_incident_report(p_incident_id uuid, p_input jsonb) returns incidents
 language plpgsql security definer set search_path = '' as $$
@@ -876,7 +885,7 @@ end;
 $$;
 
 -- =====================================================================
--- 15. set_incident_status_check -- new
+-- 16. set_incident_status_check -- new
 -- =====================================================================
 create or replace function public.set_incident_status_check(p_incident_id uuid, p_input jsonb) returns incidents
 language plpgsql security definer set search_path = '' as $$
@@ -1027,7 +1036,7 @@ end;
 $$;
 
 -- =====================================================================
--- 16. refresh_incident_search_text -- active definition is 0001's.
+-- 17. refresh_incident_search_text -- active definition is 0001's.
 -- =====================================================================
 -- Same class of latent bug as is_incident_open above, discovered the same
 -- way: no `search_path` was ever set on this pre-existing trigger function,
@@ -1061,7 +1070,7 @@ end;
 $$;
 
 -- =====================================================================
--- 17. severity_rank / severity_level_distance -- active definitions are
+-- 18. severity_rank / severity_level_distance -- active definitions are
 --     0016's.
 -- =====================================================================
 -- Same class of latent bug again, this time surfaced by `incidents`'
@@ -1092,7 +1101,7 @@ language sql immutable set search_path = public as $$
 $$;
 
 -- =====================================================================
--- 18. Privileges
+-- 19. Privileges
 -- =====================================================================
 -- Explicit revoke on all four new/changed functions is REQUIRED, not
 -- optional: PostgreSQL grants EXECUTE to PUBLIC by default on any newly
