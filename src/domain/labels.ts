@@ -56,6 +56,10 @@ export const statusLabels: Record<IncidentStatus, string> = {
   resolved_pending_close: 'נפתרה, ממתינה לסגירה',
   closed: 'נסגרה',
   reopened: 'נפתחה מחדש',
+  cancelled: 'בוטלה',
+  waiting_equipment: 'ממתינה לציוד',
+  waiting_information: 'ממתינה למידע',
+  waiting_validation: 'ממתינה לאימות',
 };
 
 export const readinessLabels: Record<Readiness, string> = {
@@ -86,6 +90,11 @@ export const eventTypeLabels: Record<EventType, string> = {
   closed: 'סגירת תקלה',
   follow_up_completed: 'השלמת פעולות המשך',
   reopened: 'פתיחה מחדש',
+  cancelled: 'ביטול תקלה',
+  severity_assessed: 'הערכת חומרה',
+  status_check_changed: 'עדכון בדיקת סטטוס',
+  reported_to_ops_room: 'דיווח לחמ״ל',
+  reported_to_ops_communications: 'דיווח לתקשוב למבצעים',
 };
 
 export const notificationTypeLabels: Record<NotificationType, string> = {

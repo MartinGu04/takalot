@@ -64,6 +64,12 @@ describe('overdue calculations', () => {
     expect(isOverdue(incident, now)).toBe(false);
   });
 
+  it('is never overdue once the incident is cancelled (Chapter 2 terminal status)', () => {
+    const now = new Date('2026-01-01T10:00:00.000Z');
+    const incident = makeIncident({ status: 'cancelled', nextUpdateDue: '2026-01-01T04:00:00.000Z' });
+    expect(isOverdue(incident, now)).toBe(false);
+  });
+
   it('produces human Hebrew overdue phrasing in minutes and hours', () => {
     const now = new Date('2026-01-01T04:18:00.000Z');
     const incident = makeIncident({ nextUpdateDue: '2026-01-01T04:00:00.000Z' });

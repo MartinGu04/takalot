@@ -6,11 +6,19 @@ import {
   severityLabels,
   statusLabels,
   readinessLabels,
+  reportedToOpsLabels,
 } from '../domain/labels';
 import { formatDateTime } from '../lib/time';
 
 function valueLabel(field: string | null, value: string | null): string {
   if (value == null) return '—';
+  // reported_to_ops_room/reported_to_ops_communications events also use
+  // field: 'status', but carry a ReportedToOps value (yes/no/not_required),
+  // not an IncidentStatus -- the two value sets never overlap, so trying
+  // reportedToOpsLabels first is safe and unambiguous.
+  if (field === 'status' && value in reportedToOpsLabels) {
+    return reportedToOpsLabels[value as keyof typeof reportedToOpsLabels];
+  }
   if (field === 'status' && value in statusLabels) {
     return statusLabels[value as keyof typeof statusLabels];
   }
@@ -18,6 +26,7 @@ function valueLabel(field: string | null, value: string | null): string {
     return severityLabels[value as keyof typeof severityLabels];
   }
   if (field === 'next_update_due') return value === 'null' || !value ? 'ללא צפי' : formatDateTime(value);
+  if (field === 'status_check_due') return value === 'null' || !value ? 'ללא' : formatDateTime(value);
   return value;
 }
 
@@ -36,6 +45,11 @@ const typeIcon: Record<string, string> = {
   closed: '■',
   follow_up_completed: '✓',
   reopened: '↺',
+  cancelled: '✕',
+  severity_assessed: '!',
+  status_check_changed: '☑',
+  reported_to_ops_room: '↗',
+  reported_to_ops_communications: '↗',
 };
 
 const CORRECTABLE_TYPES = new Set(['update', 'status_change', 'severity_change', 'impact_change', 'assignment_change']);
@@ -69,7 +83,7 @@ export function Timeline({
         const update = event.refId ? updatesById.get(event.refId) : undefined;
         const timesDiffer =
           Math.abs(new Date(event.eventTime).getTime() - new Date(event.serverTime).getTime()) > 60_000;
-        const emphasized = ['closed', 'reopened', 'created'].includes(event.type);
+        const emphasized = ['closed', 'reopened', 'created', 'cancelled'].includes(event.type);
         return (
           <li key={event.id} className="relative flex gap-3 pb-4">
             {idx < events.length - 1 && (

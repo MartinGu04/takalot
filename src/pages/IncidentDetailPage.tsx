@@ -12,6 +12,7 @@ import {
   repo,
 } from '../data/hooks';
 import { useAuth, useSession } from '../auth/AuthContext';
+import { isOpen } from '../domain/types';
 import { hasCapability, canTechnicianUpdate } from '../domain/permissions';
 import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, NextUpdateNote } from '../components/incident';
 import { Timeline } from '../components/Timeline';
@@ -111,14 +112,24 @@ export default function IncidentDetailPage() {
   const systemName = systems?.find((s) => s.id === incident.systemId)?.name ?? '—';
   const locationName = locations?.find((l) => l.id === incident.locationId)?.name ?? '—';
   const isClosed = incident.status === 'closed';
-  const canFullUpdate = hasCapability(user.role, 'full_update') && !isClosed;
+  // Terminal covers both closed and cancelled: a cancelled incident is not
+  // updatable/assignable/closeable either, matching the backend's terminal
+  // guards on update_incident/assign_incident/close_incident. Reopening and
+  // the closure-summary block below stay literally closed-only -- a
+  // cancelled incident is not reopenable (no such backend flow exists) and
+  // has no root-cause/resolution/readiness data to show.
+  const isTerminal = !isOpen(incident.status);
+  const canFullUpdate = hasCapability(user.role, 'full_update') && !isTerminal;
   const canTechUpdate = canTechnicianUpdate(user.id, incident);
-  const canAssign = hasCapability(user.role, 'assign_incident') && !isClosed;
-  const canClose = hasCapability(user.role, 'close_incident') && !isClosed;
+  const canAssign = hasCapability(user.role, 'assign_incident') && !isTerminal;
+  const canClose = hasCapability(user.role, 'close_incident') && !isTerminal;
   const canReopen = hasCapability(user.role, 'reopen_incident') && isClosed;
   const canAck = hasCapability(user.role, 'acknowledge_incident') && incident.status === 'new';
   const canCompleteFollowUp =
-    hasCapability(user.role, 'complete_follow_up') && incident.followUpRequired && !incident.followUpCompletedAt;
+    hasCapability(user.role, 'complete_follow_up') &&
+    incident.followUpRequired &&
+    !incident.followUpCompletedAt &&
+    !isTerminal;
 
   const exportPdf = async () => {
     try {

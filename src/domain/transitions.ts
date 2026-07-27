@@ -1,5 +1,6 @@
 // Fixed status transition rules, validated by the backend layer.
 import type { IncidentStatus } from './types';
+import { isOpen } from './types';
 import { statusLabels } from './labels';
 
 const ACTIVE_TARGETS: IncidentStatus[] = [
@@ -24,10 +25,28 @@ export const allowedTransitions: Record<IncidentStatus, IncidentStatus[]> = {
   // and 'reopened' only through the dedicated reopen flow.
   closed: [],
   reopened: ['acknowledged', ...ACTIVE_TARGETS],
+  // 'cancelled' is terminal and reachable only through its own dedicated
+  // flow (not yet exposed in any UI) -- no outgoing transitions.
+  cancelled: [],
+  // waiting_equipment/waiting_information/waiting_validation are NOT added
+  // to ACTIVE_TARGETS: the backend's is_valid_transition (migration 0017)
+  // was never updated to allow transitioning INTO any of these three as a
+  // target from any status, so offering them here would let the UI present
+  // an option the backend always rejects. Outgoing transitions FROM one of
+  // these statuses (should one ever exist in historical or externally
+  // inserted data) already work correctly via the backend's unchanged
+  // fallback branch, so they get the same target list as any other
+  // non-terminal status.
+  waiting_equipment: ACTIVE_TARGETS,
+  waiting_information: ACTIVE_TARGETS,
+  waiting_validation: ACTIVE_TARGETS,
 };
 
 export function canTransition(from: IncidentStatus, to: IncidentStatus): boolean {
-  if (from === to) return true; // keeping the same status in an update is always valid
+  // A terminal status can never "transition" to itself either -- matches
+  // the backend's is_valid_transition, which rejects a same-status update
+  // once the source is closed/cancelled.
+  if (from === to) return isOpen(from);
   return allowedTransitions[from].includes(to);
 }
 
@@ -37,6 +56,9 @@ export function transitionError(from: IncidentStatus, to: IncidentStatus): strin
   }
   if (from === 'closed') {
     return 'תקלה סגורה ניתן לפתוח מחדש רק דרך פעולת "פתיחה מחדש".';
+  }
+  if (to === 'cancelled' || from === 'cancelled') {
+    return 'תקלה מבוטלת אינה ניתנת לעדכון.';
   }
   return `לא ניתן לעבור מסטטוס "${statusLabels[from]}" לסטטוס "${statusLabels[to]}".`;
 }

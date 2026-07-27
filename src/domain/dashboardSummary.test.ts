@@ -54,6 +54,19 @@ describe('summarizeDashboard: metric grounding', () => {
     expect(s.overdue.map((i) => i.id)).toEqual(['critical-overdue']);
     expect(s.criticalOrHigh.map((i) => i.id).sort()).toEqual(['critical-overdue', 'high-ok']);
   });
+
+  it('a cancelled incident (Chapter 2 terminal status) is excluded from open/overdue/criticalOrHigh and never appears in recentlyClosed', () => {
+    const incidents = [
+      makeIncident({ id: 'cancelled-critical', severity: 'critical', status: 'cancelled', nextUpdateDue: '2026-01-10T10:00:00.000Z' }),
+      makeIncident({ id: 'open1' }),
+    ];
+    const s = summarizeDashboard(incidents, NOW);
+    expect(s.open.map((i) => i.id)).toEqual(['open1']);
+    expect(s.overdue).toEqual([]);
+    expect(s.criticalOrHigh).toEqual([]);
+    // recentlyClosed is specifically status === 'closed', not "any terminal status".
+    expect(s.recentlyClosed).toEqual([]);
+  });
 });
 
 describe('summarizeDashboard: needsAttention / openRest -- no duplicate rendering', () => {

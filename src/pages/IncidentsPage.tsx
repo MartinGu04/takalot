@@ -8,16 +8,18 @@ import { Button, EmptyState, ErrorState, Select, Spinner, useToast } from '../co
 import { ExportMenu } from '../components/ExportMenu';
 import { useUrlState } from '../lib/useUrlState';
 import type { IncidentStatus, Severity, Incident } from '../domain/types';
+import { isOpen } from '../domain/types';
 import type { IncidentSort } from '../data/repository';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
 
 const PAGE_SIZE = 20;
 
-// Closed incidents belong in the archive, never in the active incidents
-// list -- including closed incidents with incomplete readiness, which
-// surface instead in the dashboard's dedicated section. Reopened incidents
-// are not closed, so they remain active here.
-const ACTIVE_STATUS_OPTIONS = ALL_STATUSES.filter((s) => s !== 'closed');
+// Closed and cancelled incidents belong in the archive, never in the active
+// incidents list -- including closed incidents with incomplete readiness,
+// which surface instead in the dashboard's dedicated section. Reopened
+// incidents (and every other non-terminal status) are not terminal, so they
+// remain active here.
+const ACTIVE_STATUS_OPTIONS = ALL_STATUSES.filter(isOpen);
 
 function filtersFromUrl(url: ReturnType<typeof useUrlState>): FilterState {
   return {

@@ -3,8 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { IncidentCard } from './incident';
-import type { Incident } from '../domain/types';
+import { IncidentCard, StatusBadge } from './incident';
+import { statusLabels } from '../domain/labels';
+import type { Incident, IncidentStatus } from '../domain/types';
 
 const NOW = new Date('2026-01-10T12:00:00.000Z');
 
@@ -82,4 +83,20 @@ describe('IncidentCard: critical vs overdue are visually distinct, never conflat
     const className = renderCard(makeIncident({ severity: 'high', nextUpdateDue: '2026-01-10T18:00:00.000Z' }));
     expect(className).not.toMatch(/incident-card-accent/);
   });
+});
+
+describe('StatusBadge: Chapter 2 statuses render a label without throwing', () => {
+  const CHAPTER2_STATUSES: IncidentStatus[] = [
+    'cancelled',
+    'waiting_equipment',
+    'waiting_information',
+    'waiting_validation',
+  ];
+
+  for (const status of CHAPTER2_STATUSES) {
+    it(`renders the correct Hebrew label for ${status}`, () => {
+      render(<StatusBadge status={status} />);
+      expect(screen.getByText(statusLabels[status])).toBeInTheDocument();
+    });
+  }
 });

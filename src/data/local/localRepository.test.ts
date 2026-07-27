@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { LocalDemoRepository } from './localRepository';
 import { MemoryStorage } from './storage';
-import { DEMO_USERS } from './seed';
+import { DEMO_USERS, buildSeed } from './seed';
 import { AppError } from '../repository';
 import type { Session } from '../repository';
 import type { CreateIncidentInput, CloseIncidentInput, ReopenIncidentInput } from '../../domain/schemas';
@@ -542,6 +542,30 @@ describe('optimistic concurrency', () => {
         reportedToOpsRecipient: incident!.reportedToOpsRecipient,
       }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+});
+
+describe('Chapter 2 terminal-status compatibility', () => {
+  // cancel_incident is not yet a reachable action through this repository
+  // (no action UI, no RPC grant) -- the fixture below seeds a cancelled
+  // incident directly into storage, exactly as historical or externally
+  // inserted data would arrive, to prove the EXISTING read/filter logic
+  // (isOpen, openOnly) correctly treats it as terminal without any new
+  // action being implemented.
+  it('excludes a cancelled incident from the openOnly filter, same as a closed one', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    const target = seeded.incidents.find((i) => i.id === 'inc-2')!;
+    target.status = 'cancelled';
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+
+    const open = await repo.listIncidents(supervisor1, { openOnly: true });
+    expect(open.some((i) => i.id === 'inc-2')).toBe(false);
+
+    // Still fully readable through the generic status filter.
+    const cancelledOnly = await repo.listIncidents(supervisor1, { status: ['cancelled'] });
+    expect(cancelledOnly.map((i) => i.id)).toContain('inc-2');
   });
 });
 

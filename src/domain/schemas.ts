@@ -23,9 +23,29 @@ export const statusSchema = z.enum([
   'resolved_pending_close',
   'closed',
   'reopened',
+  'cancelled',
+  'waiting_equipment',
+  'waiting_information',
+  'waiting_validation',
 ]);
 export const reportedToOpsSchema = z.enum(['yes', 'no', 'not_required']);
 export const readinessSchema = z.enum(['full', 'partial', 'none']);
+
+/** Exact allowlist of statuses create_incident may open with, mirroring the
+ *  backend's own allowlist (migration 0017) exactly -- not a growing
+ *  blocklist. Excludes closed/reopened (dedicated flows) and cancelled/
+ *  waiting_equipment/waiting_information/waiting_validation (either
+ *  dedicated-flow-only or not yet reachable via any RPC). */
+const CREATABLE_STATUSES = new Set([
+  'new',
+  'acknowledged',
+  'in_progress',
+  'waiting_external',
+  'waiting_test',
+  'monitoring',
+  'partial_readiness',
+  'resolved_pending_close',
+]);
 
 const ownerFields = {
   ownerUserId: z.string().nullable(),
@@ -66,8 +86,8 @@ export const createIncidentSchema = z
     severity: severitySchema,
     operationalImpact: nonBlank(1000, 'השפעה מבצעית'),
     actionsTaken: nonBlank(4000, 'פעולות שבוצעו עד כה'),
-    status: statusSchema.refine((s) => s !== 'closed' && s !== 'reopened', {
-      message: 'סטטוס פתיחה חייב להיות סטטוס פעיל',
+    status: statusSchema.refine((s) => CREATABLE_STATUSES.has(s), {
+      message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
     }),
     nextUpdateDue: z.string().nullable(),
     noDeadlineReason: z.string().max(500).nullable(),

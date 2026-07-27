@@ -19,7 +19,11 @@ export type IncidentStatus =
   | 'partial_readiness'
   | 'resolved_pending_close'
   | 'closed'
-  | 'reopened';
+  | 'reopened'
+  | 'cancelled'
+  | 'waiting_equipment'
+  | 'waiting_information'
+  | 'waiting_validation';
 
 export type Readiness = 'full' | 'partial' | 'none';
 
@@ -40,7 +44,12 @@ export type EventType =
   | 'handover_accepted'
   | 'closed'
   | 'follow_up_completed'
-  | 'reopened';
+  | 'reopened'
+  | 'cancelled'
+  | 'severity_assessed'
+  | 'status_check_changed'
+  | 'reported_to_ops_room'
+  | 'reported_to_ops_communications';
 
 export interface Profile {
   id: string;
@@ -263,8 +272,11 @@ export const OPEN_STATUSES: IncidentStatus[] = [
   'partial_readiness',
   'resolved_pending_close',
   'reopened',
+  'waiting_equipment',
+  'waiting_information',
+  'waiting_validation',
 ];
 
 export function isOpen(status: IncidentStatus): boolean {
-  return status !== 'closed';
+  return status !== 'closed' && status !== 'cancelled';
 }
