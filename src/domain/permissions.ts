@@ -12,6 +12,7 @@ export type Capability =
   | 'assign_incident'
   | 'change_severity'
   | 'close_incident'
+  | 'cancel_incident'
   | 'reopen_incident'
   | 'export_data'
   | 'create_handover'
@@ -48,6 +49,7 @@ const matrix: Record<Role, Capability[]> = {
     'assign_incident',
     'change_severity',
     'close_incident',
+    'cancel_incident',
     'reopen_incident',
     'export_data',
     'create_handover',
@@ -67,6 +69,7 @@ const matrix: Record<Role, Capability[]> = {
     'assign_incident',
     'change_severity',
     'close_incident',
+    'cancel_incident',
     'reopen_incident',
     'export_data',
     'create_handover',
@@ -83,6 +86,7 @@ const matrix: Record<Role, Capability[]> = {
     'assign_incident',
     'change_severity',
     'close_incident',
+    'cancel_incident',
     'export_data',
     'create_handover',
     'accept_handover',

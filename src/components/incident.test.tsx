@@ -42,6 +42,9 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     followUpCompletedAt: null,
     followUpCompletedBy: null,
     reopenCount: 0,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancellationReason: null,
     ...overrides,
   };
 }

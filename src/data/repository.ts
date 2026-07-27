@@ -21,6 +21,7 @@ import type {
 } from '../domain/types';
 import type {
   AssignIncidentInput,
+  CancelIncidentInput,
   CloseIncidentInput,
   CorrectionInput,
   CreateHandoverInput,
@@ -168,6 +169,7 @@ export interface Repository {
   technicianUpdate(session: Session, incidentId: string, input: TechnicianUpdateInput): Promise<Incident>;
   assignIncident(session: Session, incidentId: string, input: AssignIncidentInput): Promise<Incident>;
   closeIncident(session: Session, incidentId: string, input: CloseIncidentInput): Promise<Incident>;
+  cancelIncident(session: Session, incidentId: string, input: CancelIncidentInput): Promise<Incident>;
   reopenIncident(session: Session, incidentId: string, input: ReopenIncidentInput): Promise<Incident>;
   addCorrection(session: Session, incidentId: string, input: CorrectionInput): Promise<void>;
   completeFollowUp(session: Session, incidentId: string, note: string): Promise<Incident>;

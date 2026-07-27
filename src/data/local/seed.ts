@@ -99,6 +99,9 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     followUpCompletedAt: null,
     followUpCompletedBy: null,
     reopenCount: 0,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancellationReason: null,
   });
 
   const ev = (

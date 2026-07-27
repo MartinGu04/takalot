@@ -212,6 +212,14 @@ export const reopenIncidentSchema = z
 
 export type ReopenIncidentInput = z.infer<typeof reopenIncidentSchema>;
 
+export const cancelIncidentSchema = z.object({
+  expectedVersion: z.number(),
+  eventTime: z.string().min(1, 'יש להזין מועד ביטול'),
+  cancellationReason: nonBlank(2000, 'סיבת הביטול'),
+});
+
+export type CancelIncidentInput = z.infer<typeof cancelIncidentSchema>;
+
 export const assignIncidentSchema = z
   .object({
     expectedVersion: z.number(),
