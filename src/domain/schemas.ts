@@ -95,11 +95,20 @@ export const createIncidentSchema = z
     ...reportedToOpsFields,
   })
   .superRefine((data, ctx) => {
-    if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+    // Unlike every other flow that shares ownerFields (update/close/assign/
+    // reopen, which all accept an internal OR a named external handler),
+    // opening a NEW incident requires an internal בעל אחריות פנימי
+    // specifically -- the person accountable for the incident not falling
+    // between the cracks, not necessarily who performs the technical work.
+    // This is a frontend/product policy tightening on top of a backend that
+    // still accepts an external-only owner (assert_owner_valid allows a
+    // null owner_user_id) -- the backend remains the actual authorization
+    // boundary; this only restricts what THIS form ever sends it.
+    if (!data.ownerUserId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ownerUserId'],
-        message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
+        message: 'יש לבחור בעל אחריות פנימי',
       });
     }
     if (!data.nextUpdateDue && !(data.noDeadlineReason ?? '').trim()) {
