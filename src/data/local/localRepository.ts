@@ -233,6 +233,23 @@ export class LocalDemoRepository implements Repository {
     }
   }
 
+  /** Mirrors update_incident's/technician_update_incident's own event-time
+   *  bounds check (migration 0020): rejects an unparseable eventTime, or one
+   *  outside [discoveredAt, now + 5 minutes]. Schema-level required-ness
+   *  (non-empty string) is already enforced by parseOrThrow before this
+   *  runs -- this only covers what Zod's plain string type cannot: parse
+   *  validity and the incident-relative bounds. */
+  private validateEventTime(incident: Incident, eventTime: string): void {
+    const t = new Date(eventTime).getTime();
+    if (
+      Number.isNaN(t) ||
+      t < new Date(incident.discoveredAt).getTime() ||
+      t > this.now().getTime() + 5 * 60_000
+    ) {
+      throw new AppError('VALIDATION', 'מועד העדכון בפועל אינו תקין.');
+    }
+  }
+
   /** Allocate the next YYYY-NNN number atomically (single mutation of the sequence map). */
   private allocateNumber(): string {
     const year = String(jerusalemYear(this.now()));
@@ -959,6 +976,7 @@ export class LocalDemoRepository implements Repository {
     if (!canTransition(incident.status, input.status)) {
       throw new AppError('INVALID_TRANSITION', transitionError(incident.status, input.status));
     }
+    this.validateEventTime(incident, input.eventTime);
     this.validateOwner(input.ownerUserId);
 
     const ts = this.now().toISOString();
@@ -1088,6 +1106,7 @@ export class LocalDemoRepository implements Repository {
       throw new AppError('FORBIDDEN', 'ניתן להוסיף עדכון טכני רק לתקלה פתוחה המוקצית אליך.');
     }
     this.checkVersion(incident, input.expectedVersion);
+    this.validateEventTime(incident, input.eventTime);
 
     const ts = this.now().toISOString();
     const update: IncidentUpdate = {

@@ -772,6 +772,112 @@ describe('optimistic concurrency', () => {
   });
 });
 
+// Mirrors migration 0020's event-time integrity rules for update_incident/
+// technician_update_incident: eventTime must parse, and must fall within
+// [incident.discoveredAt, now + 5 minutes] -- the same bounds
+// cancelIncident already enforced. A direct repository caller -- bypassing
+// UpdateDialog's own client-side check entirely -- must not be able to
+// reach a state the real RPCs would reject.
+describe('update event-time integrity (mirrors migration 0020)', () => {
+  function baseUpdateInput(
+    incident: { status: string; severity: string; operationalImpact: string; ownerUserId: string | null; ownerExternalName: string | null; nextUpdateDue: string | null; noDeadlineReason: string | null; reportedToOps: string; reportedToOpsRecipient: string | null; version: number },
+    eventTime: string,
+  ) {
+    return {
+      expectedVersion: incident.version,
+      eventTime,
+      actionsTaken: 'עדכון לצורך בדיקה',
+      findings: '',
+      nextSteps: '',
+      status: incident.status,
+      severity: incident.severity,
+      operationalImpact: incident.operationalImpact,
+      changeReason: '',
+      ownerUserId: incident.ownerUserId,
+      ownerExternalName: incident.ownerExternalName,
+      nextUpdateDue: incident.nextUpdateDue,
+      noDeadlineReason: incident.noDeadlineReason,
+      reportedToOps: incident.reportedToOps,
+      reportedToOpsRecipient: incident.reportedToOpsRecipient,
+    } as Parameters<LocalDemoRepository['updateIncident']>[2];
+  }
+
+  it('rejects an unparseable eventTime on a full update', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = (await repo.getIncident(supervisor1, 'inc-2'))!;
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident, 'not-a-timestamp')),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects an eventTime before the incident was discovered on a full update', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = (await repo.getIncident(supervisor1, 'inc-2'))!;
+    const tooEarly = new Date(new Date(incident.discoveredAt).getTime() - 60_000).toISOString();
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident, tooEarly)),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects an eventTime beyond now + 5 minutes on a full update', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = (await repo.getIncident(supervisor1, 'inc-2'))!;
+    const tooLate = new Date(FIXED_NOW.getTime() + 10 * 60_000).toISOString();
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident, tooLate)),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('accepts an eventTime exactly at discoveredAt or exactly at now + 5 minutes (inclusive bounds)', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = (await repo.getIncident(supervisor1, 'inc-2'))!;
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident, incident.discoveredAt)),
+    ).resolves.toMatchObject({ version: incident.version + 1 });
+
+    const incidentAgain = (await repo.getIncident(supervisor1, 'inc-2'))!;
+    const upperBound = new Date(FIXED_NOW.getTime() + 5 * 60_000).toISOString();
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incidentAgain, upperBound)),
+    ).resolves.toMatchObject({ version: incidentAgain.version + 1 });
+  });
+
+  it('rejects an unparseable, too-early, or too-late eventTime on a technician update, independent of the ownership check', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = (await repo.getIncident(tech1, 'inc-1'))!; // owned by tech1 in seed
+    const tooEarly = new Date(new Date(incident.discoveredAt).getTime() - 60_000).toISOString();
+    const tooLate = new Date(FIXED_NOW.getTime() + 10 * 60_000).toISOString();
+
+    await expect(
+      repo.technicianUpdate(tech1, 'inc-1', {
+        expectedVersion: incident.version,
+        eventTime: 'abc123',
+        actionsTaken: 'בדיקה',
+        findings: '',
+        nextSteps: '',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(
+      repo.technicianUpdate(tech1, 'inc-1', {
+        expectedVersion: incident.version,
+        eventTime: tooEarly,
+        actionsTaken: 'בדיקה',
+        findings: '',
+        nextSteps: '',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(
+      repo.technicianUpdate(tech1, 'inc-1', {
+        expectedVersion: incident.version,
+        eventTime: tooLate,
+        actionsTaken: 'בדיקה',
+        findings: '',
+        nextSteps: '',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+});
+
 describe('Chapter 2 terminal-status compatibility', () => {
   // Predates the cancellation vertical slice's own cancelIncident action
   // (see the "cancellation requirements" describe block above): this
