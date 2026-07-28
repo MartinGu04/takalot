@@ -3,9 +3,11 @@
 --
 -- Covers: eventTime now mandatory on both RPCs; missing/JSON-null/empty/
 -- whitespace-only rejected with a controlled validation error; malformed
--- non-empty values (both invalid_datetime_format AND datetime_field_overflow
--- shapes) rejected as a controlled validation error, never a raw Postgres
--- cast error; lower bound (incident's own discovered_at) and upper bound
+-- non-empty values (invalid_datetime_format, datetime_field_overflow, AND
+-- invalid_time_zone_displacement_value shapes -- the third was added after
+-- a final review found an out-of-range UTC offset, e.g. "...+25:00", was
+-- not yet caught) rejected as a controlled validation error, never a raw
+-- Postgres cast error; lower bound (incident's own discovered_at) and upper bound
 -- (now() + 5 minutes) enforced with INCLUSIVE boundaries on both RPCs;
 -- everything untouched by this migration (permission checks, transition
 -- validity, technician ownership restriction, expectedVersion/optimistic
@@ -224,6 +226,19 @@ begin
         'sqlstate=' || sqlstate || ' sqlerrm=' || sqlerrm);
   end;
 
+  -- 5d. Malformed, out-of-range UTC offset (invalid_time_zone_displacement_value / 22009 shape).
+  begin
+    perform update_incident('00000000-0000-0000-0000-00000000f710', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', '2026-07-28T16:00:00+25:00')));
+    insert into results (test, result, detail) values
+      ('update_incident: out-of-range UTC offset eventTime ("...+25:00") rejected as controlled validation', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: out-of-range UTC offset eventTime ("...+25:00") rejected as controlled validation',
+        case when sqlstate = 'P0001' and sqlerrm = 'validation: מועד העדכון בפועל אינו תקין' then 'PASS' else 'FAIL' end,
+        'sqlstate=' || sqlstate || ' sqlerrm=' || sqlerrm);
+  end;
+
   -- 6. Before the incident's own discovered_at (discovered 2 days ago).
   begin
     perform update_incident('00000000-0000-0000-0000-00000000f710', pg_temp.base_update_input(
@@ -385,6 +400,19 @@ begin
   exception when others then
     insert into results (test, result, detail) values
       ('technician_update_incident: malformed eventTime rejected as controlled validation',
+        case when sqlstate = 'P0001' and sqlerrm = 'validation: מועד העדכון בפועל אינו תקין' then 'PASS' else 'FAIL' end,
+        'sqlstate=' || sqlstate || ' sqlerrm=' || sqlerrm);
+  end;
+
+  -- Malformed, out-of-range UTC offset (invalid_time_zone_displacement_value / 22009 shape).
+  begin
+    perform technician_update_incident('00000000-0000-0000-0000-00000000f722', pg_temp.base_tech_input(
+      jsonb_build_object('eventTime', '2026-07-28T16:00:00+25:00')));
+    insert into results (test, result, detail) values
+      ('technician_update_incident: out-of-range UTC offset eventTime ("...+25:00") rejected as controlled validation', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('technician_update_incident: out-of-range UTC offset eventTime ("...+25:00") rejected as controlled validation',
         case when sqlstate = 'P0001' and sqlerrm = 'validation: מועד העדכון בפועל אינו תקין' then 'PASS' else 'FAIL' end,
         'sqlstate=' || sqlstate || ' sqlerrm=' || sqlerrm);
   end;

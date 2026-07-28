@@ -10,22 +10,25 @@
 -- not_null_violation to the caller had the frontend's own required-field
 -- check not silently covered for it; a malformed non-empty value (e.g.
 -- "not-a-timestamp") would reach the same cast and raise a raw
--- invalid_datetime_format/datetime_field_overflow error directly; and there
--- was no lower/upper bound at all, so a caller could log an update dated
--- before the incident was ever discovered, or arbitrarily far in the
--- future. This migration closes that gap for exactly these two RPCs,
--- mirroring cancel_incident's own already-approved pattern (require
--- eventTime; reject it before discovered_at or beyond now() + 5 minutes)
--- exactly, including the same 5-minute clock-skew tolerance and inclusive
--- boundaries.
+-- invalid_datetime_format/datetime_field_overflow/invalid_time_zone_
+-- displacement_value error directly; and there was no lower/upper bound at
+-- all, so a caller could log an update dated before the incident was ever
+-- discovered, or arbitrarily far in the future. This migration closes that
+-- gap for exactly these two RPCs, mirroring cancel_incident's own
+-- already-approved pattern (require eventTime; reject it before
+-- discovered_at or beyond now() + 5 minutes) exactly, including the same
+-- 5-minute clock-skew tolerance and inclusive boundaries.
 --
--- Both malformed-cast SQLSTATEs were verified empirically (not assumed)
--- against a live Postgres 16 instance before writing this migration:
+-- All three malformed-cast SQLSTATEs were verified empirically (not
+-- assumed) against a live Postgres 16 instance before writing this
+-- migration:
 --   - unparseable text (e.g. "not-a-timestamp", "abc123", a bare integer)
 --     raises invalid_datetime_format (22007).
---   - a syntactically-shaped but out-of-range value (e.g. month 13, hour 25)
---     raises datetime_field_overflow (22008).
--- Both are caught and re-raised in the project's normal controlled
+--   - a syntactically-shaped but out-of-range date/time component (e.g.
+--     month 13, hour 25) raises datetime_field_overflow (22008).
+--   - a syntactically-shaped but out-of-range UTC offset (e.g. "+25:00")
+--     raises invalid_time_zone_displacement_value (22009).
+-- All three are caught and re-raised in the project's normal controlled
 -- 'validation: ...' format; no other exception condition is caught.
 --
 -- Reproduced in full (CREATE OR REPLACE FUNCTION requires the complete
@@ -40,8 +43,9 @@
 --      (it was previously silently optional).
 --   3. The now-guaranteed-non-blank raw string is cast to timestamptz inside
 --      its own nested begin/exception block, catching exactly
---      invalid_datetime_format and datetime_field_overflow and re-raising
---      as the project's normal controlled validation error -- never a raw
+--      invalid_datetime_format, datetime_field_overflow, and
+--      invalid_time_zone_displacement_value, and re-raising as the
+--      project's normal controlled validation error -- never a raw
 --      Postgres cast error.
 --   4. The successfully-parsed v_event_time is then checked against the
 --      already-locked incident row's own discovered_at (no second query --
@@ -107,7 +111,7 @@ begin
   begin
     v_event_time := v_event_time_raw::timestamptz;
   exception
-    when invalid_datetime_format or datetime_field_overflow then
+    when invalid_datetime_format or datetime_field_overflow or invalid_time_zone_displacement_value then
       raise exception 'validation: מועד העדכון בפועל אינו תקין';
   end;
   if v_event_time < v.discovered_at or v_event_time > now() + interval '5 minutes' then
@@ -209,7 +213,7 @@ begin
   begin
     v_event_time := v_event_time_raw::timestamptz;
   exception
-    when invalid_datetime_format or datetime_field_overflow then
+    when invalid_datetime_format or datetime_field_overflow or invalid_time_zone_displacement_value then
       raise exception 'validation: מועד העדכון בפועל אינו תקין';
   end;
   if v_event_time < v.discovered_at or v_event_time > now() + interval '5 minutes' then
