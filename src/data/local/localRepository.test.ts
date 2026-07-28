@@ -5,6 +5,7 @@ import { DEMO_USERS, buildSeed } from './seed';
 import { AppError } from '../repository';
 import type { Session } from '../repository';
 import type { CreateIncidentInput, CloseIncidentInput, ReopenIncidentInput } from '../../domain/schemas';
+import { isOpen } from '../../domain/types';
 
 function session(userId: string, role: Session['role']): Session {
   return { userId, role };
@@ -439,6 +440,159 @@ describe('reopening requirements', () => {
   });
 });
 
+describe('cancellation requirements', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('denies cancellation to a technician', async () => {
+    const incident = await repo.getIncident(tech1, 'inc-1');
+    await expect(
+      repo.cancelIncident(tech1, 'inc-1', {
+        expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        cancellationReason: 'נפתחה בטעות',
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('denies cancellation to a viewer', async () => {
+    const incident = await repo.getIncident(viewer, 'inc-1');
+    await expect(
+      repo.cancelIncident(viewer, 'inc-1', {
+        expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        cancellationReason: 'נפתחה בטעות',
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('rejects cancelling an already-closed incident', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-5'); // seeded closed
+    await expect(
+      repo.cancelIncident(supervisor1, 'inc-5', {
+        expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        cancellationReason: 'נפתחה בטעות',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+  });
+
+  it('rejects cancelling an already-cancelled incident', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const cancelled = await repo.cancelIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'כפילות',
+    });
+    await expect(
+      repo.cancelIncident(supervisor1, 'inc-2', {
+        expectedVersion: cancelled.version,
+        eventTime: FIXED_NOW.toISOString(),
+        cancellationReason: 'שוב',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+  });
+
+  it('rejects a blank cancellation reason', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-1');
+    await expect(
+      repo.cancelIncident(supervisor1, 'inc-1', {
+        expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        cancellationReason: '   ',
+      }),
+    ).rejects.toThrow(AppError);
+  });
+
+  it('rejects an event time before the incident was discovered', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-1');
+    await expect(
+      repo.cancelIncident(supervisor1, 'inc-1', {
+        expectedVersion: incident!.version,
+        eventTime: new Date(new Date(incident!.discoveredAt).getTime() - 3600_000).toISOString(),
+        cancellationReason: 'נפתחה בטעות',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects an event time more than 5 minutes in the future', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-1');
+    await expect(
+      repo.cancelIncident(supervisor1, 'inc-1', {
+        expectedVersion: incident!.version,
+        eventTime: new Date(FIXED_NOW.getTime() + 10 * 60_000).toISOString(),
+        cancellationReason: 'נפתחה בטעות',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects a stale expectedVersion (optimistic concurrency)', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-1');
+    await expect(
+      repo.cancelIncident(supervisor1, 'inc-1', {
+        expectedVersion: incident!.version + 1,
+        eventTime: FIXED_NOW.toISOString(),
+        cancellationReason: 'נפתחה בטעות',
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('cancels successfully: status, cancellation fields, and cleared deadline', async () => {
+    const incident = await repo.getIncident(manager, 'inc-1');
+    const cancelled = await repo.cancelIncident(manager, 'inc-1', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'התקלה נפתחה בטעות',
+    });
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.cancelledAt).toBe(FIXED_NOW.toISOString());
+    expect(cancelled.cancelledBy).toBe(DEMO_USERS.manager);
+    expect(cancelled.cancellationReason).toBe('התקלה נפתחה בטעות');
+    expect(cancelled.nextUpdateDue).toBeNull();
+    expect(cancelled.followUpRequired).toBe(false);
+    expect(cancelled.version).toBe(incident!.version + 1);
+  });
+
+  it('a cancelled incident is no longer open', async () => {
+    const incident = await repo.getIncident(manager, 'inc-1');
+    const cancelled = await repo.cancelIncident(manager, 'inc-1', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'התקלה נפתחה בטעות',
+    });
+    expect(isOpen(cancelled.status)).toBe(false);
+  });
+
+  it('records a cancelled timeline event with the reason and the actual event time', async () => {
+    const incident = await repo.getIncident(manager, 'inc-1');
+    await repo.cancelIncident(manager, 'inc-1', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'התקלה נפתחה בטעות',
+    });
+    const events = await repo.getIncidentEvents(manager, 'inc-1');
+    const event = events.find((e) => e.type === 'cancelled');
+    expect(event).toBeDefined();
+    expect(event!.note).toBe('התקלה נפתחה בטעות');
+    expect(event!.actorId).toBe(DEMO_USERS.manager);
+    expect(event!.oldValue).toBe('in_progress');
+    expect(event!.newValue).toBe('cancelled');
+  });
+
+  it('writes an audit log entry for the cancellation', async () => {
+    const incident = await repo.getIncident(manager, 'inc-1');
+    await repo.cancelIncident(manager, 'inc-1', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'התקלה נפתחה בטעות',
+    });
+    const logs = await repo.listAuditLogs(admin, {});
+    expect(logs.some((l) => l.action === 'incident_cancelled' && l.incidentNumber === incident!.number)).toBe(true);
+  });
+});
+
 describe('technician update restrictions (backend enforced)', () => {
   let repo: LocalDemoRepository;
   beforeEach(() => {
@@ -546,12 +700,12 @@ describe('optimistic concurrency', () => {
 });
 
 describe('Chapter 2 terminal-status compatibility', () => {
-  // cancel_incident is not yet a reachable action through this repository
-  // (no action UI, no RPC grant) -- the fixture below seeds a cancelled
-  // incident directly into storage, exactly as historical or externally
-  // inserted data would arrive, to prove the EXISTING read/filter logic
-  // (isOpen, openOnly) correctly treats it as terminal without any new
-  // action being implemented.
+  // Predates the cancellation vertical slice's own cancelIncident action
+  // (see the "cancellation requirements" describe block above): this
+  // fixture seeds a cancelled incident directly into storage, exactly as
+  // historical or externally inserted data would arrive, to prove the
+  // read/filter logic (isOpen, openOnly) treats it as terminal independent
+  // of how it got that status.
   it('excludes a cancelled incident from the openOnly filter, same as a closed one', async () => {
     const storage = new MemoryStorage();
     const seeded = buildSeed(FIXED_NOW);
@@ -651,10 +805,19 @@ describe('filter behavior', () => {
     expect(overdue.some((i) => i.id === 'inc-2')).toBe(false);
   });
 
-  it('filters closed-only for the archive', async () => {
-    const repo = newRepo({ now: FIXED_NOW });
-    const closed = await repo.listIncidents(supervisor1, { closedOnly: true });
-    expect(closed.every((i) => i.status === 'closed')).toBe(true);
+  it('terminalOnly (the archive scope) includes both closed and cancelled incidents, excludes open ones', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    const cancelledTarget = seeded.incidents.find((i) => i.id === 'inc-2')!;
+    cancelledTarget.status = 'cancelled';
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+
+    const archived = await repo.listIncidents(supervisor1, { terminalOnly: true });
+    expect(archived.every((i) => i.status === 'closed' || i.status === 'cancelled')).toBe(true);
+    expect(archived.some((i) => i.status === 'closed')).toBe(true); // inc-5/inc-6, seeded closed
+    expect(archived.some((i) => i.id === 'inc-2' && i.status === 'cancelled')).toBe(true);
+    expect(archived.some((i) => i.id === 'inc-1')).toBe(false); // inc-1 stays open (in_progress)
   });
 
   it('searches by free text across number, system, and description', async () => {

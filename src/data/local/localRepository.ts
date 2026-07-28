@@ -26,6 +26,7 @@ import { canTransition, transitionError } from '../../domain/transitions';
 import { isOverdue, sortByPriority } from '../../domain/overdue';
 import {
   assignIncidentSchema,
+  cancelIncidentSchema,
   closeIncidentSchema,
   correctionSchema,
   createHandoverSchema,
@@ -35,6 +36,7 @@ import {
   technicianUpdateSchema,
   updateIncidentSchema,
   type AssignIncidentInput,
+  type CancelIncidentInput,
   type CloseIncidentInput,
   type CorrectionInput,
   type CreateHandoverInput,
@@ -728,7 +730,7 @@ export class LocalDemoRepository implements Repository {
     let rows = this.db.incidents.map((i) => ({ ...i }));
 
     if (filters.openOnly) rows = rows.filter((i) => isOpen(i.status));
-    if (filters.closedOnly) rows = rows.filter((i) => i.status === 'closed');
+    if (filters.terminalOnly) rows = rows.filter((i) => !isOpen(i.status));
     if (filters.status?.length) rows = rows.filter((i) => filters.status!.includes(i.status));
     if (filters.severity?.length) rows = rows.filter((i) => filters.severity!.includes(i.severity));
     if (filters.ownerUserId) rows = rows.filter((i) => i.ownerUserId === filters.ownerUserId);
@@ -866,6 +868,9 @@ export class LocalDemoRepository implements Repository {
       followUpCompletedAt: null,
       followUpCompletedBy: null,
       reopenCount: 0,
+      cancelledAt: null,
+      cancelledBy: null,
+      cancellationReason: null,
     };
     this.db.incidents.push(incident);
 
@@ -1242,6 +1247,54 @@ export class LocalDemoRepository implements Repository {
         });
       }
     }
+    this.persist();
+    return { ...incident };
+  }
+
+  async cancelIncident(
+    session: Session,
+    incidentId: string,
+    rawInput: CancelIncidentInput,
+  ): Promise<Incident> {
+    const actor = this.requireCap(session, 'cancel_incident');
+    const input = parseOrThrow(cancelIncidentSchema, rawInput);
+    const incident = this.getIncidentOrThrow(incidentId);
+    this.checkVersion(incident, input.expectedVersion);
+    if (!isOpen(incident.status)) {
+      throw new AppError('INVALID_TRANSITION', 'לא ניתן לבטל תקלה שכבר סגורה או מבוטלת.');
+    }
+    const eventTime = new Date(input.eventTime);
+    if (eventTime < new Date(incident.discoveredAt) || eventTime.getTime() > this.now().getTime() + 5 * 60_000) {
+      throw new AppError('VALIDATION', 'מועד הביטול אינו תקין.');
+    }
+
+    const oldStatus = incident.status;
+    const reason = input.cancellationReason.trim();
+    const ts = this.now().toISOString();
+    incident.status = 'cancelled';
+    incident.cancelledAt = input.eventTime;
+    incident.cancelledBy = actor.id;
+    incident.cancellationReason = reason;
+    incident.nextUpdateDue = null;
+    incident.noDeadlineReason = 'התקלה בוטלה';
+    incident.followUpRequired = false;
+    incident.version += 1;
+    incident.updatedAt = ts;
+    incident.updatedBy = actor.id;
+    incident.lastUpdateAt = ts;
+
+    this.addEvent(incidentId, 'cancelled', actor.id, {
+      field: 'status',
+      oldValue: oldStatus,
+      newValue: 'cancelled',
+      note: reason,
+      eventTime: input.eventTime,
+    });
+    this.audit(actor.id, 'incident_cancelled', 'incident', incidentId, {
+      incidentNumber: incident.number,
+      before: JSON.stringify({ status: oldStatus }),
+      after: JSON.stringify({ status: 'cancelled', cancellationReason: reason }),
+    });
     this.persist();
     return { ...incident };
   }

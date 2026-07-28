@@ -160,6 +160,10 @@ export interface Incident {
   followUpCompletedAt: string | null;
   followUpCompletedBy: string | null;
   reopenCount: number;
+  // Cancellation fields (set only via the cancellation flow)
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancellationReason: string | null;
 }
 
 export interface IncidentUpdate {

@@ -22,6 +22,7 @@ import { reportedToOpsLabels } from '../domain/labels';
 import { UpdateDialog } from '../components/dialogs/UpdateDialog';
 import { AssignDialog } from '../components/dialogs/AssignDialog';
 import { CloseDialog } from '../components/dialogs/CloseDialog';
+import { CancelDialog } from '../components/dialogs/CancelDialog';
 import { ReopenDialog } from '../components/dialogs/ReopenDialog';
 import { CorrectionDialog, FollowUpDialog } from '../components/dialogs/SimpleTextDialogs';
 import { buildIncidentPdf, incidentPdfFilename } from '../exports/incidentPdf';
@@ -32,6 +33,7 @@ import type {
   TechnicianUpdateInput,
   AssignIncidentInput,
   CloseIncidentInput,
+  CancelIncidentInput,
   ReopenIncidentInput,
 } from '../domain/schemas';
 
@@ -52,7 +54,14 @@ export default function IncidentDetailPage() {
   const { data: canExport } = useCanExport();
 
   const [dialog, setDialog] = useState<
-    null | 'update' | 'assign' | 'close' | 'reopen' | 'followup' | { correction: { refId: string; label: string } }
+    | null
+    | 'update'
+    | 'assign'
+    | 'close'
+    | 'cancel'
+    | 'reopen'
+    | 'followup'
+    | { correction: { refId: string; label: string } }
   >(null);
 
   const now = new Date();
@@ -91,6 +100,10 @@ export default function IncidentDetailPage() {
     (input: CloseIncidentInput) => repo().closeIncident(session, id!, input),
     { successText: 'התקלה נסגרה.', onSuccess: () => setDialog(null), onError: onConflict },
   );
+  const cancelMutation = useAppMutation(
+    (input: CancelIncidentInput) => repo().cancelIncident(session, id!, input),
+    { successText: 'התקלה בוטלה.', onSuccess: () => setDialog(null), onError: onConflict },
+  );
   const reopenMutation = useAppMutation(
     (input: ReopenIncidentInput) => repo().reopenIncident(session, id!, input),
     { successText: 'התקלה נפתחה מחדש.', onSuccess: () => setDialog(null), onError: onConflict },
@@ -123,6 +136,7 @@ export default function IncidentDetailPage() {
   const canTechUpdate = canTechnicianUpdate(user.id, incident);
   const canAssign = hasCapability(user.role, 'assign_incident') && !isTerminal;
   const canClose = hasCapability(user.role, 'close_incident') && !isTerminal;
+  const canCancel = hasCapability(user.role, 'cancel_incident') && !isTerminal;
   const canReopen = hasCapability(user.role, 'reopen_incident') && isClosed;
   const canAck = hasCapability(user.role, 'acknowledge_incident') && incident.status === 'new';
   const canCompleteFollowUp =
@@ -244,6 +258,15 @@ export default function IncidentDetailPage() {
         {(canFullUpdate || canTechUpdate) && <Button onClick={() => setDialog('update')}>עדכון תקלה</Button>}
         {canAssign && <Button variant="secondary" onClick={() => setDialog('assign')}>שינוי גורם מטפל</Button>}
         {canClose && <Button variant="danger" onClick={() => setDialog('close')}>סגירת תקלה</Button>}
+        {canCancel && (
+          <Button
+            variant="secondary"
+            className="text-red-700 hover:text-red-800 dark:text-red-400"
+            onClick={() => setDialog('cancel')}
+          >
+            ביטול תקלה
+          </Button>
+        )}
         {canReopen && <Button variant="secondary" onClick={() => setDialog('reopen')}>פתיחה מחדש</Button>}
         {canCompleteFollowUp && <Button variant="secondary" onClick={() => setDialog('followup')}>השלמת פעולות המשך</Button>}
         {canExport && <Button variant="secondary" onClick={exportPdf}>ייצוא PDF</Button>}
@@ -282,6 +305,13 @@ export default function IncidentDetailPage() {
         incident={incident}
         submitting={closeMutation.isPending}
         onSubmit={(input) => closeMutation.mutate(input)}
+      />
+      <CancelDialog
+        open={dialog === 'cancel'}
+        onClose={() => setDialog(null)}
+        incident={incident}
+        submitting={cancelMutation.isPending}
+        onSubmit={(input) => cancelMutation.mutate(input)}
       />
       <ReopenDialog
         open={dialog === 'reopen'}

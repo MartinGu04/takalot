@@ -709,12 +709,18 @@ where n.nspname = 'public'
     where a.grantee = 'anon'::regrole and a.privilege_type = 'EXECUTE'
   );
 
+-- cancel_incident is EXCLUDED here: migration 0018 (the incident-cancellation
+-- frontend cutover) intentionally granted it authenticated EXECUTE. That
+-- grant, and that it does not leak into is_operational_role()'s own
+-- authorization, is covered by supabase/tests/incident_cancellation_grant.sql.
+-- add_incident_report and set_incident_status_check still have no frontend
+-- consumer and must remain gated.
 insert into results (test, result, detail)
-select 'no authenticated EXECUTE on the 3 gated client RPCs (pre-frontend-cutover)',
+select 'no authenticated EXECUTE on the 2 still-gated client RPCs (pre-frontend-cutover)',
   case when count(*) = 0 then 'PASS' else 'FAIL' end, 'violations=' || count(*)
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
-  and p.proname in ('cancel_incident', 'add_incident_report', 'set_incident_status_check')
+  and p.proname in ('add_incident_report', 'set_incident_status_check')
   and exists (
     select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where a.grantee = 'authenticated'::regrole and a.privilege_type = 'EXECUTE'

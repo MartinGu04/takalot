@@ -20,6 +20,7 @@ import type {
 } from '../../domain/types';
 import type {
   AssignIncidentInput,
+  CancelIncidentInput,
   CloseIncidentInput,
   CorrectionInput,
   CreateHandoverInput,
@@ -129,6 +130,9 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   followUpCompletedAt: r.follow_up_completed_at as string | null,
   followUpCompletedBy: r.follow_up_completed_by as string | null,
   reopenCount: r.reopen_count as number,
+  cancelledAt: r.cancelled_at as string | null,
+  cancelledBy: r.cancelled_by as string | null,
+  cancellationReason: r.cancellation_reason as string | null,
 });
 
 const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
@@ -354,12 +358,13 @@ export class SupabaseRepository implements Repository {
     sort: IncidentSort = 'priority',
   ): Promise<Incident[]> {
     let q = this.client.from('incidents').select('*');
-    // Terminal-aware: 'closed' and 'cancelled' are both terminal (matches
-    // the backend's is_incident_open, migration 0016). closedOnly stays
-    // literally 'closed' -- cancellation is a distinct terminal outcome,
-    // still reachable through the generic status filter.
+    // Terminal-aware on both sides: 'closed' and 'cancelled' are both
+    // terminal (matches the backend's is_incident_open, migration 0016).
+    // terminalOnly is the archive's scope -- both terminal outcomes, not
+    // literally 'closed' -- so a cancelled incident has a real place to be
+    // found after it leaves the open-incident views.
     if (filters.openOnly) q = q.not('status', 'in', '(closed,cancelled)');
-    if (filters.closedOnly) q = q.eq('status', 'closed');
+    if (filters.terminalOnly) q = q.in('status', ['closed', 'cancelled']);
     if (filters.status?.length) q = q.in('status', filters.status);
     if (filters.severity?.length) q = q.in('severity', filters.severity);
     if (filters.ownerUserId) q = q.eq('owner_user_id', filters.ownerUserId);
@@ -484,6 +489,14 @@ export class SupabaseRepository implements Repository {
 
   async closeIncident(_s: Session, incidentId: string, input: CloseIncidentInput): Promise<Incident> {
     const data = await this.rpc<Record<string, unknown>>('close_incident', {
+      p_incident_id: incidentId,
+      p_input: input,
+    });
+    return mapIncident(data);
+  }
+
+  async cancelIncident(_s: Session, incidentId: string, input: CancelIncidentInput): Promise<Incident> {
+    const data = await this.rpc<Record<string, unknown>>('cancel_incident', {
       p_incident_id: incidentId,
       p_input: input,
     });

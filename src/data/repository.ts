@@ -21,6 +21,7 @@ import type {
 } from '../domain/types';
 import type {
   AssignIncidentInput,
+  CancelIncidentInput,
   CloseIncidentInput,
   CorrectionInput,
   CreateHandoverInput,
@@ -65,7 +66,12 @@ export interface IncidentFilters {
   reportedToOps?: ReportedToOps;
   createdFrom?: string; // ISO
   createdTo?: string; // ISO
-  closedOnly?: boolean;
+  /** Archive scope: both terminal outcomes -- 'closed' and 'cancelled' --
+   *  not literally status = 'closed'. A cancelled incident has no
+   *  root-cause/resolution/readiness data, so readiness/root-cause/
+   *  resolution-text filters naturally exclude it when active, exactly as
+   *  they would for any other incident missing that data. */
+  terminalOnly?: boolean;
   openOnly?: boolean;
   readinessAtClose?: ('full' | 'partial' | 'none')[];
   rootCauseText?: string;
@@ -168,6 +174,7 @@ export interface Repository {
   technicianUpdate(session: Session, incidentId: string, input: TechnicianUpdateInput): Promise<Incident>;
   assignIncident(session: Session, incidentId: string, input: AssignIncidentInput): Promise<Incident>;
   closeIncident(session: Session, incidentId: string, input: CloseIncidentInput): Promise<Incident>;
+  cancelIncident(session: Session, incidentId: string, input: CancelIncidentInput): Promise<Incident>;
   reopenIncident(session: Session, incidentId: string, input: ReopenIncidentInput): Promise<Incident>;
   addCorrection(session: Session, incidentId: string, input: CorrectionInput): Promise<void>;
   completeFollowUp(session: Session, incidentId: string, note: string): Promise<Incident>;

@@ -44,6 +44,17 @@ describe('role permission matrix', () => {
     expect(hasCapability('viewer', 'export_data', granted, 'viewer-1')).toBe(true);
     expect(hasCapability('viewer', 'export_data', granted, 'viewer-2')).toBe(false);
   });
+
+  // cancel_incident mirrors the backend's is_operational_role() set exactly
+  // (migration 0017): system_admin, professional_manager, shift_supervisor --
+  // never technician or viewer.
+  it('grants cancel_incident to exactly the operational roles', () => {
+    expect(hasCapability('system_admin', 'cancel_incident')).toBe(true);
+    expect(hasCapability('professional_manager', 'cancel_incident')).toBe(true);
+    expect(hasCapability('shift_supervisor', 'cancel_incident')).toBe(true);
+    expect(hasCapability('technician', 'cancel_incident')).toBe(false);
+    expect(hasCapability('viewer', 'cancel_incident')).toBe(false);
+  });
 });
 
 describe('personnel role-ceiling matrix (strict hierarchy, mirrors 0008/0010)', () => {
@@ -111,6 +122,9 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     followUpCompletedAt: null,
     followUpCompletedBy: null,
     reopenCount: 0,
+    cancelledAt: null,
+    cancelledBy: null,
+    cancellationReason: null,
     ...overrides,
   };
 }

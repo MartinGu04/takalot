@@ -1,0 +1,14 @@
+-- מעקב תקלות — grant authenticated EXECUTE on cancel_incident only.
+--
+-- 0017 created cancel_incident, add_incident_report, and
+-- set_incident_status_check but revoked EXECUTE from public/anon/
+-- authenticated on all three, deferring the grant to "a later, separate
+-- migration -- applied only once frontend compatibility ... has shipped"
+-- (see 0017's header). Frontend compatibility shipped in PR #15
+-- (88ed9b923695c42808c4e8a47cb7e1f53d40df84), and this migration is the
+-- first real client (the incident-cancellation vertical slice) for exactly
+-- one of the three: cancel_incident.
+--
+-- add_incident_report and set_incident_status_check have no frontend
+-- consumer yet and stay revoked -- this migration touches nothing else.
+grant execute on function public.cancel_incident(uuid, jsonb) to authenticated;
