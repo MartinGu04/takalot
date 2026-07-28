@@ -358,12 +358,13 @@ export class SupabaseRepository implements Repository {
     sort: IncidentSort = 'priority',
   ): Promise<Incident[]> {
     let q = this.client.from('incidents').select('*');
-    // Terminal-aware: 'closed' and 'cancelled' are both terminal (matches
-    // the backend's is_incident_open, migration 0016). closedOnly stays
-    // literally 'closed' -- cancellation is a distinct terminal outcome,
-    // still reachable through the generic status filter.
+    // Terminal-aware on both sides: 'closed' and 'cancelled' are both
+    // terminal (matches the backend's is_incident_open, migration 0016).
+    // terminalOnly is the archive's scope -- both terminal outcomes, not
+    // literally 'closed' -- so a cancelled incident has a real place to be
+    // found after it leaves the open-incident views.
     if (filters.openOnly) q = q.not('status', 'in', '(closed,cancelled)');
-    if (filters.closedOnly) q = q.eq('status', 'closed');
+    if (filters.terminalOnly) q = q.in('status', ['closed', 'cancelled']);
     if (filters.status?.length) q = q.in('status', filters.status);
     if (filters.severity?.length) q = q.in('severity', filters.severity);
     if (filters.ownerUserId) q = q.eq('owner_user_id', filters.ownerUserId);

@@ -1,5 +1,6 @@
-// Archive: closed incidents only. Search, filters, readiness, root-cause/solution
-// text search, and export. No deletion action anywhere on this page.
+// Archive: terminal incidents only -- closed AND cancelled. Search, filters,
+// readiness, root-cause/solution text search, and export. No deletion action
+// anywhere on this page.
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
@@ -34,7 +35,7 @@ export default function ArchivePage() {
 
   const { data: incidents, isLoading, isError, refetch } = useIncidents(
     {
-      closedOnly: true,
+      terminalOnly: true,
       search,
       rootCauseText: rootCauseText || undefined,
       resolutionText: resolutionText || undefined,
@@ -82,7 +83,7 @@ export default function ArchivePage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="page-title">ארכיון תקלות סגורות</h1>
+        <h1 className="page-title">ארכיון תקלות סגורות ומבוטלות</h1>
         {canExport && (
           <ExportMenu
             disabled={exportMutation.isPending}
@@ -145,11 +146,11 @@ export default function ArchivePage() {
         </div>
       </div>
 
-      <p className="mt-3 text-sm text-muted">{(incidents ?? []).length} תקלות סגורות תואמות</p>
+      <p className="mt-3 text-sm text-muted">{(incidents ?? []).length} תקלות בארכיון תואמות</p>
 
       {(incidents ?? []).length === 0 ? (
         <div className="mt-4">
-          <EmptyState title="לא נמצאו תקלות סגורות התואמות לסינון" />
+          <EmptyState title="לא נמצאו תקלות בארכיון התואמות לסינון" />
         </div>
       ) : (
         <div className="mt-3 flex flex-col gap-2">

@@ -730,7 +730,7 @@ export class LocalDemoRepository implements Repository {
     let rows = this.db.incidents.map((i) => ({ ...i }));
 
     if (filters.openOnly) rows = rows.filter((i) => isOpen(i.status));
-    if (filters.closedOnly) rows = rows.filter((i) => i.status === 'closed');
+    if (filters.terminalOnly) rows = rows.filter((i) => !isOpen(i.status));
     if (filters.status?.length) rows = rows.filter((i) => filters.status!.includes(i.status));
     if (filters.severity?.length) rows = rows.filter((i) => filters.severity!.includes(i.severity));
     if (filters.ownerUserId) rows = rows.filter((i) => i.ownerUserId === filters.ownerUserId);

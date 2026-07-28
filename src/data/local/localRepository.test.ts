@@ -700,12 +700,12 @@ describe('optimistic concurrency', () => {
 });
 
 describe('Chapter 2 terminal-status compatibility', () => {
-  // cancel_incident is not yet a reachable action through this repository
-  // (no action UI, no RPC grant) -- the fixture below seeds a cancelled
-  // incident directly into storage, exactly as historical or externally
-  // inserted data would arrive, to prove the EXISTING read/filter logic
-  // (isOpen, openOnly) correctly treats it as terminal without any new
-  // action being implemented.
+  // Predates the cancellation vertical slice's own cancelIncident action
+  // (see the "cancellation requirements" describe block above): this
+  // fixture seeds a cancelled incident directly into storage, exactly as
+  // historical or externally inserted data would arrive, to prove the
+  // read/filter logic (isOpen, openOnly) treats it as terminal independent
+  // of how it got that status.
   it('excludes a cancelled incident from the openOnly filter, same as a closed one', async () => {
     const storage = new MemoryStorage();
     const seeded = buildSeed(FIXED_NOW);
@@ -805,10 +805,19 @@ describe('filter behavior', () => {
     expect(overdue.some((i) => i.id === 'inc-2')).toBe(false);
   });
 
-  it('filters closed-only for the archive', async () => {
-    const repo = newRepo({ now: FIXED_NOW });
-    const closed = await repo.listIncidents(supervisor1, { closedOnly: true });
-    expect(closed.every((i) => i.status === 'closed')).toBe(true);
+  it('terminalOnly (the archive scope) includes both closed and cancelled incidents, excludes open ones', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    const cancelledTarget = seeded.incidents.find((i) => i.id === 'inc-2')!;
+    cancelledTarget.status = 'cancelled';
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+
+    const archived = await repo.listIncidents(supervisor1, { terminalOnly: true });
+    expect(archived.every((i) => i.status === 'closed' || i.status === 'cancelled')).toBe(true);
+    expect(archived.some((i) => i.status === 'closed')).toBe(true); // inc-5/inc-6, seeded closed
+    expect(archived.some((i) => i.id === 'inc-2' && i.status === 'cancelled')).toBe(true);
+    expect(archived.some((i) => i.id === 'inc-1')).toBe(false); // inc-1 stays open (in_progress)
   });
 
   it('searches by free text across number, system, and description', async () => {

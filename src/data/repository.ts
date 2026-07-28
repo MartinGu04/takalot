@@ -66,7 +66,12 @@ export interface IncidentFilters {
   reportedToOps?: ReportedToOps;
   createdFrom?: string; // ISO
   createdTo?: string; // ISO
-  closedOnly?: boolean;
+  /** Archive scope: both terminal outcomes -- 'closed' and 'cancelled' --
+   *  not literally status = 'closed'. A cancelled incident has no
+   *  root-cause/resolution/readiness data, so readiness/root-cause/
+   *  resolution-text filters naturally exclude it when active, exactly as
+   *  they would for any other incident missing that data. */
+  terminalOnly?: boolean;
   openOnly?: boolean;
   readinessAtClose?: ('full' | 'partial' | 'none')[];
   rootCauseText?: string;
