@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { createIncidentSchema, type CreateIncidentInput } from '../domain/schemas';
@@ -69,6 +69,21 @@ export default function IncidentCreatePage() {
   const values = watch();
   useDraft(DRAFT_KEY, values, formState.isDirty && !submitted);
   useWarnOnUnload(formState.isDirty && !submitted);
+
+  // Defaults "בעל אחריות פנימי" to the signed-in user, but only once (and
+  // only for as long as the user hasn't picked someone else themselves this
+  // session) -- a manual selection (tracked via this ref, not form
+  // dirtiness, so it survives even a value that happens to equal the
+  // default) always wins, and the ref itself resets to false on every fresh
+  // mount and on "איפוס", so the default is re-applied then.
+  const ownerManuallySetRef = useRef(false);
+  useEffect(() => {
+    if (ownerManuallySetRef.current || !profiles) return;
+    const eligible = profiles.find((p) => p.id === session.userId && p.active);
+    if (eligible && values.ownerUserId !== eligible.id) {
+      setValue('ownerUserId', eligible.id);
+    }
+  }, [profiles, session.userId, values.ownerUserId, setValue]);
 
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [deadlineError, setDeadlineError] = useState<string | undefined>();
@@ -177,13 +192,16 @@ export default function IncidentCreatePage() {
 
         <Field label="תיאור התקלה" required error={formState.errors.description?.message}>
           {(a) => (
-            <Textarea
-              {...a}
-              rows={4}
-              maxLength={4000}
-              placeholder="מה קרה, ומתי לראשונה הבחינו בכך?"
-              {...register('description', { required: 'יש להזין תיאור', validate: (v) => v.trim().length > 0 || 'יש להזין תיאור' })}
-            />
+            <>
+              <Textarea
+                {...a}
+                rows={4}
+                maxLength={400}
+                placeholder="מה קרה, ומתי לראשונה הבחינו בכך?"
+                {...register('description', { required: 'יש להזין תיאור', validate: (v) => v.trim().length > 0 || 'יש להזין תיאור' })}
+              />
+              <p className="text-left text-xs text-muted">{values.description.length}/400</p>
+            </>
           )}
         </Field>
 
@@ -210,13 +228,16 @@ export default function IncidentCreatePage() {
 
         <Field label="השפעה מבצעית" required error={formState.errors.operationalImpact?.message}>
           {(a) => (
-            <Textarea
-              {...a}
-              rows={2}
-              maxLength={1000}
-              placeholder="כיצד התקלה משפיעה בפועל על הפעילות, השירות או המשתמשים?"
-              {...register('operationalImpact', { required: 'יש להזין השפעה מבצעית', validate: (v) => v.trim().length > 0 || 'יש להזין השפעה מבצעית' })}
-            />
+            <>
+              <Textarea
+                {...a}
+                rows={2}
+                maxLength={400}
+                placeholder="כיצד התקלה משפיעה בפועל על הפעילות, השירות או המשתמשים?"
+                {...register('operationalImpact', { required: 'יש להזין השפעה מבצעית', validate: (v) => v.trim().length > 0 || 'יש להזין השפעה מבצעית' })}
+              />
+              <p className="text-left text-xs text-muted">{values.operationalImpact.length}/400</p>
+            </>
           )}
         </Field>
 
@@ -239,7 +260,14 @@ export default function IncidentCreatePage() {
           hint="האחראי לוודא שהטיפול בתקלה יימשך עד לסגירתה — לאו דווקא מי שמבצע את התיקון הטכני עצמו."
         >
           {(a) => (
-            <Select {...a} {...register('ownerUserId')}>
+            <Select
+              {...a}
+              {...register('ownerUserId', {
+                onChange: () => {
+                  ownerManuallySetRef.current = true;
+                },
+              })}
+            >
               <option value="">— בחירה —</option>
               {profiles?.filter((p) => p.active).map((p) => (
                 <option key={p.id} value={p.id}>{p.fullName}</option>
@@ -363,7 +391,14 @@ export default function IncidentCreatePage() {
         )}
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={() => reset(defaultValues())}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              ownerManuallySetRef.current = false;
+              reset(defaultValues());
+            }}
+          >
             איפוס
           </Button>
           <Button type="submit" disabled={submitting}>

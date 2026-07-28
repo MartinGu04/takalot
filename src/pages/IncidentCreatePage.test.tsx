@@ -120,7 +120,12 @@ describe('IncidentCreatePage: form behavior', () => {
     await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה לצורך בדיקה');
     await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה');
     await user.type(screen.getByLabelText(/^פעולות שבוצעו עד כה/), 'נבדק ראשונית');
-    // Deliberately leave the owner unselected.
+    // The owner now defaults to the signed-in user, so "leaving it
+    // unselected" must be done explicitly -- clearing a default is itself a
+    // manual choice the app must respect (never silently re-forced).
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    await waitFor(() => expect(ownerSelect).toHaveValue('u-admin'));
+    await user.selectOptions(ownerSelect, '');
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
     expect(await screen.findByText('יש לבחור בעל אחריות פנימי')).toBeInTheDocument();
     // Submission never happened -- still on the creation page.
@@ -297,5 +302,114 @@ describe('IncidentCreatePage: תקשוב למבצעים ו-WISDOM', () => {
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
     expect(within(timeline).getByText(/תקשוב למבצעים: כן \(דווח ל: תקשוב מוקד מבצעים\)/)).toBeInTheDocument();
     expect(within(timeline).getByText(/WISDOM: כן \(מספר תקלה: WISDOM-7789\)/)).toBeInTheDocument();
+  });
+});
+
+describe('IncidentCreatePage: default internal owner (בעל אחריות פנימי)', () => {
+  it('defaults to the current signed-in eligible user', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    await waitFor(() => expect(ownerSelect).toHaveValue('u-admin'));
+  });
+
+  it('can still be changed to another eligible active person, and the manual choice is not reverted', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    await waitFor(() => expect(ownerSelect).toHaveValue('u-admin'));
+    await user.selectOptions(ownerSelect, 'u-tech-1');
+    expect(ownerSelect).toHaveValue('u-tech-1');
+    // Give the default-owner effect another render cycle -- it must not
+    // revert a manual selection back to the signed-in user.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ownerSelect).toHaveValue('u-tech-1');
+  });
+
+  it('never forces an ineligible/inactive signed-in user into the field', async () => {
+    // Simulate the signed-in user's OWN row being inactive/absent from the
+    // eligible list as seen by the creation form (e.g. a race with a
+    // deactivation elsewhere) -- without also hiding their own login
+    // button, since a truly inactive demo profile cannot log in at all
+    // (LoginPage.tsx filters its picker by `active`). The login screen's
+    // own demo picker always calls listProfiles with a fixed
+    // { userId: 'u-admin', ... } session regardless of who is about to log
+    // in (see LoginPage.tsx) -- only that hardcoded call is left
+    // untouched; the real session's own call (once logged in as a
+    // DIFFERENT user, u-supervisor-1) sees itself marked inactive.
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const original = LocalDemoRepository.prototype.listProfiles;
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'listProfiles')
+      .mockImplementation(async function (
+        this: InstanceType<typeof LocalDemoRepository>,
+        ...args: Parameters<typeof original>
+      ) {
+        const real = await original.apply(this, args);
+        const [session] = args;
+        if (session.userId === 'u-admin') return real; // the login screen's own picker call
+        return real.map((p) => (p.id === session.userId ? { ...p, active: false } : p));
+      });
+    const user = await loginAs('login-u-supervisor-1');
+    await goToCreatePage(user);
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    // Wait for profiles (and therefore the default-owner effect) to have
+    // settled, proven by another active profile's option existing.
+    await within(ownerSelect).findByRole('option', { name: 'עומר פרץ (דמו)' });
+    expect(ownerSelect).toHaveValue('');
+    expect(within(ownerSelect).queryByRole('option', { name: 'יואב כהן (דמו)' })).not.toBeInTheDocument();
+    spy.mockRestore();
+  });
+});
+
+describe('IncidentCreatePage: 400-character limits (תיאור התקלה / השפעה מבצעית)', () => {
+  it('caps both fields at maxLength 400 and shows a live character counter', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const description = screen.getByLabelText(/^תיאור התקלה/);
+    const impact = screen.getByLabelText(/^השפעה מבצעית/);
+    expect(description).toHaveAttribute('maxLength', '400');
+    expect(impact).toHaveAttribute('maxLength', '400');
+    expect(screen.getAllByText('0/400')).toHaveLength(2);
+
+    await user.type(description, 'א'.repeat(12));
+    expect(screen.getByText('12/400')).toBeInTheDocument();
+    expect(screen.getByText('0/400')).toBeInTheDocument(); // impact untouched
+
+    await user.type(impact, 'ב'.repeat(5));
+    expect(screen.getByText('5/400')).toBeInTheDocument();
+  });
+});
+
+describe('IncidentCreatePage: form resets fully after a successful creation', () => {
+  it('opening the form again after a successful submission shows clean defaults, not the previous incident', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), 'תקשוב זמני לבדיקה');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-1111');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await screen.findByText(/נפתחה בהצלחה/);
+
+    // Navigate back to the creation form -- a fresh mount, exactly like a
+    // real user clicking "פתיחת תקלה" again from the sidebar.
+    await goToCreatePage(user);
+
+    expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^דווח למבצעים/)).toHaveValue('no');
+
+    expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // The internal owner defaults again to the current signed-in user, not
+    // to u-tech-1 (the previous incident's manually-selected owner).
+    await waitFor(() => expect(screen.getByLabelText(/^בעל אחריות פנימי/)).toHaveValue('u-admin'));
   });
 });

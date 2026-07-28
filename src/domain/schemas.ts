@@ -82,9 +82,13 @@ export const createIncidentSchema = z
     systemId: z.string().min(1, 'יש לבחור מערכת / עמדה'),
     locationId: z.string().min(1, 'יש לבחור מיקום'),
     discoveredAt: z.string().min(1, 'יש להזין שעת גילוי'),
-    description: nonBlank(4000, 'תיאור התקלה'),
+    // Creation-only limits: tighter than update/close's own operationalImpact
+    // (1000) -- description doesn't exist at all past creation, and this
+    // 400-character cap only applies to opening an incident, not revising it
+    // later.
+    description: nonBlank(400, 'תיאור התקלה'),
     severity: severitySchema,
-    operationalImpact: nonBlank(1000, 'השפעה מבצעית'),
+    operationalImpact: nonBlank(400, 'השפעה מבצעית'),
     actionsTaken: nonBlank(4000, 'פעולות שבוצעו עד כה'),
     status: statusSchema.refine((s) => CREATABLE_STATUSES.has(s), {
       message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
