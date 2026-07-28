@@ -130,8 +130,26 @@ export function UpdateDialog({
     onClose();
   };
 
+  // Mirrors update_incident's/technician_update_incident's own bounds check
+  // (migration 0020, same pattern already established by cancel_incident):
+  // the actual event time must fall between the incident's discovery and
+  // five minutes from now. Fast UX feedback only -- the database remains
+  // the final boundary.
+  function eventTimeBoundsError(iso: string): string | undefined {
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return 'מועד העדכון בפועל אינו תקין.';
+    if (t < new Date(incident.discoveredAt)) return 'מועד העדכון בפועל אינו יכול להיות לפני שעת גילוי התקלה.';
+    if (t.getTime() > Date.now() + 5 * 60_000) return 'מועד העדכון בפועל אינו יכול להיות בעתיד.';
+    return undefined;
+  }
+
   const submit = () => {
     setError(undefined);
+    const boundsError = eventTimeBoundsError(localInputToIso(eventTime));
+    if (boundsError) {
+      setError(boundsError);
+      return;
+    }
     if (isFull) {
       if (!canTransition(incident.status, status)) {
         setError(transitionError(incident.status, status));
@@ -164,11 +182,23 @@ export function UpdateDialog({
           submit();
         }}
       >
-        <Field label="שעת עדכון" required>
+        <Field
+          label="מועד העדכון בפועל"
+          required
+          hint="המועד שבו העדכון או הפעולה התרחשו בפועל, גם אם התיעוד נעשה מאוחר יותר."
+        >
           {(a) => <Input {...a} type="datetime-local" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />}
         </Field>
         <Field label="פעולות שבוצעו מאז העדכון הקודם" required>
-          {(a) => <Textarea {...a} value={actionsTaken} onChange={(e) => setActionsTaken(e.target.value)} maxLength={4000} />}
+          {(a) => (
+            <Textarea
+              {...a}
+              value={actionsTaken}
+              onChange={(e) => setActionsTaken(e.target.value)}
+              maxLength={4000}
+              placeholder="אילו בדיקות, פעולות או ניסיונות פתרון בוצעו מאז העדכון הקודם?"
+            />
+          )}
         </Field>
         <Field label="ממצאים">
           {(a) => <Textarea {...a} value={findings} onChange={(e) => setFindings(e.target.value)} maxLength={4000} />}
@@ -208,7 +238,16 @@ export function UpdateDialog({
               </Field>
             </div>
             <Field label="השפעה מבצעית" required>
-              {(a) => <Textarea {...a} rows={2} value={operationalImpact} onChange={(e) => setOperationalImpact(e.target.value)} maxLength={1000} />}
+              {(a) => (
+                <Textarea
+                  {...a}
+                  rows={2}
+                  value={operationalImpact}
+                  onChange={(e) => setOperationalImpact(e.target.value)}
+                  maxLength={1000}
+                  placeholder="כיצד המצב הנוכחי משפיע על הפעילות, השירות או המשתמשים?"
+                />
+              )}
             </Field>
             <OwnerField
               profiles={profiles}

@@ -8,9 +8,10 @@
 // because the backend's is_valid_transition (migration 0017) does not yet
 // allow transitioning into any of them from any status.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type AppType from '../App';
+import { isoToLocalInput } from '../lib/time';
 
 let App: typeof AppType;
 beforeEach(async () => {
@@ -41,6 +42,133 @@ async function openUpdateDialogAsAdmin() {
   const statusSelect = await screen.findByRole('combobox', { name: /סטטוס נוכחי/ });
   return { user, statusSelect };
 }
+
+// Chapter 2 incident-update vertical slice: actual event time (מועד העדכון
+// בפועל), its bounds (migration 0020), and the full submit/refresh/timeline
+// path -- exercised through the real app + real demo repository, mirroring
+// the cancellation tests' approach below.
+describe('UpdateDialog: actual event time (מועד העדכון בפועל)', () => {
+  it('shows the renamed label, its helper text, and the two approved placeholders', async () => {
+    await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    expect(within(dialog).getByLabelText(/^מועד העדכון בפועל/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('המועד שבו העדכון או הפעולה התרחשו בפועל, גם אם התיעוד נעשה מאוחר יותר.'),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByPlaceholderText('אילו בדיקות, פעולות או ניסיונות פתרון בוצעו מאז העדכון הקודם?'),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByPlaceholderText('כיצד המצב הנוכחי משפיע על הפעילות, השירות או המשתמשים?'),
+    ).toBeInTheDocument();
+  });
+
+  it('defaults the actual event-time field to now', async () => {
+    const before = Date.now();
+    await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    const input = within(dialog).getByLabelText(/^מועד העדכון בפועל/) as HTMLInputElement;
+    expect(input.value).not.toBe('');
+    const [datePart, timePart] = input.value.split('T');
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [hh, mm] = timePart.split(':').map(Number);
+    const asUtcGuess = Date.UTC(y, m - 1, d, hh, mm);
+    expect(Math.abs(asUtcGuess - before)).toBeLessThan(4 * 3600_000);
+  });
+
+  it('blocks submission (client-side) when the event time is set before the incident was discovered, without closing the dialog', async () => {
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    const input = within(dialog).getByLabelText(/^מועד העדכון בפועל/) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '2000-01-01T00:00' } });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
+  });
+
+  it('blocks submission (client-side) when the event time is set in the future beyond the tolerance', async () => {
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    const input = within(dialog).getByLabelText(/^מועד העדכון בפועל/) as HTMLInputElement;
+    // isoToLocalInput (not native Date getters) matches the app's own
+    // Asia/Jerusalem wall-clock conversion, which is independent of the
+    // test runner's OS/Node local timezone.
+    const iso = isoToLocalInput(new Date(Date.now() + 3 * 3600_000).toISOString());
+    fireEvent.change(input, { target: { value: iso } });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
+  });
+
+  it('submits successfully end-to-end: dialog closes, success toast, incident refreshes, and the timeline records the update with its actual event time', async () => {
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'בוצעה בדיקה נוספת');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+    expect(await screen.findByText('העדכון נשמר.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'עדכון תקלה' })).not.toBeInTheDocument());
+
+    const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    expect(within(timeline).getAllByText('עדכון טיפול').length).toBeGreaterThan(0);
+    expect(within(timeline).getByText(/בוצעה בדיקה נוספת/)).toBeInTheDocument();
+  });
+
+  it('prevents duplicate submission by disabling the button while the update is pending', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const original = LocalDemoRepository.prototype.updateIncident;
+    let resolveCall: (() => void) | undefined;
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'updateIncident')
+      .mockImplementationOnce(async function (
+        this: InstanceType<typeof LocalDemoRepository>,
+        ...args: Parameters<typeof original>
+      ) {
+        await new Promise<void>((resolve) => {
+          resolveCall = resolve;
+        });
+        return original.apply(this, args);
+      });
+
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'בדיקה');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+    const pendingButton = await within(dialog).findByRole('button', { name: 'שומר…' });
+    expect(pendingButton).toBeDisabled();
+    expect(spy).toHaveBeenCalledTimes(1);
+    await user.click(pendingButton);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    resolveCall?.();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'עדכון תקלה' })).not.toBeInTheDocument());
+  });
+
+  it('on a version conflict, keeps the dialog open, preserves entered content, and shows a clean Hebrew message', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const { AppError } = await import('../data/repository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'updateIncident')
+      .mockRejectedValueOnce(
+        new AppError('CONFLICT', 'התקלה עודכנה על ידי משתמש אחר. יש לרענן את הדף לפני שמירה.'),
+      );
+
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'תוכן שהוזן ולא אבד');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+    expect(await screen.findByText('התקלה עודכנה על ידי משתמש אחר. יש לרענן את הדף לפני שמירה.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
+    expect(
+      (within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/) as HTMLTextAreaElement).value,
+    ).toBe('תוכן שהוזן ולא אבד');
+    spy.mockRestore();
+  });
+});
 
 describe('UpdateDialog status dropdown: pre-cutover target exclusion', () => {
   it('does not offer cancelled or the three not-yet-reachable waiting_* statuses as a new selection', async () => {

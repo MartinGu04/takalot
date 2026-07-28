@@ -94,6 +94,12 @@ function wrap(error: { message: string; code?: string } | null): void {
   if (/invalid_transition/.test(error.message)) {
     throw new AppError('INVALID_TRANSITION', error.message.replace(/^.*invalid_transition:\s*/, ''));
   }
+  if (/validation:/.test(error.message)) {
+    throw new AppError('VALIDATION', error.message.replace(/^.*validation:\s*/, ''));
+  }
+  if (/not_found:/.test(error.message)) {
+    throw new AppError('NOT_FOUND', error.message.replace(/^.*not_found:\s*/, ''));
+  }
   throw new AppError('NETWORK', `שגיאת תקשורת מול השרת: ${error.message}`);
 }
 
