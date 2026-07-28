@@ -55,6 +55,16 @@ describe('role permission matrix', () => {
     expect(hasCapability('technician', 'cancel_incident')).toBe(false);
     expect(hasCapability('viewer', 'cancel_incident')).toBe(false);
   });
+
+  // create_incident mirrors is_operational_role() the same way -- the
+  // incident-creation vertical slice's route/action gating relies on this.
+  it('grants create_incident to exactly the operational roles', () => {
+    expect(hasCapability('system_admin', 'create_incident')).toBe(true);
+    expect(hasCapability('professional_manager', 'create_incident')).toBe(true);
+    expect(hasCapability('shift_supervisor', 'create_incident')).toBe(true);
+    expect(hasCapability('technician', 'create_incident')).toBe(false);
+    expect(hasCapability('viewer', 'create_incident')).toBe(false);
+  });
 });
 
 describe('personnel role-ceiling matrix (strict hierarchy, mirrors 0008/0010)', () => {

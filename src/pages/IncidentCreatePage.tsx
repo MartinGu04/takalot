@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { createIncidentSchema, type CreateIncidentInput } from '../domain/schemas';
 import { useLocations, useProfiles, useSystems, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { Button, Field, Input, Select, Textarea } from '../components/ui';
-import { OwnerField } from '../components/OwnerField';
 import { severityLabels, reportedToOpsLabels } from '../domain/labels';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
 import { loadDraft, clearDraft, useDraft, useWarnOnUnload } from '../lib/useDraft';
@@ -21,7 +20,6 @@ type FormValues = {
   operationalImpact: string;
   actionsTaken: string;
   ownerUserId: string;
-  ownerExternalName: string;
   status: CreateIncidentInput['status'];
   hasDeadline: boolean;
   nextUpdateDue: string; // datetime-local
@@ -40,7 +38,6 @@ function defaultValues(): FormValues {
     operationalImpact: '',
     actionsTaken: '',
     ownerUserId: '',
-    ownerExternalName: '',
     status: 'new',
     hasDeadline: true,
     nextUpdateDue: isoToLocalInput(new Date(Date.now() + 4 * 3600_000).toISOString()),
@@ -58,7 +55,7 @@ export default function IncidentCreatePage() {
   const { data: profiles } = useProfiles();
   const [submitted, setSubmitted] = useState(false);
 
-  const { register, handleSubmit, control, watch, formState, reset, setValue } = useForm<FormValues>({
+  const { register, handleSubmit, watch, formState, reset, setValue } = useForm<FormValues>({
     defaultValues: loadDraft<FormValues>(DRAFT_KEY) ?? defaultValues(),
   });
   const values = watch();
@@ -96,7 +93,7 @@ export default function IncidentCreatePage() {
       actionsTaken: form.actionsTaken,
       status: form.status,
       ownerUserId: form.ownerUserId || null,
-      ownerExternalName: form.ownerExternalName || null,
+      ownerExternalName: null,
       nextUpdateDue: form.hasDeadline ? localInputToIso(form.nextUpdateDue) : null,
       noDeadlineReason: form.hasDeadline ? null : form.noDeadlineReason,
       reportedToOps: form.reportedToOps,
@@ -121,6 +118,7 @@ export default function IncidentCreatePage() {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="page-title">פתיחת תקלה</h1>
+      <p className="mt-1 text-sm text-muted">מספר התקלה יוקצה אוטומטית עם השמירה.</p>
       <form
         className="mt-4 flex flex-col gap-4"
         onSubmit={(e) => {
@@ -151,7 +149,11 @@ export default function IncidentCreatePage() {
           </Field>
         </div>
 
-        <Field label="שעת גילוי" required>
+        <Field
+          label="מועד גילוי התקלה בפועל"
+          required
+          hint="מועד שבו התקלה התגלתה בפועל בשטח — לא מועד תיעוד התקלה במערכת. ניתן לערוך לצורך תיעוד מאוחר."
+        >
           {(a) => <Input {...a} type="datetime-local" {...register('discoveredAt', { required: true })} />}
         </Field>
 
@@ -161,6 +163,7 @@ export default function IncidentCreatePage() {
               {...a}
               rows={4}
               maxLength={4000}
+              placeholder="מה קרה, ומתי לראשונה הבחינו בכך?"
               {...register('description', { required: 'יש להזין תיאור', validate: (v) => v.trim().length > 0 || 'יש להזין תיאור' })}
             />
           )}
@@ -193,6 +196,7 @@ export default function IncidentCreatePage() {
               {...a}
               rows={2}
               maxLength={1000}
+              placeholder="כיצד התקלה משפיעה בפועל על הפעילות, השירות או המשתמשים?"
               {...register('operationalImpact', { required: 'יש להזין השפעה מבצעית', validate: (v) => v.trim().length > 0 || 'יש להזין השפעה מבצעית' })}
             />
           )}
@@ -204,31 +208,27 @@ export default function IncidentCreatePage() {
               {...a}
               rows={3}
               maxLength={4000}
+              placeholder="אילו בדיקות או פעולות כבר בוצעו לפני תיעוד התקלה?"
               {...register('actionsTaken', { required: 'יש להזין פעולות שבוצעו', validate: (v) => v.trim().length > 0 || 'יש להזין פעולות שבוצעו' })}
             />
           )}
         </Field>
 
-        <Controller
-          control={control}
-          name="ownerUserId"
-          render={({ field: ownerField }) => (
-            <Controller
-              control={control}
-              name="ownerExternalName"
-              render={({ field: extField }) => (
-                <OwnerField
-                  profiles={profiles}
-                  ownerUserId={ownerField.value}
-                  ownerExternalName={extField.value}
-                  onChangeInternal={ownerField.onChange}
-                  onChangeExternal={extField.onChange}
-                  error={ownerError}
-                />
-              )}
-            />
+        <Field
+          label="בעל אחריות פנימי"
+          required
+          error={ownerError}
+          hint="האחראי לוודא שהטיפול בתקלה יימשך עד לסגירתה — לאו דווקא מי שמבצע את התיקון הטכני עצמו."
+        >
+          {(a) => (
+            <Select {...a} {...register('ownerUserId')}>
+              <option value="">— בחירה —</option>
+              {profiles?.filter((p) => p.active).map((p) => (
+                <option key={p.id} value={p.id}>{p.fullName}</option>
+              ))}
+            </Select>
           )}
-        />
+        </Field>
 
         <div className="surface p-3">
           <label className="flex items-center gap-2 text-sm font-medium">

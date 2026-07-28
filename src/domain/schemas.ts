@@ -95,11 +95,29 @@ export const createIncidentSchema = z
     ...reportedToOpsFields,
   })
   .superRefine((data, ctx) => {
-    if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+    // Unlike every other flow that shares ownerFields (update/close/assign/
+    // reopen, which all accept an internal OR a named external handler),
+    // opening a NEW incident requires an internal בעל אחריות פנימי
+    // specifically -- the person accountable for the incident not falling
+    // between the cracks, not necessarily who performs the technical work.
+    // This mirrors create_incident's own database-level enforcement
+    // (migration 0019, on top of the shared assert_owner_valid helper,
+    // which stays nullable for the other flows) -- both checks, in the
+    // same order, so a direct repository/RPC caller can never reach a state
+    // this form itself would have blocked: owner missing first, then
+    // (only once an owner IS present) external name rejected outright,
+    // never silently dropped.
+    if (!data.ownerUserId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ownerUserId'],
-        message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
+        message: 'יש לבחור בעל אחריות פנימי',
+      });
+    } else if ((data.ownerExternalName ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ownerUserId'],
+        message: 'לא ניתן לקבוע גורם חיצוני כבעל אחריות בעת פתיחת תקלה',
       });
     }
     if (!data.nextUpdateDue && !(data.noDeadlineReason ?? '').trim()) {

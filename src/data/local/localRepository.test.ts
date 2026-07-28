@@ -69,6 +69,79 @@ describe('incident numbering atomicity and yearly reset', () => {
   });
 });
 
+// Chapter 2 creation-ownership requirements (mirrors create_incident's own
+// database enforcement, migration 0019): a direct repository caller --
+// bypassing IncidentCreatePage entirely -- must not be able to reach a
+// state the real RPC would reject. assert_owner_valid/validateOwner itself
+// is unchanged and stays nullable for update/assign/close/reopen.
+describe('creation ownership requirements (Chapter 2, mirrors migration 0019)', () => {
+  it('creates successfully with a valid active internal owner', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    expect(incident.ownerUserId).toBe(DEMO_USERS.tech1);
+    expect(incident.ownerExternalName).toBeNull();
+  });
+
+  it('rejects external-owner-only creation (no internal owner) from a direct repository call', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(
+        supervisor1,
+        baseCreateInput({ ownerUserId: null, ownerExternalName: 'טכנאי מטעם ספק' }),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects a missing owner entirely (both fields null) from a direct repository call', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: null, ownerExternalName: null })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects supplying both an internal AND an external owner together from a direct repository call', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(
+        supervisor1,
+        baseCreateInput({ ownerUserId: DEMO_USERS.tech1, ownerExternalName: 'טכנאי מטעם ספק' }),
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects an inactive internal owner', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    const inactiveTarget = seeded.profiles.find((p) => p.id === DEMO_USERS.tech2)!;
+    inactiveTarget.active = false;
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: DEMO_USERS.tech2 })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects a deleted/tombstoned internal owner', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    const deletedTarget = seeded.profiles.find((p) => p.id === DEMO_USERS.tech2)!;
+    deletedTarget.active = false;
+    deletedTarget.deletedAt = FIXED_NOW.toISOString();
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: DEMO_USERS.tech2 })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects an unknown owner id', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: 'not-a-real-profile-id' })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+});
+
 describe('closure requirements', () => {
   let repo: LocalDemoRepository;
   beforeEach(() => {
