@@ -130,6 +130,31 @@ begin
   end;
 
   -- =====================================================================
+  -- 4b. A non-empty but malformed UUID (e.g. "not-a-uuid") must be
+  --     rejected as a controlled validation error -- SQLSTATE P0001 (the
+  --     project's own raise-exception convention), NEVER 22P02
+  --     (invalid_text_representation, PostgreSQL's raw UUID-parser error).
+  -- =====================================================================
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('ownerUserId', 'not-a-uuid')));
+    insert into results (test, result, detail) values ('malformed (non-UUID) ownerUserId is rejected cleanly', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('malformed (non-UUID) ownerUserId is rejected cleanly',
+      case when sqlstate = 'P0001'
+            and sqlerrm = 'validation: בעל האחריות הפנימי שנבחר אינו תקין'
+           then 'PASS' else 'FAIL' end,
+      sqlstate || ': ' || sqlerrm);
+  end;
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('ownerUserId', '12345')));
+    insert into results (test, result, detail) values ('another malformed ownerUserId shape is rejected cleanly, not as a raw cast error', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('another malformed ownerUserId shape is rejected cleanly, not as a raw cast error',
+      case when sqlstate = 'P0001' and sqlstate <> '22P02' then 'PASS' else 'FAIL' end,
+      sqlstate || ': ' || sqlerrm);
+  end;
+
+  -- =====================================================================
   -- 5. External-owner-only creation is rejected (caught by the
   --    owner-required check first, before the external-name check).
   -- =====================================================================

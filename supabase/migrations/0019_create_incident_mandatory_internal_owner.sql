@@ -33,10 +33,20 @@
 --      the same branch as "external only" (mutually exclusive by design:
 --      see the Owner type's own comment, "either an active internal user
 --      or a named external handler").
---   4. assert_owner_valid is now called with the already-normalized,
+--   4. The now-guaranteed-non-blank ownerUserId string is cast to uuid
+--      inside its own nested begin/exception block, catching
+--      invalid_text_representation (PostgreSQL's own UUID format error,
+--      SQLSTATE 22P02) and re-raising it as the project's normal
+--      controlled validation error -- so a non-empty but malformed value
+--      (e.g. "not-a-uuid") is rejected the same clean way as every other
+--      validation failure, never as a raw Postgres cast error. This
+--      deliberately trusts PostgreSQL's own UUID parser as the format
+--      authority rather than duplicating it with a regex.
+--   5. assert_owner_valid is now called with the already-normalized,
 --      already-cast owner uuid (previously computed twice: once for this
 --      call, once again in the INSERT) -- same helper, same behavior
---      (active + exists check), unchanged.
+--      (active + exists check), unchanged -- so a syntactically valid but
+--      nonexistent UUID is still rejected exactly as before, through it.
 -- Every other check (permission, status allowlist, reportedToOps
 -- recipient), the INSERT itself, the created/status_change/
 -- reported_to_ops_change timeline events, the audit entry, and the
@@ -77,7 +87,12 @@ begin
   if v_owner_external_name is not null then
     raise exception 'validation: לא ניתן לקבוע גורם חיצוני כבעל אחריות בעת פתיחת תקלה';
   end if;
-  v_owner_user_id := v_owner_user_id_raw::uuid;
+  begin
+    v_owner_user_id := v_owner_user_id_raw::uuid;
+  exception
+    when invalid_text_representation then
+      raise exception 'validation: בעל האחריות הפנימי שנבחר אינו תקין';
+  end;
   perform assert_owner_valid(v_owner_user_id);
   if (p_input->>'status')::incident_status not in (
     'new', 'acknowledged', 'in_progress', 'waiting_external', 'waiting_test',
