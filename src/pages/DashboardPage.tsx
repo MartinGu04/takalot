@@ -45,6 +45,19 @@ const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value:
   },
 };
 
+/** A permanent, subtle 1px border per KPI card identity -- brand/purple for
+ *  open, red for critical/high, orange for overdue. Unlike the icon/value
+ *  color above (which dims to neutral once its count is zero, so an empty
+ *  dashboard never looks alarming), this border is a calm category marker,
+ *  not an urgency signal, so it stays constant regardless of count. Same
+ *  restrained shade already used by Badge -- no new color introduced, no
+ *  glow, no gradient. */
+const kpiBorderStyles: Record<KpiTone, string> = {
+  brand: 'border-brand-200 dark:border-brand-800',
+  red: 'border-red-200 dark:border-red-800',
+  orange: 'border-orange-200 dark:border-orange-800',
+};
+
 /**
  * A single KPI card shape shared by all three top-of-page metrics -- equal
  * dimensions, equally interactive (opens the matching IncidentListDialog),
@@ -75,7 +88,7 @@ function KpiCard({
       type="button"
       onClick={onClick}
       aria-label={`${label}: ${value}. ${context}. לחיצה להצגת הרשימה.`}
-      className="surface-interactive flex min-w-0 flex-col gap-3 p-4 text-right sm:p-5"
+      className={`surface-interactive flex min-w-0 flex-col gap-3 p-4 text-right sm:p-5 ${kpiBorderStyles[tone]}`}
     >
       <div className="flex min-w-0 items-center gap-3">
         <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
