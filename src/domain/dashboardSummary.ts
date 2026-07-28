@@ -18,12 +18,19 @@ export interface DashboardSummary {
    *  anything already in `needsAttention` so no incident renders as a full
    *  card in two sections at once. */
   openRest: Incident[];
-  /** "נסגרו לאחרונה" -- the most recently closed incidents, newest first,
-   *  capped at `limit`. */
-  recentlyClosed: Incident[];
+  /** "נסגרו לאחרונה" -- the most recently reached TERMINAL incidents (both
+   *  closed and cancelled -- an incident's operational life is over either
+   *  way), newest terminal-timestamp first, capped at `limit`. */
+  recentTerminal: Incident[];
 }
 
-export function summarizeDashboard(incidents: Incident[], now: Date, recentlyClosedLimit = 5): DashboardSummary {
+/** The moment an incident actually reached its terminal state: closedAt for
+ *  a closed incident, cancelledAt for a cancelled one. Never both set. */
+export function terminalAt(incident: Incident): string | null {
+  return incident.status === 'cancelled' ? incident.cancelledAt : incident.closedAt;
+}
+
+export function summarizeDashboard(incidents: Incident[], now: Date, recentTerminalLimit = 5): DashboardSummary {
   const open = incidents.filter((i) => isOpen(i.status));
   const overdue = open.filter((i) => isOverdue(i, now));
   const criticalOrHigh = open.filter((i) => i.severity === 'critical' || i.severity === 'high');
@@ -38,10 +45,10 @@ export function summarizeDashboard(incidents: Incident[], now: Date, recentlyClo
     now,
   );
 
-  const recentlyClosed = incidents
-    .filter((i) => i.status === 'closed')
-    .sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? ''))
-    .slice(0, recentlyClosedLimit);
+  const recentTerminal = incidents
+    .filter((i) => !isOpen(i.status))
+    .sort((a, b) => (terminalAt(b) ?? '').localeCompare(terminalAt(a) ?? ''))
+    .slice(0, recentTerminalLimit);
 
-  return { open, overdue, criticalOrHigh, needsAttention, openRest, recentlyClosed };
+  return { open, overdue, criticalOrHigh, needsAttention, openRest, recentTerminal };
 }

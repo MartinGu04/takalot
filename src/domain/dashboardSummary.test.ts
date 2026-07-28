@@ -58,17 +58,24 @@ describe('summarizeDashboard: metric grounding', () => {
     expect(s.criticalOrHigh.map((i) => i.id).sort()).toEqual(['critical-overdue', 'high-ok']);
   });
 
-  it('a cancelled incident (Chapter 2 terminal status) is excluded from open/overdue/criticalOrHigh and never appears in recentlyClosed', () => {
+  it('a cancelled incident (Chapter 2 terminal status) is excluded from open/overdue/criticalOrHigh, but DOES appear in recentTerminal', () => {
     const incidents = [
-      makeIncident({ id: 'cancelled-critical', severity: 'critical', status: 'cancelled', nextUpdateDue: '2026-01-10T10:00:00.000Z' }),
+      makeIncident({
+        id: 'cancelled-critical',
+        severity: 'critical',
+        status: 'cancelled',
+        nextUpdateDue: '2026-01-10T10:00:00.000Z',
+        cancelledAt: '2026-01-09T00:00:00.000Z',
+      }),
       makeIncident({ id: 'open1' }),
     ];
     const s = summarizeDashboard(incidents, NOW);
     expect(s.open.map((i) => i.id)).toEqual(['open1']);
     expect(s.overdue).toEqual([]);
     expect(s.criticalOrHigh).toEqual([]);
-    // recentlyClosed is specifically status === 'closed', not "any terminal status".
-    expect(s.recentlyClosed).toEqual([]);
+    // "נסגרו לאחרונה" covers every terminal outcome -- closed AND cancelled --
+    // not literally status === 'closed'.
+    expect(s.recentTerminal.map((i) => i.id)).toEqual(['cancelled-critical']);
   });
 });
 
@@ -125,7 +132,7 @@ describe('summarizeDashboard: needsAttention / openRest -- no duplicate renderin
   });
 });
 
-describe('summarizeDashboard: recentlyClosed', () => {
+describe('summarizeDashboard: recentTerminal', () => {
   it('includes only closed incidents, newest closedAt first, capped at the limit', () => {
     const incidents = [
       makeIncident({ id: 'open1', status: 'in_progress' }),
@@ -134,7 +141,23 @@ describe('summarizeDashboard: recentlyClosed', () => {
       makeIncident({ id: 'closed-mid', status: 'closed', closedAt: '2026-01-05T00:00:00.000Z' }),
     ];
     const s = summarizeDashboard(incidents, NOW);
-    expect(s.recentlyClosed.map((i) => i.id)).toEqual(['closed-new', 'closed-mid', 'closed-old']);
+    expect(s.recentTerminal.map((i) => i.id)).toEqual(['closed-new', 'closed-mid', 'closed-old']);
+  });
+
+  it('interleaves closed and cancelled incidents by their own terminal timestamp, newest first', () => {
+    const incidents = [
+      makeIncident({ id: 'closed-old', status: 'closed', closedAt: '2026-01-01T00:00:00.000Z' }),
+      makeIncident({ id: 'cancelled-newest', status: 'cancelled', cancelledAt: '2026-01-09T00:00:00.000Z' }),
+      makeIncident({ id: 'closed-mid', status: 'closed', closedAt: '2026-01-05T00:00:00.000Z' }),
+      makeIncident({ id: 'cancelled-old', status: 'cancelled', cancelledAt: '2026-01-02T00:00:00.000Z' }),
+    ];
+    const s = summarizeDashboard(incidents, NOW);
+    expect(s.recentTerminal.map((i) => i.id)).toEqual([
+      'cancelled-newest',
+      'closed-mid',
+      'cancelled-old',
+      'closed-old',
+    ]);
   });
 
   it('caps at the given limit (3-5 useful items, not the whole archive)', () => {
@@ -142,7 +165,7 @@ describe('summarizeDashboard: recentlyClosed', () => {
       makeIncident({ id: `closed-${n}`, status: 'closed', closedAt: `2026-01-0${(n % 9) + 1}T00:00:00.000Z` }),
     );
     const s = summarizeDashboard(incidents, NOW, 5);
-    expect(s.recentlyClosed.length).toBe(5);
+    expect(s.recentTerminal.length).toBe(5);
   });
 });
 
@@ -154,7 +177,7 @@ describe('summarizeDashboard: empty states', () => {
     expect(s.criticalOrHigh).toEqual([]);
     expect(s.needsAttention).toEqual([]);
     expect(s.openRest).toEqual([]);
-    expect(s.recentlyClosed).toEqual([]);
+    expect(s.recentTerminal).toEqual([]);
   });
 
   it('open incidents exist but none are critical -> needsAttention is empty, openRest holds everything open', () => {
@@ -164,10 +187,10 @@ describe('summarizeDashboard: empty states', () => {
     expect(s.openRest.map((i) => i.id).sort()).toEqual(['h1', 'm1']);
   });
 
-  it('no closed incidents -> recentlyClosed is empty', () => {
+  it('no closed or cancelled incidents -> recentTerminal is empty', () => {
     const incidents = [makeIncident({ id: 'o1' })];
     const s = summarizeDashboard(incidents, NOW);
-    expect(s.recentlyClosed).toEqual([]);
+    expect(s.recentTerminal).toEqual([]);
   });
 
   it('exactly one open incident is handled without special-casing', () => {

@@ -36,16 +36,64 @@ const INC2_TEXT = /עיכוב בקבלת נתונים בעמדת הבקרה/;
 const INC3_TEXT = /מערכת גמא עובדת במצב גיבוי/;
 
 describe('top metrics reflect the real seeded data', () => {
-  it('shows open / critical-or-high / overdue counts grounded in the seed', async () => {
+  it('shows open / critical-or-high / overdue counts grounded in the seed, on three equally interactive KPI cards', async () => {
     await loginAs('login-u-admin');
-    const primary = within(main()).getByRole('button', { name: /תקלות פתוחות/ });
-    expect(primary).toHaveTextContent('6');
+    const open = within(main()).getByRole('button', { name: /^תקלות פתוחות: 6\./ });
+    const criticalHigh = within(main()).getByRole('button', { name: /^קריטיות \/ גבוהות: 2\./ });
+    const overdue = within(main()).getByRole('button', { name: /^עדכונים באיחור: 1\./ });
 
-    const criticalHigh = within(main()).getByText('קריטיות / גבוהות').closest('.surface');
-    expect(criticalHigh).toHaveTextContent('2');
+    // All three KPI cards are real <button> elements -- equally interactive,
+    // not just a single primary one.
+    for (const btn of [open, criticalHigh, overdue]) {
+      expect(btn.tagName).toBe('BUTTON');
+    }
+  });
+});
 
-    const overdue = within(main()).getByText('עדכונים באיחור').closest('.surface');
-    expect(overdue).toHaveTextContent('1');
+describe('KPI card popups: each opens the shared IncidentListDialog with the correctly filtered list', () => {
+  it('"תקלות פתוחות" opens a dialog listing every open incident (6), with an accessible close button', async () => {
+    const user = await loginAs('login-u-admin');
+    await user.click(within(main()).getByRole('button', { name: /^תקלות פתוחות: 6\./ }));
+    const dialog = await screen.findByRole('dialog', { name: 'תקלות פתוחות (6)' });
+    const numberLinks = within(dialog)
+      .getAllByRole('link')
+      .filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
+    expect(numberLinks.length).toBe(6);
+    expect(within(dialog).getByRole('button', { name: 'סגירת החלון' })).toBeInTheDocument();
+  });
+
+  it('"קריטיות / גבוהות" opens a dialog limited to open critical/high incidents only (1 critical + 1 high, not all 6 open)', async () => {
+    const user = await loginAs('login-u-admin');
+    await user.click(within(main()).getByRole('button', { name: /^קריטיות \/ גבוהות: 2\./ }));
+    const dialog = await screen.findByRole('dialog', { name: 'תקלות קריטיות / גבוהות (2)' });
+    const numberLinks = within(dialog)
+      .getAllByRole('link')
+      .filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
+    expect(numberLinks.length).toBe(2);
+    expect(within(dialog).getByText('קריטית')).toBeInTheDocument();
+    expect(within(dialog).getByText('גבוהה')).toBeInTheDocument();
+  });
+
+  it('"עדכונים באיחור" opens a dialog limited to incidents currently overdue for an update (1, not all 6 open)', async () => {
+    const user = await loginAs('login-u-admin');
+    await user.click(within(main()).getByRole('button', { name: /^עדכונים באיחור: 1\./ }));
+    const dialog = await screen.findByRole('dialog', { name: 'עדכונים באיחור (1)' });
+    const numberLinks = within(dialog)
+      .getAllByRole('link')
+      .filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
+    expect(numberLinks.length).toBe(1);
+  });
+
+  it('only one popup is open at a time, and closing returns to the plain dashboard', async () => {
+    const user = await loginAs('login-u-admin');
+    await user.click(within(main()).getByRole('button', { name: /^תקלות פתוחות: 6\./ }));
+    await screen.findByRole('dialog', { name: 'תקלות פתוחות (6)' });
+    await user.click(screen.getByRole('button', { name: 'סגירת החלון' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.click(within(main()).getByRole('button', { name: /^עדכונים באיחור: 1\./ }));
+    expect(await screen.findByRole('dialog', { name: 'עדכונים באיחור (1)' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'תקלות פתוחות (6)' })).not.toBeInTheDocument();
   });
 });
 
@@ -79,6 +127,46 @@ describe('information architecture: urgent, open, recently-closed', () => {
     const numberLinks = links.filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
     expect(numberLinks.length).toBe(2);
     expect(within(closedSection).getByRole('link', { name: 'לכל הארכיון' })).toHaveAttribute('href', '/archive');
+  });
+
+  it('"נסגרו לאחרונה" includes a cancelled incident alongside closed ones, each with its own status label', async () => {
+    // Wraps (not replaces) listIncidents: the dashboard's own real closed
+    // fixtures (inc-5/inc-6) must remain present -- only a synthetic
+    // cancelled incident, more recent than either, is appended.
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const original = LocalDemoRepository.prototype.listIncidents;
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'listIncidents')
+      .mockImplementation(async function (this: InstanceType<typeof LocalDemoRepository>, ...args) {
+        const real = await original.apply(this, args);
+        return [
+          ...real,
+          {
+            ...real[0],
+            id: 'inc-cancelled-test',
+            number: '2026-999',
+            status: 'cancelled' as const,
+            severity: 'medium' as const,
+            closedAt: null,
+            closedBy: null,
+            cancelledAt: new Date().toISOString(),
+            cancelledBy: real[0].createdBy,
+            cancellationReason: 'נפתחה בטעות (לבדיקה)',
+          },
+        ];
+      });
+
+    await loginAs('login-u-admin');
+    const closedHeading = within(main()).getByRole('heading', { name: 'נסגרו לאחרונה' });
+    const closedSection = closedHeading.closest('section') as HTMLElement;
+    expect(within(closedSection).getByText('2026-999')).toBeInTheDocument();
+    expect(within(closedSection).getByText('בוטלה')).toBeInTheDocument();
+    // The two real closed fixtures are unaffected -- three rows total now.
+    const links = within(closedSection).getAllByRole('link');
+    const numberLinks = links.filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
+    expect(numberLinks.length).toBe(3);
+
+    spy.mockRestore();
   });
 });
 
