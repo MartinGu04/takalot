@@ -108,7 +108,10 @@ export function IncidentCard({
             <span className="text-base font-extrabold text-brand-700 dark:text-brand-400">{incident.number}</span>
             <SeverityBadge severity={incident.severity} />
           </div>
-          <p className="mt-1 truncate text-sm text-muted">
+          {/* Deliberately no truncate: system/location are identifying facts,
+              not decoration -- they must wrap rather than lose text to an
+              ellipsis on a narrow card. */}
+          <p className="mt-1 break-words text-sm text-muted">
             מערכת: <span className="font-medium text-text-secondary">{systemName}</span>
             {' · '}
             מיקום: <span className="font-medium text-text-secondary">{locationName}</span>

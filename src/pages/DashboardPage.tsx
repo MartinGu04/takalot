@@ -3,13 +3,14 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useIncidents, useLocations, useProfiles, useSystems } from '../data/hooks';
 import { useAuth } from '../auth/AuthContext';
-import { summarizeDashboard } from '../domain/dashboardSummary';
+import { summarizeDashboard, terminalAt } from '../domain/dashboardSummary';
 import type { Incident } from '../domain/types';
-import { IncidentCard } from '../components/incident';
+import { IncidentCard, StatusBadge } from '../components/incident';
 import { EmptyState, ErrorState, Spinner } from '../components/ui';
 import { hasCapability } from '../domain/permissions';
 import { IconAlertTriangle, IconClock, IconPulse } from '../components/icons';
-import { OpenIncidentsSummary } from '../components/OpenIncidentsSummary';
+import { IncidentListDialog } from '../components/IncidentListDialog';
+import { formatDateTime, formatRelative } from '../lib/time';
 import type { SVGProps } from 'react';
 
 function summarySentence(open: Incident[], overdue: Incident[]): string {
@@ -24,9 +25,9 @@ function summarySentence(open: Incident[], overdue: Incident[]): string {
   return parts.join('. ') + '.';
 }
 
-type StatTone = 'brand' | 'red' | 'orange';
+type KpiTone = 'brand' | 'red' | 'orange';
 
-const statToneStyles: Record<StatTone, { iconBg: string; iconColor: string; value: string }> = {
+const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value: string }> = {
   brand: {
     iconBg: 'bg-brand-50 dark:bg-brand-950/60',
     iconColor: 'text-brand-600 dark:text-brand-400',
@@ -44,80 +45,115 @@ const statToneStyles: Record<StatTone, { iconBg: string; iconColor: string; valu
   },
 };
 
-/** The single primary summary metric — visually larger than the secondary stats beside it, and clickable. */
-function PrimaryStat({
+/**
+ * A single KPI card shape shared by all three top-of-page metrics -- equal
+ * dimensions, equally interactive (opens the matching IncidentListDialog),
+ * restrained color (a tone only reads as red/orange once its count is
+ * actually above zero; at zero every card reads as calm/neutral so an empty
+ * dashboard never looks alarming). The label and context line are never
+ * truncated -- these are operational facts, not decoration, and must stay
+ * fully readable at every supported width.
+ */
+function KpiCard({
   icon: Icon,
   label,
   value,
+  context,
+  tone = 'brand',
   onClick,
 }: {
   icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
   label: string;
   value: number;
+  context: string;
+  tone?: KpiTone;
   onClick: () => void;
 }) {
+  const t = kpiToneStyles[value > 0 ? tone : 'brand'];
   return (
     <button
       type="button"
       onClick={onClick}
-      className="surface-interactive flex min-w-0 items-center gap-4 p-4 text-right sm:p-5"
+      aria-label={`${label}: ${value}. ${context}. לחיצה להצגת הרשימה.`}
+      className="surface-interactive flex min-w-0 flex-col gap-3 p-4 text-right sm:p-5"
     >
-      <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-950/60 dark:text-brand-400 sm:size-16">
-        <Icon className="size-7 sm:size-8" />
-      </span>
+      <div className="flex min-w-0 items-center gap-3">
+        <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
+          <Icon className="size-5.5" />
+        </span>
+        <div className={`text-3xl font-extrabold leading-none ${t.value} sm:text-4xl`}>{value}</div>
+      </div>
       <div className="min-w-0">
-        <div className="text-4xl font-extrabold leading-tight text-text-primary sm:text-5xl">{value}</div>
-        <div className="truncate text-sm font-medium text-secondary sm:text-base">{label}</div>
+        {/* Deliberately no truncate: "עדכונים באיחור" / "קריטיות / גבוהות" /
+            "תקלות פתוחות" must wrap to two lines on narrow screens rather
+            than lose text to an ellipsis -- these are operational labels,
+            not decoration. */}
+        <div className="text-sm font-bold leading-snug text-text-primary">{label}</div>
+        <div className="mt-0.5 text-xs leading-snug text-muted">{context}</div>
       </div>
     </button>
-  );
-}
-
-/** A secondary summary stat -- reads as clearly important, but stays
- *  visually lighter than PrimaryStat (smaller icon, no button affordance). */
-function Stat({
-  icon: Icon,
-  label,
-  value,
-  tone = 'brand',
-}: {
-  icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
-  label: string;
-  value: number;
-  tone?: StatTone;
-}) {
-  const t = statToneStyles[value > 0 ? tone : 'brand'];
-  return (
-    <div className="surface flex min-w-0 items-center gap-3 p-4 sm:p-5">
-      <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
-        <Icon className="size-5" />
-      </span>
-      <div className="min-w-0">
-        <div className={`text-3xl font-extrabold leading-none ${t.value}`}>{value}</div>
-        {/* Deliberately no truncate: "עדכונים באיחור" / "קריטיות / גבוהות" must
-            wrap to two lines on narrow screens rather than lose text to an
-            ellipsis -- these are operational labels, not decoration. */}
-        <div className="mt-1 text-sm font-semibold leading-snug text-secondary">{label}</div>
-      </div>
-    </div>
   );
 }
 
 function Section({
   title,
   incidents,
+  emptyState,
   children,
 }: {
   title: string;
   incidents: Incident[];
+  emptyState?: React.ReactNode;
   children: (incident: Incident) => React.ReactNode;
 }) {
-  if (incidents.length === 0) return null;
+  if (incidents.length === 0 && !emptyState) return null;
   return (
     <section className="mt-6">
-      <h2 className="section-title mb-2">{title}</h2>
-      <div className="flex flex-col gap-2">{incidents.map((i) => children(i))}</div>
+      <div className="mb-2 flex items-baseline gap-2">
+        <h2 className="section-title">{title}</h2>
+        <span className="text-sm font-medium text-muted">({incidents.length})</span>
+      </div>
+      {incidents.length === 0 ? emptyState : <div className="flex flex-col gap-2">{incidents.map((i) => children(i))}</div>}
     </section>
+  );
+}
+
+/** Compact row for "נסגרו לאחרונה" -- both closed and cancelled incidents,
+ *  each labeled with its own status badge and the actual moment it reached
+ *  that terminal state (never the generic "closed" text regardless of what
+ *  actually happened). The whole row is the link, matching every other
+ *  incident-list pattern in the app. */
+function RecentTerminalRow({
+  incident,
+  systemName,
+  locationName,
+  now,
+}: {
+  incident: Incident;
+  systemName: string;
+  locationName: string;
+  now: Date;
+}) {
+  const at = terminalAt(incident);
+  const verb = incident.status === 'cancelled' ? 'בוטלה' : 'נסגרה';
+  return (
+    <Link
+      to={`/incidents/${incident.id}`}
+      className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-hover"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <StatusBadge status={incident.status} />
+        <span className="font-bold text-brand-700 dark:text-brand-400">{incident.number}</span>
+        <span className="text-sm text-secondary">
+          {systemName} · {locationName}
+        </span>
+      </div>
+      {at && (
+        <span className="shrink-0 text-xs text-muted" title={formatDateTime(at)}>
+          {verb} {formatRelative(at, now)}
+        </span>
+      )}
+    </Link>
   );
 }
 
@@ -127,7 +163,7 @@ export default function DashboardPage() {
   const { data: profiles } = useProfiles();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
-  const [openSummaryOpen, setOpenSummaryOpen] = useState(false);
+  const [activePopup, setActivePopup] = useState<'open' | 'criticalOrHigh' | 'overdue' | null>(null);
   const now = new Date();
 
   const derived = useMemo(() => summarizeDashboard(incidents ?? [], now), [incidents, now.getTime()]);
@@ -157,17 +193,30 @@ export default function DashboardPage() {
         {summarySentence(derived.open, derived.overdue)}
       </p>
 
-      <div className="mt-4 flex flex-col gap-2.5 sm:grid sm:grid-cols-3 sm:items-stretch">
-        <PrimaryStat
+      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        <KpiCard
           icon={IconPulse}
           label="תקלות פתוחות"
           value={derived.open.length}
-          onClick={() => setOpenSummaryOpen(true)}
+          context="כל התקלות הפעילות כרגע"
+          onClick={() => setActivePopup('open')}
         />
-        <div className="grid grid-cols-2 gap-2.5 sm:contents">
-          <Stat icon={IconAlertTriangle} label="קריטיות / גבוהות" value={derived.criticalOrHigh.length} tone="red" />
-          <Stat icon={IconClock} label="עדכונים באיחור" value={derived.overdue.length} tone="red" />
-        </div>
+        <KpiCard
+          icon={IconAlertTriangle}
+          label="קריטיות / גבוהות"
+          value={derived.criticalOrHigh.length}
+          context="בחומרה קריטית או גבוהה"
+          tone="red"
+          onClick={() => setActivePopup('criticalOrHigh')}
+        />
+        <KpiCard
+          icon={IconClock}
+          label="עדכונים באיחור"
+          value={derived.overdue.length}
+          context="ממתינות לעדכון מעבר לזמן היעד"
+          tone="orange"
+          onClick={() => setActivePopup('overdue')}
+        />
       </div>
 
       {derived.open.length === 0 && (
@@ -183,10 +232,20 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <Section title="דורש טיפול עכשיו" incidents={derived.needsAttention}>{card}</Section>
+      <Section
+        title="דורש טיפול עכשיו"
+        incidents={derived.needsAttention}
+        emptyState={
+          <div className="rounded-xl border border-hairline bg-surface/60 px-4 py-3 text-sm text-secondary">
+            אין כרגע תקלות שדורשות טיפול מיידי.
+          </div>
+        }
+      >
+        {card}
+      </Section>
       <Section title="תקלות פתוחות" incidents={derived.openRest}>{card}</Section>
 
-      {derived.recentlyClosed.length > 0 && (
+      {derived.recentTerminal.length > 0 && (
         <section className="mt-8">
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <h2 className="group-title">נסגרו לאחרונה</h2>
@@ -194,27 +253,55 @@ export default function DashboardPage() {
               לכל הארכיון
             </Link>
           </div>
-          <ul className="flex flex-col gap-1">
-            {derived.recentlyClosed.map((i) => (
-              <li key={i.id} className="text-sm">
-                <Link to={`/incidents/${i.id}`} className="text-brand-700 hover:underline dark:text-brand-400">
-                  {i.number}
-                </Link>{' '}
-                <span className="text-muted">
-                  {systemName(i.systemId)} — נסגרה
-                </span>
-              </li>
+          <div className="surface flex flex-col divide-y divide-hairline p-1">
+            {derived.recentTerminal.map((i) => (
+              <RecentTerminalRow
+                key={i.id}
+                incident={i}
+                systemName={systemName(i.systemId)}
+                locationName={locationName(i.locationId)}
+                now={now}
+              />
             ))}
-          </ul>
+          </div>
         </section>
       )}
 
-      <OpenIncidentsSummary
-        open={openSummaryOpen}
-        onClose={() => setOpenSummaryOpen(false)}
+      <IncidentListDialog
+        open={activePopup === 'open'}
+        onClose={() => setActivePopup(null)}
+        titleBase="תקלות פתוחות"
         incidents={derived.open}
         profiles={profiles}
         systemName={systemName}
+        locationName={locationName}
+        emptyMessage="אין תקלות פתוחות כרגע."
+        viewAllHref="/incidents"
+        viewAllLabel="לכל התקלות הפתוחות"
+      />
+      <IncidentListDialog
+        open={activePopup === 'criticalOrHigh'}
+        onClose={() => setActivePopup(null)}
+        titleBase="תקלות קריטיות / גבוהות"
+        incidents={derived.criticalOrHigh}
+        profiles={profiles}
+        systemName={systemName}
+        locationName={locationName}
+        emptyMessage="אין כרגע תקלות פתוחות בחומרה קריטית או גבוהה."
+        viewAllHref="/incidents?severity=critical,high"
+        viewAllLabel="לכל התקלות הקריטיות / גבוהות"
+      />
+      <IncidentListDialog
+        open={activePopup === 'overdue'}
+        onClose={() => setActivePopup(null)}
+        titleBase="עדכונים באיחור"
+        incidents={derived.overdue}
+        profiles={profiles}
+        systemName={systemName}
+        locationName={locationName}
+        emptyMessage="אין כרגע תקלות עם עדכון באיחור."
+        viewAllHref="/incidents?overdue=1"
+        viewAllLabel="לכל התקלות באיחור"
       />
     </div>
   );
