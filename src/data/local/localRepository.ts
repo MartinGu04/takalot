@@ -845,8 +845,13 @@ export class LocalDemoRepository implements Repository {
       severity: input.severity,
       status: input.status,
       operationalImpact: input.operationalImpact.trim(),
+      // ownerUserId is mandatory and ownerExternalName is rejected outright
+      // when non-blank (createIncidentSchema's own superRefine, mirroring
+      // create_incident's migration-0019 database check) -- by the time
+      // parseOrThrow above has returned, ownerExternalName is guaranteed
+      // blank here.
       ownerUserId: input.ownerUserId,
-      ownerExternalName: input.ownerUserId ? null : (input.ownerExternalName ?? '').trim() || null,
+      ownerExternalName: null,
       discoveredAt: input.discoveredAt,
       createdAt: ts,
       createdBy: actor.id,
