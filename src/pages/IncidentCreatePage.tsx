@@ -26,6 +26,10 @@ type FormValues = {
   noDeadlineReason: string;
   reportedToOps: CreateIncidentInput['reportedToOps'];
   reportedToOpsRecipient: string;
+  reportedToComms: 'no' | 'yes';
+  reportedToCommsRecipient: string;
+  wisdomReported: 'no' | 'yes';
+  wisdomIncidentNumber: string;
 };
 
 function defaultValues(): FormValues {
@@ -44,6 +48,10 @@ function defaultValues(): FormValues {
     noDeadlineReason: '',
     reportedToOps: 'no',
     reportedToOpsRecipient: '',
+    reportedToComms: 'no',
+    reportedToCommsRecipient: '',
+    wisdomReported: 'no',
+    wisdomIncidentNumber: '',
   };
 }
 
@@ -65,6 +73,8 @@ export default function IncidentCreatePage() {
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [deadlineError, setDeadlineError] = useState<string | undefined>();
   const [recipientError, setRecipientError] = useState<string | undefined>();
+  const [commsRecipientError, setCommsRecipientError] = useState<string | undefined>();
+  const [wisdomNumberError, setWisdomNumberError] = useState<string | undefined>();
   const [validationError, setValidationError] = useState<string | undefined>();
 
   const createMutation = useAppMutation(
@@ -82,6 +92,8 @@ export default function IncidentCreatePage() {
     setOwnerError(undefined);
     setDeadlineError(undefined);
     setRecipientError(undefined);
+    setCommsRecipientError(undefined);
+    setWisdomNumberError(undefined);
     setValidationError(undefined);
     const input: CreateIncidentInput = {
       systemId: form.systemId,
@@ -98,6 +110,10 @@ export default function IncidentCreatePage() {
       noDeadlineReason: form.hasDeadline ? null : form.noDeadlineReason,
       reportedToOps: form.reportedToOps,
       reportedToOpsRecipient: form.reportedToOps === 'yes' ? form.reportedToOpsRecipient : null,
+      reportedToComms: form.reportedToComms === 'yes',
+      reportedToCommsRecipient: form.reportedToComms === 'yes' ? form.reportedToCommsRecipient : null,
+      wisdomReported: form.wisdomReported === 'yes',
+      wisdomIncidentNumber: form.wisdomReported === 'yes' ? form.wisdomIncidentNumber : null,
     };
     const parsed = createIncidentSchema.safeParse(input);
     if (!parsed.success) {
@@ -105,6 +121,8 @@ export default function IncidentCreatePage() {
         if (issue.path[0] === 'ownerUserId') setOwnerError(issue.message);
         else if (issue.path[0] === 'nextUpdateDue') setDeadlineError(issue.message);
         else if (issue.path[0] === 'reportedToOpsRecipient') setRecipientError(issue.message);
+        else if (issue.path[0] === 'reportedToCommsRecipient') setCommsRecipientError(issue.message);
+        else if (issue.path[0] === 'wisdomIncidentNumber') setWisdomNumberError(issue.message);
         else setValidationError(issue.message);
       }
       return;
@@ -275,6 +293,64 @@ export default function IncidentCreatePage() {
                 {...register('reportedToOpsRecipient')}
                 placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
                 maxLength={200}
+              />
+            )}
+          </Field>
+        )}
+
+        <Field label="האם דווח לתקשוב למבצעים?">
+          {(a) => (
+            <Select
+              {...a}
+              {...register('reportedToComms', {
+                onChange: (e) => {
+                  if (e.target.value !== 'yes') setValue('reportedToCommsRecipient', '');
+                },
+              })}
+            >
+              <option value="no">לא</option>
+              <option value="yes">כן</option>
+            </Select>
+          )}
+        </Field>
+
+        {values.reportedToComms === 'yes' && (
+          <Field label="למי דווח?" required error={commsRecipientError}>
+            {(a) => (
+              <Input
+                {...a}
+                {...register('reportedToCommsRecipient')}
+                placeholder="לדוגמה: תקשוב מוקד מבצעים / שם"
+                maxLength={200}
+              />
+            )}
+          </Field>
+        )}
+
+        <Field label="האם נפתחה תקלה ב-WISDOM?">
+          {(a) => (
+            <Select
+              {...a}
+              {...register('wisdomReported', {
+                onChange: (e) => {
+                  if (e.target.value !== 'yes') setValue('wisdomIncidentNumber', '');
+                },
+              })}
+            >
+              <option value="no">לא</option>
+              <option value="yes">כן</option>
+            </Select>
+          )}
+        </Field>
+
+        {values.wisdomReported === 'yes' && (
+          <Field label="מספר תקלה ב-WISDOM" required error={wisdomNumberError}>
+            {(a) => (
+              <Input
+                {...a}
+                {...register('wisdomIncidentNumber')}
+                placeholder="לדוגמה: WISDOM-12345"
+                maxLength={100}
               />
             )}
           </Field>

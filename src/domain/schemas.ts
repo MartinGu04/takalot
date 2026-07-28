@@ -93,6 +93,15 @@ export const createIncidentSchema = z
     noDeadlineReason: z.string().max(500).nullable(),
     ...ownerFields,
     ...reportedToOpsFields,
+    // Opening-time-only questions -- both plain booleans (unlike
+    // reportedToOps, there is no third "not_required" state here), each with
+    // a dependent field that is required exactly when its question is true
+    // and must otherwise be absent (enforced below and, authoritatively, by
+    // migration 0021's own bidirectional CHECK constraints).
+    reportedToComms: z.boolean(),
+    reportedToCommsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable(),
+    wisdomReported: z.boolean(),
+    wisdomIncidentNumber: z.string().max(100, 'מספר תקלה ב-WISDOM: עד 100 תווים').nullable(),
   })
   .superRefine((data, ctx) => {
     // Unlike every other flow that shares ownerFields (update/close/assign/
@@ -128,6 +137,20 @@ export const createIncidentSchema = z
       });
     }
     checkReportedToOpsRecipient(data, ctx);
+    if (data.reportedToComms && !(data.reportedToCommsRecipient ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reportedToCommsRecipient'],
+        message: 'יש להזין למי דווח',
+      });
+    }
+    if (data.wisdomReported && !(data.wisdomIncidentNumber ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['wisdomIncidentNumber'],
+        message: 'יש להזין מספר תקלה ב-WISDOM',
+      });
+    }
   });
 
 export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;

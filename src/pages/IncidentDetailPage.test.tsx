@@ -350,3 +350,50 @@ describe('incident cancellation: dialog and submission', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'ביטול תקלה' })).not.toBeInTheDocument());
   });
 });
+
+// Migration 0021 (incident-opening completion): תקשוב למבצעים / WISDOM must
+// render correctly both for a freshly created incident (already covered end
+// to end in IncidentCreatePage.test.tsx) and for PRE-EXISTING seeded
+// incidents that were never created through that new form -- proving the
+// detail page reads these fields correctly for "old" data too, not just
+// data shaped by the newest create-flow code path.
+const INC2_TEXT = /עיכוב בקבלת נתונים בעמדת הבקרה/; // inc-2: reportedToComms = true (seed.ts)
+const INC4_TEXT = /אין פגיעה תפקודית\. במעקב טמפרטורה כל שעתיים/; // inc-4: wisdomReported = true (seed.ts)
+
+// Demo login always redirects to '/' (LoginPage.tsx); like the helpers
+// above, incidents must be reached via a real link click from the
+// dashboard, not by pre-seeding the URL.
+async function openIncidentDetailByTextAsAdmin(text: RegExp) {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByTestId('login-u-admin'));
+  const card = await within(main()).findByText(text);
+  await user.click(card.closest('a.incident-card') as HTMLElement);
+  await within(main()).findByText('גורם מטפל נוכחי'); // confirms the detail page loaded
+  return { user };
+}
+
+describe('incident details: תקשוב למבצעים / WISDOM (migration 0021 parity)', () => {
+  it('a seeded incident with תקשוב למבצעים כן shows the reported recipient', async () => {
+    await openIncidentDetailByTextAsAdmin(INC2_TEXT);
+
+    const commsRow = within(main()).getByText('תקשוב למבצעים').closest('div') as HTMLElement;
+    expect(within(commsRow).getByText('כן')).toBeInTheDocument();
+    expect(within(commsRow).getByText(/תקשוב מוקד מבצעים \(דמו\)/)).toBeInTheDocument();
+  });
+
+  it('a seeded incident with WISDOM כן shows its incident number', async () => {
+    await openIncidentDetailByTextAsAdmin(INC4_TEXT);
+    const wisdomRow = within(main()).getByText('WISDOM').closest('div') as HTMLElement;
+    expect(within(wisdomRow).getByText('כן')).toBeInTheDocument();
+    expect(within(wisdomRow).getByText(/WISDOM-2026-0412/)).toBeInTheDocument();
+  });
+
+  it('an incident with no answers set shows לא for both fields with no dependent value', async () => {
+    await openIncidentDetailByTextAsAdmin(INC1_TEXT);
+    const commsRow1 = within(main()).getByText('תקשוב למבצעים').closest('div') as HTMLElement;
+    expect(within(commsRow1).getByText('לא')).toBeInTheDocument();
+    const wisdomRow1 = within(main()).getByText('WISDOM').closest('div') as HTMLElement;
+    expect(within(wisdomRow1).getByText('לא')).toBeInTheDocument();
+  });
+});

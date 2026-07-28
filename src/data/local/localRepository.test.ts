@@ -39,6 +39,10 @@ function baseCreateInput(overrides: Partial<CreateIncidentInput> = {}): CreateIn
     nextUpdateDue: new Date(FIXED_NOW.getTime() + 4 * 3600_000).toISOString(),
     noDeadlineReason: null,
     reportedToOps: 'no',
+    reportedToComms: false,
+    reportedToCommsRecipient: null,
+    wisdomReported: false,
+    wisdomIncidentNumber: null,
     ...overrides,
   };
 }
@@ -139,6 +143,118 @@ describe('creation ownership requirements (Chapter 2, mirrors migration 0019)', 
     await expect(
       repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: 'not-a-real-profile-id' })),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+});
+
+// Mirrors migration 0021's incident-opening completion: תקשוב למבצעים
+// (reported_to_comms/reported_to_comms_recipient) and WISDOM
+// (wisdom_reported/wisdom_incident_number). Every test here calls the
+// repository directly, bypassing IncidentCreatePage entirely -- proving a
+// direct repository/RPC caller cannot reach a state the real backend would
+// reject, exactly like the ownership tests above.
+describe('creation opening-time reporting: תקשוב למבצעים / WISDOM (mirrors migration 0021)', () => {
+  it('both לא (the default): succeeds with no dependent value stored', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    expect(incident.reportedToComms).toBe(false);
+    expect(incident.reportedToCommsRecipient).toBeNull();
+    expect(incident.wisdomReported).toBe(false);
+    expect(incident.wisdomIncidentNumber).toBeNull();
+  });
+
+  it('rejects תקשוב למבצעים כן without a למי דווח value, from a direct repository call', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: null })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('rejects תקשוב למבצעים כן with a whitespace-only למי דווח value', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: '   ' })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('succeeds with תקשוב למבצעים כן and a trimmed recipient', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = await repo.createIncident(
+      supervisor1,
+      baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: '  תקשוב מוקד  ' }),
+    );
+    expect(incident.reportedToComms).toBe(true);
+    expect(incident.reportedToCommsRecipient).toBe('תקשוב מוקד');
+  });
+
+  it('rejects WISDOM כן without an incident number, from a direct repository call', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.createIncident(supervisor1, baseCreateInput({ wisdomReported: true, wisdomIncidentNumber: null })),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('succeeds with WISDOM כן and a trimmed incident number, kept as a plain string', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = await repo.createIncident(
+      supervisor1,
+      baseCreateInput({ wisdomReported: true, wisdomIncidentNumber: '  WISDOM-2026-0099  ' }),
+    );
+    expect(incident.wisdomReported).toBe(true);
+    expect(incident.wisdomIncidentNumber).toBe('WISDOM-2026-0099');
+  });
+
+  it('persisted values (both כן) survive a repository refetch, and the created event note carries both answers', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const created = await repo.createIncident(
+      supervisor1,
+      baseCreateInput({
+        reportedToComms: true,
+        reportedToCommsRecipient: 'תקשוב מוקד',
+        wisdomReported: true,
+        wisdomIncidentNumber: 'WISDOM-1',
+      }),
+    );
+
+    // Simulate a page refresh: a fresh getIncident call, not the object
+    // returned by createIncident itself.
+    const refetched = await repo.getIncident(supervisor1, created.id);
+    expect(refetched?.reportedToComms).toBe(true);
+    expect(refetched?.reportedToCommsRecipient).toBe('תקשוב מוקד');
+    expect(refetched?.wisdomReported).toBe(true);
+    expect(refetched?.wisdomIncidentNumber).toBe('WISDOM-1');
+
+    const events = await repo.getIncidentEvents(supervisor1, created.id);
+    const createdEvent = events.find((e) => e.type === 'created');
+    expect(createdEvent?.note).toContain('תקשוב למבצעים: כן (דווח ל: תקשוב מוקד)');
+    expect(createdEvent?.note).toContain('WISDOM: כן (מספר תקלה: WISDOM-1)');
+    // No separate event type was created for either answer.
+    expect(events.some((e) => e.type.toString().includes('comms'))).toBe(false);
+  });
+
+  it('existing (pre-feature) incidents remain compatible: seeded incidents without these answers read as לא with no dependent value', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const inc1 = await repo.getIncident(supervisor1, 'inc-1');
+    expect(inc1?.reportedToComms).toBe(false);
+    expect(inc1?.reportedToCommsRecipient).toBeNull();
+    expect(inc1?.wisdomReported).toBe(false);
+    expect(inc1?.wisdomIncidentNumber).toBeNull();
+  });
+
+  it('does not regress incident numbering, ownership, or permissions when both answers are כן', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const before = await repo.createIncident(supervisor1, baseCreateInput());
+    const after = await repo.createIncident(
+      supervisor1,
+      baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: 'x', wisdomReported: true, wisdomIncidentNumber: 'y' }),
+    );
+    // Numbering still increments normally alongside the new fields.
+    expect(after.number).not.toBe(before.number);
+    expect(after.ownerUserId).toBe(DEMO_USERS.tech1);
+    // A technician still cannot create an incident at all, regardless of
+    // these new fields being populated.
+    await expect(
+      repo.createIncident(tech1, baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: 'x' })),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
 

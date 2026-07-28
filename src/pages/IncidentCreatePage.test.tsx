@@ -211,10 +211,91 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     expect(within(timeline).getByText('פתיחת תקלה')).toBeInTheDocument();
     expect(within(timeline).getByText(/נבדק ראשונית לצורך הבדיקה/)).toBeInTheDocument();
 
+    // Neither opening-time question was touched -- both default to לא, with
+    // no dependent value, on the details page and in the opening history.
+    expect(within(main()).getByText('תקשוב למבצעים')).toBeInTheDocument();
+    expect(within(main()).getByText('WISDOM')).toBeInTheDocument();
+    expect(within(timeline).getByText(/תקשוב למבצעים: לא/)).toBeInTheDocument();
+    expect(within(timeline).getByText(/WISDOM: לא/)).toBeInTheDocument();
+
     // Open-incident views: the new incident shows up on the active list.
     const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' });
     await user.click(within(sidebar).getByRole('link', { name: 'תקלות' }));
     await within(main()).findByRole('heading', { name: 'תקלות' });
     expect(within(main()).getByText(number)).toBeInTheDocument();
+  });
+});
+
+describe('IncidentCreatePage: תקשוב למבצעים ו-WISDOM', () => {
+  it('both default to לא, with no dependent field shown', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
+    expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    void user;
+  });
+
+  it('selecting כן reveals the dependent field, and blocks submission without a value', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    expect(await screen.findByLabelText(/^למי דווח\?/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    expect(await screen.findByText('יש להזין למי דווח')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'פתיחת תקלה' })).toBeInTheDocument(); // never submitted
+  });
+
+  it('switching תקשוב למבצעים from כן back to לא clears the previously entered value', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), 'תקשוב מוקד זמני');
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    // Switch back to כן: the field must be empty, not restored with the
+    // stale value -- proving it was actually cleared, not just hidden.
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    expect(await screen.findByLabelText(/^למי דווח\?/)).toHaveValue('');
+  });
+
+  it('WISDOM כן requires an incident number, and switching back to לא clears it', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    expect(await screen.findByText('יש להזין מספר תקלה ב-WISDOM')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-9001');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'no');
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    expect(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/)).toHaveValue('');
+  });
+
+  it('creates the incident end-to-end with both answers כן, trimmed values shown on details and in the opening history', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), '  תקשוב מוקד מבצעים  ');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), '  WISDOM-7789  ');
+
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await screen.findByText(/נפתחה בהצלחה/);
+
+    const commsRow = within(main()).getByText('תקשוב למבצעים').closest('div') as HTMLElement;
+    expect(within(commsRow).getByText(/תקשוב מוקד מבצעים/)).toBeInTheDocument();
+    const wisdomRow = within(main()).getByText('WISDOM').closest('div') as HTMLElement;
+    expect(within(wisdomRow).getByText(/WISDOM-7789/)).toBeInTheDocument();
+
+    const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    expect(within(timeline).getByText(/תקשוב למבצעים: כן \(דווח ל: תקשוב מוקד מבצעים\)/)).toBeInTheDocument();
+    expect(within(timeline).getByText(/WISDOM: כן \(מספר תקלה: WISDOM-7789\)/)).toBeInTheDocument();
   });
 });
