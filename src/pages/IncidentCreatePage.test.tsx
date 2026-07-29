@@ -413,3 +413,58 @@ describe('IncidentCreatePage: form resets fully after a successful creation', ()
     await waitFor(() => expect(screen.getByLabelText(/^בעל אחריות פנימי/)).toHaveValue('u-admin'));
   });
 });
+
+describe('IncidentCreatePage: 600-character limit (פעולות שבוצעו עד כה)', () => {
+  it('caps the field at maxLength 600 and shows a live character counter', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const actionsTaken = screen.getByLabelText(/^פעולות שבוצעו עד כה/);
+    expect(actionsTaken).toHaveAttribute('maxLength', '600');
+    expect(screen.getByText('0/600')).toBeInTheDocument();
+
+    await user.type(actionsTaken, 'א'.repeat(15));
+    expect(screen.getByText('15/600')).toBeInTheDocument();
+    // The native maxLength attribute itself prevents ever typing (or
+    // pasting) past the boundary through real user interaction -- the
+    // 601-character rejection is exercised directly at the schema
+    // (schemas.test.ts) and RPC (SQL suite) layers instead.
+  });
+});
+
+describe('IncidentCreatePage: draft discarded on navigating away from the create route', () => {
+  it('clears the saved draft when leaving /incidents/new, so returning later starts clean', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), 'תקשוב זמני');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-2222');
+
+    // Navigate away WITHOUT submitting -- to a completely different route,
+    // not back to the same create page -- exactly like a user abandoning
+    // the form mid-entry.
+    const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+    await user.click(within(sidebar).getByRole('link', { name: 'ארכיון' }));
+    await within(main()).findByRole('heading', { name: 'ארכיון תקלות סגורות ומבוטלות' });
+
+    // Return to the create form -- a fresh mount. The abandoned draft must
+    // NOT be restored: everything is back to clean defaults.
+    await goToCreatePage(user);
+
+    expect((screen.getByLabelText(/^מערכת \/ עמדה/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^מיקום/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // The internal owner defaults again to the current signed-in user, not
+    // to u-tech-1 (the abandoned draft's manually-selected owner).
+    await waitFor(() => expect(screen.getByLabelText(/^בעל אחריות פנימי/)).toHaveValue('u-admin'));
+  });
+});

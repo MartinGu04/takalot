@@ -4,7 +4,7 @@
 // Hebrew message format). update/close schemas keep their own, unrelated
 // limits and are asserted here as an explicit control.
 import { describe, expect, it } from 'vitest';
-import { createIncidentSchema, updateIncidentSchema, type CreateIncidentInput } from './schemas';
+import { createIncidentSchema, updateIncidentSchema, technicianUpdateSchema, type CreateIncidentInput } from './schemas';
 
 function baseInput(overrides: Partial<CreateIncidentInput> = {}) {
   return {
@@ -74,5 +74,52 @@ describe('createIncidentSchema: 400-character limits', () => {
       reportedToOps: 'no',
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('createIncidentSchema: 600-character limit on פעולות שבוצעו עד כה', () => {
+  it('accepts actionsTaken at exactly 600 characters (the boundary)', () => {
+    const result = createIncidentSchema.safeParse(baseInput({ actionsTaken: 'א'.repeat(600) }));
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects actionsTaken at 601 characters with the exact Hebrew message', () => {
+    const result = createIncidentSchema.safeParse(baseInput({ actionsTaken: 'א'.repeat(601) }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((i) => i.path[0] === 'actionsTaken' && i.message === 'פעולות שבוצעו עד כה: עד 600 תווים'),
+      ).toBe(true);
+    }
+  });
+
+  it('CONTROL: updateIncidentSchema and technicianUpdateSchema keep their own unrelated, unchanged 4000-character actionsTaken limit', () => {
+    const tooLongForCreate = 'ד'.repeat(1000); // over create's 600, under update's own 4000
+    const updateResult = updateIncidentSchema.safeParse({
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      actionsTaken: tooLongForCreate,
+      findings: '',
+      nextSteps: '',
+      status: 'in_progress',
+      severity: 'medium',
+      operationalImpact: 'השפעה',
+      changeReason: '',
+      nextUpdateDue: new Date(Date.now() + 3600_000).toISOString(),
+      noDeadlineReason: null,
+      ownerUserId: 'u-tech-1',
+      ownerExternalName: null,
+      reportedToOps: 'no',
+    });
+    expect(updateResult.success).toBe(true);
+
+    const technicianResult = technicianUpdateSchema.safeParse({
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      actionsTaken: tooLongForCreate,
+      findings: '',
+      nextSteps: '',
+    });
+    expect(technicianResult.success).toBe(true);
   });
 });

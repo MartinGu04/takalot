@@ -89,7 +89,10 @@ export const createIncidentSchema = z
     description: nonBlank(400, 'תיאור התקלה'),
     severity: severitySchema,
     operationalImpact: nonBlank(400, 'השפעה מבצעית'),
-    actionsTaken: nonBlank(4000, 'פעולות שבוצעו עד כה'),
+    // 600 characters, creation only -- update/technician-update's own
+    // actionsTaken (a running log entry per update, not the one-time
+    // opening note) keeps its unrelated, unchanged 4000-character limit.
+    actionsTaken: nonBlank(600, 'פעולות שבוצעו עד כה'),
     status: statusSchema.refine((s) => CREATABLE_STATUSES.has(s), {
       message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
     }),

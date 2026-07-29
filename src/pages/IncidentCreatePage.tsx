@@ -7,9 +7,10 @@ import { useSession } from '../auth/AuthContext';
 import { Button, Field, Input, Select, Textarea } from '../components/ui';
 import { severityLabels, reportedToOpsLabels } from '../domain/labels';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
-import { loadDraft, clearDraft, useDraft, useWarnOnUnload } from '../lib/useDraft';
+import { loadDraft, clearDraft, useDraft, useClearDraftOnRouteLeave, useWarnOnUnload } from '../lib/useDraft';
 
 const DRAFT_KEY = 'takalot-draft-incident-create';
+const CREATE_ROUTE = '/incidents/new';
 
 type FormValues = {
   systemId: string;
@@ -68,6 +69,7 @@ export default function IncidentCreatePage() {
   });
   const values = watch();
   useDraft(DRAFT_KEY, values, formState.isDirty && !submitted);
+  useClearDraftOnRouteLeave(DRAFT_KEY, CREATE_ROUTE);
   useWarnOnUnload(formState.isDirty && !submitted);
 
   // Defaults "בעל אחריות פנימי" to the signed-in user, but only once (and
@@ -243,13 +245,16 @@ export default function IncidentCreatePage() {
 
         <Field label="פעולות שבוצעו עד כה" required error={formState.errors.actionsTaken?.message}>
           {(a) => (
-            <Textarea
-              {...a}
-              rows={3}
-              maxLength={4000}
-              placeholder="אילו בדיקות או פעולות כבר בוצעו לפני תיעוד התקלה?"
-              {...register('actionsTaken', { required: 'יש להזין פעולות שבוצעו', validate: (v) => v.trim().length > 0 || 'יש להזין פעולות שבוצעו' })}
-            />
+            <>
+              <Textarea
+                {...a}
+                rows={3}
+                maxLength={600}
+                placeholder="אילו בדיקות או פעולות כבר בוצעו לפני תיעוד התקלה?"
+                {...register('actionsTaken', { required: 'יש להזין פעולות שבוצעו', validate: (v) => v.trim().length > 0 || 'יש להזין פעולות שבוצעו' })}
+              />
+              <p className="text-left text-xs text-muted">{values.actionsTaken.length}/600</p>
+            </>
           )}
         </Field>
 
