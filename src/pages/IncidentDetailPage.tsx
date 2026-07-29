@@ -225,6 +225,24 @@ export default function IncidentDetailPage() {
             </dd>
           </div>
           <div>
+            <dt className="text-xs text-muted">תקשוב למבצעים</dt>
+            <dd>
+              {incident.reportedToComms ? 'כן' : 'לא'}
+              {incident.reportedToComms && incident.reportedToCommsRecipient && (
+                <span className="font-normal text-secondary"> — {incident.reportedToCommsRecipient}</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted">WISDOM</dt>
+            <dd>
+              {incident.wisdomReported ? 'כן' : 'לא'}
+              {incident.wisdomReported && incident.wisdomIncidentNumber && (
+                <span className="font-normal text-secondary"> — מספר תקלה: {incident.wisdomIncidentNumber}</span>
+              )}
+            </dd>
+          </div>
+          <div>
             <dt className="text-xs text-muted">תיאור</dt>
             <dd className="whitespace-pre-wrap break-words">{incident.description}</dd>
           </div>

@@ -120,7 +120,12 @@ describe('IncidentCreatePage: form behavior', () => {
     await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה לצורך בדיקה');
     await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה');
     await user.type(screen.getByLabelText(/^פעולות שבוצעו עד כה/), 'נבדק ראשונית');
-    // Deliberately leave the owner unselected.
+    // The owner now defaults to the signed-in user, so "leaving it
+    // unselected" must be done explicitly -- clearing a default is itself a
+    // manual choice the app must respect (never silently re-forced).
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    await waitFor(() => expect(ownerSelect).toHaveValue('u-admin'));
+    await user.selectOptions(ownerSelect, '');
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
     expect(await screen.findByText('יש לבחור בעל אחריות פנימי')).toBeInTheDocument();
     // Submission never happened -- still on the creation page.
@@ -211,10 +216,255 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     expect(within(timeline).getByText('פתיחת תקלה')).toBeInTheDocument();
     expect(within(timeline).getByText(/נבדק ראשונית לצורך הבדיקה/)).toBeInTheDocument();
 
+    // Neither opening-time question was touched -- both default to לא, with
+    // no dependent value, on the details page and in the opening history.
+    expect(within(main()).getByText('תקשוב למבצעים')).toBeInTheDocument();
+    expect(within(main()).getByText('WISDOM')).toBeInTheDocument();
+    expect(within(timeline).getByText(/תקשוב למבצעים: לא/)).toBeInTheDocument();
+    expect(within(timeline).getByText(/WISDOM: לא/)).toBeInTheDocument();
+
     // Open-incident views: the new incident shows up on the active list.
     const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' });
     await user.click(within(sidebar).getByRole('link', { name: 'תקלות' }));
     await within(main()).findByRole('heading', { name: 'תקלות' });
     expect(within(main()).getByText(number)).toBeInTheDocument();
+  });
+});
+
+describe('IncidentCreatePage: תקשוב למבצעים ו-WISDOM', () => {
+  it('both default to לא, with no dependent field shown', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
+    expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    void user;
+  });
+
+  it('selecting כן reveals the dependent field, and blocks submission without a value', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    expect(await screen.findByLabelText(/^למי דווח\?/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    expect(await screen.findByText('יש להזין למי דווח')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'פתיחת תקלה' })).toBeInTheDocument(); // never submitted
+  });
+
+  it('switching תקשוב למבצעים from כן back to לא clears the previously entered value', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), 'תקשוב מוקד זמני');
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    // Switch back to כן: the field must be empty, not restored with the
+    // stale value -- proving it was actually cleared, not just hidden.
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    expect(await screen.findByLabelText(/^למי דווח\?/)).toHaveValue('');
+  });
+
+  it('WISDOM כן requires an incident number, and switching back to לא clears it', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    expect(await screen.findByText('יש להזין מספר תקלה ב-WISDOM')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-9001');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'no');
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    expect(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/)).toHaveValue('');
+  });
+
+  it('creates the incident end-to-end with both answers כן, trimmed values shown on details and in the opening history', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), '  תקשוב מוקד מבצעים  ');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), '  WISDOM-7789  ');
+
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await screen.findByText(/נפתחה בהצלחה/);
+
+    const commsRow = within(main()).getByText('תקשוב למבצעים').closest('div') as HTMLElement;
+    expect(within(commsRow).getByText(/תקשוב מוקד מבצעים/)).toBeInTheDocument();
+    const wisdomRow = within(main()).getByText('WISDOM').closest('div') as HTMLElement;
+    expect(within(wisdomRow).getByText(/WISDOM-7789/)).toBeInTheDocument();
+
+    const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    expect(within(timeline).getByText(/תקשוב למבצעים: כן \(דווח ל: תקשוב מוקד מבצעים\)/)).toBeInTheDocument();
+    expect(within(timeline).getByText(/WISDOM: כן \(מספר תקלה: WISDOM-7789\)/)).toBeInTheDocument();
+  });
+});
+
+describe('IncidentCreatePage: default internal owner (בעל אחריות פנימי)', () => {
+  it('defaults to the current signed-in eligible user', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    await waitFor(() => expect(ownerSelect).toHaveValue('u-admin'));
+  });
+
+  it('can still be changed to another eligible active person, and the manual choice is not reverted', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    await waitFor(() => expect(ownerSelect).toHaveValue('u-admin'));
+    await user.selectOptions(ownerSelect, 'u-tech-1');
+    expect(ownerSelect).toHaveValue('u-tech-1');
+    // Give the default-owner effect another render cycle -- it must not
+    // revert a manual selection back to the signed-in user.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(ownerSelect).toHaveValue('u-tech-1');
+  });
+
+  it('never forces an ineligible/inactive signed-in user into the field', async () => {
+    // Simulate the signed-in user's OWN row being inactive/absent from the
+    // eligible list as seen by the creation form (e.g. a race with a
+    // deactivation elsewhere) -- without also hiding their own login
+    // button, since a truly inactive demo profile cannot log in at all
+    // (LoginPage.tsx filters its picker by `active`). The login screen's
+    // own demo picker always calls listProfiles with a fixed
+    // { userId: 'u-admin', ... } session regardless of who is about to log
+    // in (see LoginPage.tsx) -- only that hardcoded call is left
+    // untouched; the real session's own call (once logged in as a
+    // DIFFERENT user, u-supervisor-1) sees itself marked inactive.
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const original = LocalDemoRepository.prototype.listProfiles;
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'listProfiles')
+      .mockImplementation(async function (
+        this: InstanceType<typeof LocalDemoRepository>,
+        ...args: Parameters<typeof original>
+      ) {
+        const real = await original.apply(this, args);
+        const [session] = args;
+        if (session.userId === 'u-admin') return real; // the login screen's own picker call
+        return real.map((p) => (p.id === session.userId ? { ...p, active: false } : p));
+      });
+    const user = await loginAs('login-u-supervisor-1');
+    await goToCreatePage(user);
+    const ownerSelect = screen.getByLabelText(/^בעל אחריות פנימי/);
+    // Wait for profiles (and therefore the default-owner effect) to have
+    // settled, proven by another active profile's option existing.
+    await within(ownerSelect).findByRole('option', { name: 'עומר פרץ (דמו)' });
+    expect(ownerSelect).toHaveValue('');
+    expect(within(ownerSelect).queryByRole('option', { name: 'יואב כהן (דמו)' })).not.toBeInTheDocument();
+    spy.mockRestore();
+  });
+});
+
+describe('IncidentCreatePage: 400-character limits (תיאור התקלה / השפעה מבצעית)', () => {
+  it('caps both fields at maxLength 400 and shows a live character counter', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const description = screen.getByLabelText(/^תיאור התקלה/);
+    const impact = screen.getByLabelText(/^השפעה מבצעית/);
+    expect(description).toHaveAttribute('maxLength', '400');
+    expect(impact).toHaveAttribute('maxLength', '400');
+    expect(screen.getAllByText('0/400')).toHaveLength(2);
+
+    await user.type(description, 'א'.repeat(12));
+    expect(screen.getByText('12/400')).toBeInTheDocument();
+    expect(screen.getByText('0/400')).toBeInTheDocument(); // impact untouched
+
+    await user.type(impact, 'ב'.repeat(5));
+    expect(screen.getByText('5/400')).toBeInTheDocument();
+  });
+});
+
+describe('IncidentCreatePage: form resets fully after a successful creation', () => {
+  it('opening the form again after a successful submission shows clean defaults, not the previous incident', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), 'תקשוב זמני לבדיקה');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-1111');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await screen.findByText(/נפתחה בהצלחה/);
+
+    // Navigate back to the creation form -- a fresh mount, exactly like a
+    // real user clicking "פתיחת תקלה" again from the sidebar.
+    await goToCreatePage(user);
+
+    expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/^דווח למבצעים/)).toHaveValue('no');
+
+    expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // The internal owner defaults again to the current signed-in user, not
+    // to u-tech-1 (the previous incident's manually-selected owner).
+    await waitFor(() => expect(screen.getByLabelText(/^בעל אחריות פנימי/)).toHaveValue('u-admin'));
+  });
+});
+
+describe('IncidentCreatePage: 600-character limit (פעולות שבוצעו עד כה)', () => {
+  it('caps the field at maxLength 600 and shows a live character counter', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    const actionsTaken = screen.getByLabelText(/^פעולות שבוצעו עד כה/);
+    expect(actionsTaken).toHaveAttribute('maxLength', '600');
+    expect(screen.getByText('0/600')).toBeInTheDocument();
+
+    await user.type(actionsTaken, 'א'.repeat(15));
+    expect(screen.getByText('15/600')).toBeInTheDocument();
+    // The native maxLength attribute itself prevents ever typing (or
+    // pasting) past the boundary through real user interaction -- the
+    // 601-character rejection is exercised directly at the schema
+    // (schemas.test.ts) and RPC (SQL suite) layers instead.
+  });
+});
+
+describe('IncidentCreatePage: draft discarded on navigating away from the create route', () => {
+  it('clears the saved draft when leaving /incidents/new, so returning later starts clean', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.selectOptions(screen.getByLabelText('האם דווח לתקשוב למבצעים?'), 'yes');
+    await user.type(await screen.findByLabelText(/^למי דווח\?/), 'תקשוב זמני');
+    await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
+    await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-2222');
+
+    // Navigate away WITHOUT submitting -- to a completely different route,
+    // not back to the same create page -- exactly like a user abandoning
+    // the form mid-entry.
+    const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+    await user.click(within(sidebar).getByRole('link', { name: 'ארכיון' }));
+    await within(main()).findByRole('heading', { name: 'ארכיון תקלות סגורות ומבוטלות' });
+
+    // Return to the create form -- a fresh mount. The abandoned draft must
+    // NOT be restored: everything is back to clean defaults.
+    await goToCreatePage(user);
+
+    expect((screen.getByLabelText(/^מערכת \/ עמדה/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^מיקום/) as HTMLSelectElement).value).toBe('');
+    expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
+    expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
+    expect(screen.queryByLabelText(/^מספר תקלה ב-WISDOM/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // The internal owner defaults again to the current signed-in user, not
+    // to u-tech-1 (the abandoned draft's manually-selected owner).
+    await waitFor(() => expect(screen.getByLabelText(/^בעל אחריות פנימי/)).toHaveValue('u-admin'));
   });
 });

@@ -82,10 +82,17 @@ export const createIncidentSchema = z
     systemId: z.string().min(1, 'יש לבחור מערכת / עמדה'),
     locationId: z.string().min(1, 'יש לבחור מיקום'),
     discoveredAt: z.string().min(1, 'יש להזין שעת גילוי'),
-    description: nonBlank(4000, 'תיאור התקלה'),
+    // Creation-only limits: tighter than update/close's own operationalImpact
+    // (1000) -- description doesn't exist at all past creation, and this
+    // 400-character cap only applies to opening an incident, not revising it
+    // later.
+    description: nonBlank(400, 'תיאור התקלה'),
     severity: severitySchema,
-    operationalImpact: nonBlank(1000, 'השפעה מבצעית'),
-    actionsTaken: nonBlank(4000, 'פעולות שבוצעו עד כה'),
+    operationalImpact: nonBlank(400, 'השפעה מבצעית'),
+    // 600 characters, creation only -- update/technician-update's own
+    // actionsTaken (a running log entry per update, not the one-time
+    // opening note) keeps its unrelated, unchanged 4000-character limit.
+    actionsTaken: nonBlank(600, 'פעולות שבוצעו עד כה'),
     status: statusSchema.refine((s) => CREATABLE_STATUSES.has(s), {
       message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
     }),
@@ -93,6 +100,15 @@ export const createIncidentSchema = z
     noDeadlineReason: z.string().max(500).nullable(),
     ...ownerFields,
     ...reportedToOpsFields,
+    // Opening-time-only questions -- both plain booleans (unlike
+    // reportedToOps, there is no third "not_required" state here), each with
+    // a dependent field that is required exactly when its question is true
+    // and must otherwise be absent (enforced below and, authoritatively, by
+    // migration 0021's own bidirectional CHECK constraints).
+    reportedToComms: z.boolean(),
+    reportedToCommsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable(),
+    wisdomReported: z.boolean(),
+    wisdomIncidentNumber: z.string().max(100, 'מספר תקלה ב-WISDOM: עד 100 תווים').nullable(),
   })
   .superRefine((data, ctx) => {
     // Unlike every other flow that shares ownerFields (update/close/assign/
@@ -128,6 +144,20 @@ export const createIncidentSchema = z
       });
     }
     checkReportedToOpsRecipient(data, ctx);
+    if (data.reportedToComms && !(data.reportedToCommsRecipient ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reportedToCommsRecipient'],
+        message: 'יש להזין למי דווח',
+      });
+    }
+    if (data.wisdomReported && !(data.wisdomIncidentNumber ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['wisdomIncidentNumber'],
+        message: 'יש להזין מספר תקלה ב-WISDOM',
+      });
+    }
   });
 
 export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;

@@ -880,6 +880,18 @@ export class LocalDemoRepository implements Repository {
       reportedToOps: input.reportedToOps,
       reportedToOpsRecipient:
         input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null,
+      // Opening-time-only questions (migration 0021 parity): createIncidentSchema's
+      // own superRefine already guarantees the dependent value is present and
+      // non-blank whenever its flag is true (same enforcement point as
+      // ownerUserId/eventTime elsewhere in this repository -- parseOrThrow
+      // above runs even for a caller that bypasses the UI entirely) -- trimmed
+      // here the same way reportedToOpsRecipient is, and forced to null
+      // whenever the flag is false so stale hidden data is never retained.
+      reportedToComms: input.reportedToComms,
+      reportedToCommsRecipient:
+        input.reportedToComms ? (input.reportedToCommsRecipient ?? '').trim() || null : null,
+      wisdomReported: input.wisdomReported,
+      wisdomIncidentNumber: input.wisdomReported ? (input.wisdomIncidentNumber ?? '').trim() || null : null,
       closedAt: null,
       closedBy: null,
       rootCause: null,
@@ -896,9 +908,22 @@ export class LocalDemoRepository implements Repository {
     };
     this.db.incidents.push(incident);
 
+    // The two new answers are folded into the SAME 'created' event's note
+    // (never a separate event type, mirroring migration 0021 exactly): they
+    // are set exactly once, at open, and never revised by any later flow in
+    // this PR.
+    const commsLine = incident.reportedToComms
+      ? `כן (דווח ל: ${incident.reportedToCommsRecipient})`
+      : 'לא';
+    const wisdomLine = incident.wisdomReported
+      ? `כן (מספר תקלה: ${incident.wisdomIncidentNumber})`
+      : 'לא';
     this.addEvent(incident.id, 'created', actor.id, {
       eventTime: input.discoveredAt,
-      note: input.actionsTaken.trim() ? `פעולות שבוצעו עד כה: ${input.actionsTaken.trim()}` : null,
+      note:
+        `פעולות שבוצעו עד כה: ${input.actionsTaken.trim()}\n` +
+        `תקשוב למבצעים: ${commsLine}\n` +
+        `WISDOM: ${wisdomLine}`,
     });
     if (incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient) {
       this.addEvent(incident.id, 'reported_to_ops_change', actor.id, {

@@ -149,6 +149,17 @@ export interface Incident {
   reportedToOps: ReportedToOps;
   /** Concise free-text recipient (role and/or name); required and shown only when reportedToOps is 'yes'. */
   reportedToOpsRecipient: string | null;
+  // Opening-time reporting questions (set only via create_incident; no update
+  // path exists for these in this PR -- they describe what was true at the
+  // moment the incident was opened, not an ongoing status).
+  /** "האם דווח לתקשוב למבצעים?" */
+  reportedToComms: boolean;
+  /** "למי דווח?" -- required and shown only when reportedToComms is true. */
+  reportedToCommsRecipient: string | null;
+  /** "האם נפתחה תקלה ב-WISDOM?" */
+  wisdomReported: boolean;
+  /** "מספר תקלה ב-WISDOM" -- required and shown only when wisdomReported is true. */
+  wisdomIncidentNumber: string | null;
   // Closure fields (set only via closure flow)
   closedAt: string | null;
   closedBy: string | null;

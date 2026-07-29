@@ -89,6 +89,14 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     noDeadlineReason: s.noDeadlineReason ?? null,
     reportedToOps: 'yes',
     reportedToOpsRecipient: 'מוקד מבצעים (דמו)',
+    // Opening-time-only questions default to לא -- individual demo
+    // incidents below opt in explicitly, the same way version/lastUpdateAt
+    // are overridden post-construction rather than threaded through
+    // SeedIncident's own parameters.
+    reportedToComms: false,
+    reportedToCommsRecipient: null,
+    wisdomReported: false,
+    wisdomIncidentNumber: null,
     closedAt: null,
     closedBy: null,
     rootCause: null,
@@ -165,6 +173,8 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   inc2.version = 2;
   inc2.lastUpdateAt = at(-hours(3));
   inc2.updatedAt = at(-hours(3));
+  inc2.reportedToComms = true;
+  inc2.reportedToCommsRecipient = 'תקשוב מוקד מבצעים (דמו)';
 
   // 3. Waiting for external party
   const inc3 = mk({
@@ -202,6 +212,8 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   });
   inc4.version = 2;
   inc4.lastUpdateAt = at(-hours(8));
+  inc4.wisdomReported = true;
+  inc4.wisdomIncidentNumber = 'WISDOM-2026-0412';
   inc4.updatedAt = at(-hours(8));
 
   // 5. Closed with full readiness
