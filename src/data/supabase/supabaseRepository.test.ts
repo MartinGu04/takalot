@@ -71,4 +71,146 @@ describe('SupabaseRepository RPC error mapping (wrap)', () => {
       repoWithRpcError('permission: אין הרשאה לעדכן תקלה').updateIncident(session, 'inc-1', dummyUpdateInput),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  it('maps controlled reference-data conflicts without leaking the internal prefix', async () => {
+    await expect(
+      repoWithRpcError('conflict: כבר קיימת מערכת / עמדה בשם זה').createSystem(session, 'שם'),
+    ).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'כבר קיימת מערכת / עמדה בשם זה',
+    });
+  });
+
+  it('keeps permission, validation, conflict, and not-found mapping on reference-data RPCs', async () => {
+    await expect(
+      repoWithRpcError('permission: אין הרשאה לנהל מערכות ומיקומים').createLocation(session, 'שם'),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      repoWithRpcError('validation: כיוון ההזזה אינו תקין').moveSystem(session, 'system-1', 'up'),
+    ).rejects.toMatchObject({ code: 'VALIDATION', message: 'כיוון ההזזה אינו תקין' });
+    await expect(
+      repoWithRpcError('conflict: כבר קיים מיקום בשם זה').renameLocation(session, 'location-1', 'שם'),
+    ).rejects.toMatchObject({ code: 'CONFLICT', message: 'כבר קיים מיקום בשם זה' });
+    await expect(
+      repoWithRpcError('not_found: המערכת / העמדה לא נמצאה').deleteSystem(session, 'system-1'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'המערכת / העמדה לא נמצאה' });
+  });
+
+  it('sanitizes unexpected PostgreSQL details only on reference-data RPCs', async () => {
+    const raw = 'duplicate key value violates unique constraint systems_name_normalized_unique (SQLSTATE 23505)';
+    try {
+      await repoWithRpcError(raw).createSystem(session, 'שם');
+      throw new Error('expected rejection');
+    } catch (error) {
+      const appError = error as AppError;
+      expect(appError.code).toBe('NETWORK');
+      expect(appError.message).not.toContain(raw);
+      expect(appError.message).not.toMatch(/23505|constraint|systems_name_normalized_unique/i);
+    }
+  });
+
+  it('retains the previous unexpected-error fallback for unrelated repository operations', async () => {
+    const raw = 'upstream diagnostic for an existing incident RPC';
+    await expect(
+      repoWithRpcError(raw).updateIncident(session, 'inc-1', dummyUpdateInput),
+    ).rejects.toMatchObject({
+      code: 'NETWORK',
+      message: `שגיאת תקשורת מול השרת: ${raw}`,
+    });
+  });
+
+  it('does not apply the reference-data conflict mapping to unrelated repository operations', async () => {
+    const raw = 'conflict: unrelated repository conflict detail';
+    await expect(
+      repoWithRpcError(raw).updateIncident(session, 'inc-1', dummyUpdateInput),
+    ).rejects.toMatchObject({
+      code: 'NETWORK',
+      message: `שגיאת תקשורת מול השרת: ${raw}`,
+    });
+  });
+});
+
+describe('SupabaseRepository reference-data RPC parity', () => {
+  it('uses narrow RPCs and maps display_order into domain records', async () => {
+    const calls: { fn: string; args: Record<string, unknown> }[] = [];
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calls.push({ fn, args });
+        if (fn === 'create_system') {
+          return {
+            data: {
+              id: 'system-1',
+              name: 'מערכת',
+              archived: false,
+              display_order: 7,
+              created_at: '2026-07-29T10:00:00.000Z',
+            },
+            error: null,
+          };
+        }
+        if (fn === 'delete_system') return { data: 'deleted', error: null };
+        return { data: null, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(
+      fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0],
+    );
+
+    await expect(repo.createSystem(session, ' מערכת ')).resolves.toMatchObject({
+      id: 'system-1',
+      displayOrder: 7,
+    });
+    await repo.renameSystem(session, 'system-1', 'שם חדש');
+    await repo.setSystemArchived(session, 'system-1', true);
+    await repo.moveSystem(session, 'system-1', 'down');
+    await expect(repo.deleteSystem(session, 'system-1')).resolves.toBe('deleted');
+
+    expect(calls).toEqual([
+      { fn: 'create_system', args: { p_name: ' מערכת ' } },
+      { fn: 'rename_system', args: { p_system_id: 'system-1', p_name: 'שם חדש' } },
+      { fn: 'set_system_active', args: { p_system_id: 'system-1', p_active: false } },
+      { fn: 'move_system', args: { p_system_id: 'system-1', p_direction: 'down' } },
+      { fn: 'delete_system', args: { p_system_id: 'system-1' } },
+    ]);
+  });
+
+  it('routes all location mutations through the matching authenticated RPC surface', async () => {
+    const calls: string[] = [];
+    const fakeClient = {
+      rpc: async (fn: string) => {
+        calls.push(fn);
+        if (fn === 'create_location') {
+          return {
+            data: {
+              id: 'location-1',
+              name: 'מיקום',
+              archived: false,
+              display_order: 4,
+              created_at: '2026-07-29T10:00:00.000Z',
+            },
+            error: null,
+          };
+        }
+        if (fn === 'delete_location') return { data: 'archived', error: null };
+        return { data: null, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(
+      fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0],
+    );
+
+    await repo.createLocation(session, 'מיקום');
+    await repo.renameLocation(session, 'location-1', 'מיקום חדש');
+    await repo.setLocationArchived(session, 'location-1', false);
+    await repo.moveLocation(session, 'location-1', 'up');
+    await expect(repo.deleteLocation(session, 'location-1')).resolves.toBe('archived');
+
+    expect(calls).toEqual([
+      'create_location',
+      'rename_location',
+      'set_location_active',
+      'move_location',
+      'delete_location',
+    ]);
+  });
 });

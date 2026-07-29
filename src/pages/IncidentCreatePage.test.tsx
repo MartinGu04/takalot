@@ -70,6 +70,22 @@ describe('IncidentCreatePage: access control', () => {
 });
 
 describe('IncidentCreatePage: form behavior', () => {
+  it('offers only active reference data in managed display order', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+
+    const systemValues = within(screen.getByLabelText(/^מערכת \/ עמדה/))
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value);
+    const locationValues = within(screen.getByLabelText(/^מיקום/))
+      .getAllByRole('option')
+      .map((option) => (option as HTMLOptionElement).value);
+
+    expect(systemValues).toEqual(['', 'sys-alpha', 'sys-beta', 'sys-gamma', 'sys-pos-a']);
+    expect(systemValues).not.toContain('sys-pos-b'); // seeded inactive historical value
+    expect(locationValues).toEqual(['', 'loc-1', 'loc-2', 'loc-3', 'loc-control']);
+  });
+
   it('defaults the actual discovery-time field to now', async () => {
     const before = Date.now();
     const user = await loginAs('login-u-admin');

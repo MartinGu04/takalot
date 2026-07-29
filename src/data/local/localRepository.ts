@@ -55,6 +55,8 @@ import type {
   ExportAuditInfo,
   IncidentFilters,
   IncidentSort,
+  ReferenceDataDeleteOutcome,
+  ReferenceDataMoveDirection,
   Repository,
   Session,
 } from '../repository';
@@ -64,6 +66,24 @@ import { buildSeed } from './seed';
 
 const CONFLICT_MSG =
   'התקלה עודכנה על ידי משתמש אחר מאז שנפתח המסך. יש לרענן את הדף ולבדוק את הנתונים לפני שמירה חוזרת.';
+const SYSTEM_NAME_CONFLICT_MSG =
+  'כבר קיימת מערכת / עמדה בשם זה. אם הפריט אינו פעיל, יש להפעיל מחדש את הפריט הקיים.';
+const LOCATION_NAME_CONFLICT_MSG =
+  'כבר קיים מיקום בשם זה. אם הפריט אינו פעיל, יש להפעיל מחדש את הפריט הקיים.';
+
+type ReferenceRecord = SystemRecord | LocationRecord;
+
+function normalizedReferenceName(name: string): string {
+  return name.trim().toLocaleLowerCase('he-IL');
+}
+
+function compareReferenceRecords(a: ReferenceRecord, b: ReferenceRecord): number {
+  return (
+    a.displayOrder - b.displayOrder ||
+    normalizedReferenceName(a.name).localeCompare(normalizedReferenceName(b.name), 'he') ||
+    a.id.localeCompare(b.id)
+  );
+}
 
 function parseOrThrow<S extends ZodTypeAny>(schema: S, input: unknown): z.infer<S> {
   const result = schema.safeParse(input);
@@ -91,6 +111,7 @@ export class LocalDemoRepository implements Repository {
     const loaded = storage.load();
     if (loaded && loaded.seededAt) {
       this.db = loaded;
+      this.backfillReferenceDataOrder();
     } else if (options.autoSeed !== false) {
       this.db = buildSeed(this.now());
       this.persist();
@@ -113,6 +134,37 @@ export class LocalDemoRepository implements Repository {
 
   private persist(): void {
     this.storage.save(this.db);
+  }
+
+  /**
+   * Demo databases persisted before reference-data ordering have no
+   * displayOrder. Backfill them in place using their former visible order
+   * (name, then id). No record is removed, renamed, merged, or reactivated.
+   */
+  private backfillReferenceDataOrder(): void {
+    let changed = this.db.referenceDataSchemaVersion !== 1;
+    for (const records of [this.db.systems, this.db.locations]) {
+      const allOrdersValid = records.every(
+        (record) => Number.isInteger(record.displayOrder) && record.displayOrder > 0,
+      );
+      const ordered = [...records].sort(
+        allOrdersValid
+          ? compareReferenceRecords
+          : (a, b) =>
+              normalizedReferenceName(a.name).localeCompare(normalizedReferenceName(b.name), 'he') ||
+              a.id.localeCompare(b.id),
+      );
+      if (ordered.some((record, index) => record.displayOrder !== index + 1)) {
+        ordered.forEach((record, index) => {
+          record.displayOrder = index + 1;
+        });
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.db.referenceDataSchemaVersion = 1;
+      this.persist();
+    }
   }
 
   // --- session & permission helpers ---
@@ -272,26 +324,81 @@ export class LocalDemoRepository implements Repository {
   // --- configuration ---
 
   async listSystems(): Promise<SystemRecord[]> {
-    return [...this.db.systems].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    return [...this.db.systems].sort(compareReferenceRecords).map((record) => ({ ...record }));
   }
 
   async listLocations(): Promise<LocationRecord[]> {
-    return [...this.db.locations].sort((a, b) => a.name.localeCompare(b.name, 'he'));
+    return [...this.db.locations].sort(compareReferenceRecords).map((record) => ({ ...record }));
   }
 
   private requireName(name: string): string {
+    if (typeof name !== 'string') throw new AppError('VALIDATION', 'יש להזין שם.');
     const trimmed = name.trim();
     if (!trimmed) throw new AppError('VALIDATION', 'יש להזין שם.');
     if (trimmed.length > 120) throw new AppError('VALIDATION', 'שם ארוך מדי (עד 120 תווים).');
     return trimmed;
   }
 
+  private requireAvailableName(
+    records: ReferenceRecord[],
+    name: string,
+    conflictMessage: string,
+    excludedId?: string,
+  ): void {
+    const normalized = normalizedReferenceName(name);
+    if (records.some((record) => record.id !== excludedId && normalizedReferenceName(record.name) === normalized)) {
+      throw new AppError('CONFLICT', conflictMessage);
+    }
+  }
+
+  private moveReferenceData<T extends ReferenceRecord>(
+    records: T[],
+    id: string,
+    direction: ReferenceDataMoveDirection,
+    actorId: string,
+    entityType: 'system' | 'location',
+    notFoundMessage: string,
+  ): void {
+    if (direction !== 'up' && direction !== 'down') {
+      throw new AppError('VALIDATION', 'כיוון ההזזה אינו תקין.');
+    }
+    const ordered = [...records].sort(compareReferenceRecords);
+    const recordIndex = ordered.findIndex((record) => record.id === id);
+    if (recordIndex === -1) throw new AppError('NOT_FOUND', notFoundMessage);
+
+    // Canonicalize first so legacy equal/gapped order values cannot make a
+    // move ambiguous. The secondary name/id ordering above is deterministic.
+    ordered.forEach((record, index) => {
+      record.displayOrder = index + 1;
+    });
+
+    const targetIndex = direction === 'up' ? recordIndex - 1 : recordIndex + 1;
+    const neighbor = ordered[targetIndex];
+    if (!neighbor) {
+      this.persist();
+      return;
+    }
+
+    const record = ordered[recordIndex];
+    const before = record.displayOrder;
+    record.displayOrder = neighbor.displayOrder;
+    neighbor.displayOrder = before;
+    this.audit(actorId, `${entityType}_moved`, entityType, id, {
+      before: JSON.stringify({ displayOrder: before }),
+      after: JSON.stringify({ displayOrder: record.displayOrder }),
+    });
+    this.persist();
+  }
+
   async createSystem(session: Session, name: string): Promise<SystemRecord> {
     const actor = this.requireCap(session, 'manage_config');
+    const validName = this.requireName(name);
+    this.requireAvailableName(this.db.systems, validName, SYSTEM_NAME_CONFLICT_MSG);
     const record: SystemRecord = {
       id: newId(),
-      name: this.requireName(name),
+      name: validName,
       archived: false,
+      displayOrder: Math.max(0, ...this.db.systems.map((item) => item.displayOrder)) + 1,
       createdAt: this.now().toISOString(),
     };
     this.db.systems.push(record);
@@ -304,8 +411,11 @@ export class LocalDemoRepository implements Repository {
     const actor = this.requireCap(session, 'manage_config');
     const record = this.db.systems.find((s) => s.id === id);
     if (!record) throw new AppError('NOT_FOUND', 'המערכת לא נמצאה.');
+    const validName = this.requireName(name);
+    this.requireAvailableName(this.db.systems, validName, SYSTEM_NAME_CONFLICT_MSG, id);
+    if (record.name === validName) return;
     const before = record.name;
-    record.name = this.requireName(name);
+    record.name = validName;
     this.audit(actor.id, 'system_renamed', 'system', id, {
       before: JSON.stringify({ name: before }),
       after: JSON.stringify({ name: record.name }),
@@ -317,17 +427,53 @@ export class LocalDemoRepository implements Repository {
     const actor = this.requireCap(session, 'manage_config');
     const record = this.db.systems.find((s) => s.id === id);
     if (!record) throw new AppError('NOT_FOUND', 'המערכת לא נמצאה.');
+    if (record.archived && !archived) {
+      this.requireAvailableName(this.db.systems, record.name, SYSTEM_NAME_CONFLICT_MSG, id);
+    }
+    if (record.archived === archived) return;
     record.archived = archived;
     this.audit(actor.id, archived ? 'system_archived' : 'system_restored', 'system', id);
     this.persist();
   }
 
+  async moveSystem(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void> {
+    const actor = this.requireCap(session, 'manage_config');
+    this.moveReferenceData(this.db.systems, id, direction, actor.id, 'system', 'המערכת לא נמצאה.');
+  }
+
+  async deleteSystem(session: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
+    const actor = this.requireCap(session, 'manage_config');
+    const index = this.db.systems.findIndex((system) => system.id === id);
+    if (index === -1) throw new AppError('NOT_FOUND', 'המערכת לא נמצאה.');
+    const record = this.db.systems[index];
+    if (this.db.incidents.some((incident) => incident.systemId === id)) {
+      const wasArchived = record.archived;
+      record.archived = true;
+      this.audit(actor.id, 'system_delete_archived', 'system', id, {
+        before: JSON.stringify({ archived: wasArchived }),
+        after: JSON.stringify({ archived: true }),
+      });
+      this.persist();
+      return 'archived';
+    }
+    this.db.systems.splice(index, 1);
+    [...this.db.systems].sort(compareReferenceRecords).forEach((system, position) => {
+      system.displayOrder = position + 1;
+    });
+    this.audit(actor.id, 'system_deleted', 'system', id, { before: JSON.stringify(record) });
+    this.persist();
+    return 'deleted';
+  }
+
   async createLocation(session: Session, name: string): Promise<LocationRecord> {
     const actor = this.requireCap(session, 'manage_config');
+    const validName = this.requireName(name);
+    this.requireAvailableName(this.db.locations, validName, LOCATION_NAME_CONFLICT_MSG);
     const record: LocationRecord = {
       id: newId(),
-      name: this.requireName(name),
+      name: validName,
       archived: false,
+      displayOrder: Math.max(0, ...this.db.locations.map((item) => item.displayOrder)) + 1,
       createdAt: this.now().toISOString(),
     };
     this.db.locations.push(record);
@@ -340,8 +486,11 @@ export class LocalDemoRepository implements Repository {
     const actor = this.requireCap(session, 'manage_config');
     const record = this.db.locations.find((l) => l.id === id);
     if (!record) throw new AppError('NOT_FOUND', 'המיקום לא נמצא.');
+    const validName = this.requireName(name);
+    this.requireAvailableName(this.db.locations, validName, LOCATION_NAME_CONFLICT_MSG, id);
+    if (record.name === validName) return;
     const before = record.name;
-    record.name = this.requireName(name);
+    record.name = validName;
     this.audit(actor.id, 'location_renamed', 'location', id, {
       before: JSON.stringify({ name: before }),
       after: JSON.stringify({ name: record.name }),
@@ -353,9 +502,42 @@ export class LocalDemoRepository implements Repository {
     const actor = this.requireCap(session, 'manage_config');
     const record = this.db.locations.find((l) => l.id === id);
     if (!record) throw new AppError('NOT_FOUND', 'המיקום לא נמצא.');
+    if (record.archived && !archived) {
+      this.requireAvailableName(this.db.locations, record.name, LOCATION_NAME_CONFLICT_MSG, id);
+    }
+    if (record.archived === archived) return;
     record.archived = archived;
     this.audit(actor.id, archived ? 'location_archived' : 'location_restored', 'location', id);
     this.persist();
+  }
+
+  async moveLocation(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void> {
+    const actor = this.requireCap(session, 'manage_config');
+    this.moveReferenceData(this.db.locations, id, direction, actor.id, 'location', 'המיקום לא נמצא.');
+  }
+
+  async deleteLocation(session: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
+    const actor = this.requireCap(session, 'manage_config');
+    const index = this.db.locations.findIndex((location) => location.id === id);
+    if (index === -1) throw new AppError('NOT_FOUND', 'המיקום לא נמצא.');
+    const record = this.db.locations[index];
+    if (this.db.incidents.some((incident) => incident.locationId === id)) {
+      const wasArchived = record.archived;
+      record.archived = true;
+      this.audit(actor.id, 'location_delete_archived', 'location', id, {
+        before: JSON.stringify({ archived: wasArchived }),
+        after: JSON.stringify({ archived: true }),
+      });
+      this.persist();
+      return 'archived';
+    }
+    this.db.locations.splice(index, 1);
+    [...this.db.locations].sort(compareReferenceRecords).forEach((location, position) => {
+      location.displayOrder = position + 1;
+    });
+    this.audit(actor.id, 'location_deleted', 'location', id, { before: JSON.stringify(record) });
+    this.persist();
+    return 'deleted';
   }
 
   // --- linked-personnel management ---

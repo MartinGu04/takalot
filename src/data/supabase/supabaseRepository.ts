@@ -36,6 +36,8 @@ import type {
   ExportAuditInfo,
   IncidentFilters,
   IncidentSort,
+  ReferenceDataDeleteOutcome,
+  ReferenceDataMoveDirection,
   Repository,
   Session,
 } from '../repository';
@@ -103,6 +105,24 @@ function wrap(error: { message: string; code?: string } | null): void {
   throw new AppError('NETWORK', `שגיאת תקשורת מול השרת: ${error.message}`);
 }
 
+function wrapReferenceData(error: { message: string; code?: string } | null): void {
+  if (!error) return;
+  if (/conflict:/.test(error.message)) {
+    throw new AppError('CONFLICT', error.message.replace(/^.*conflict:\s*/, ''));
+  }
+  try {
+    wrap(error);
+  } catch (wrappedError) {
+    if (wrappedError instanceof AppError && wrappedError.code !== 'NETWORK') {
+      throw wrappedError;
+    }
+    throw new AppError(
+      'NETWORK',
+      'אירעה שגיאה בלתי צפויה מול השרת. הנתונים לא נשמרו — ניתן לנסות שוב.',
+    );
+  }
+}
+
 // snake_case rows → camelCase domain objects
 const mapIncident = (r: Record<string, unknown>): Incident => ({
   id: r.id as string,
@@ -161,6 +181,22 @@ const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
   cancelledAt: r.cancelled_at as string | null,
 });
 
+const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
+  id: r.id as string,
+  name: r.name as string,
+  archived: r.archived as boolean,
+  displayOrder: r.display_order as number,
+  createdAt: r.created_at as string,
+});
+
+const mapLocation = (r: Record<string, unknown>): LocationRecord => ({
+  id: r.id as string,
+  name: r.name as string,
+  archived: r.archived as boolean,
+  displayOrder: r.display_order as number,
+  createdAt: r.created_at as string,
+});
+
 export class SupabaseRepository implements Repository {
   readonly mode = 'supabase' as const;
   private client: SupabaseClient;
@@ -174,6 +210,12 @@ export class SupabaseRepository implements Repository {
   private async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
     const { data, error } = await this.client.rpc(fn, args);
     wrap(error);
+    return data as T;
+  }
+
+  private async referenceDataRpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+    const { data, error } = await this.client.rpc(fn, args);
+    wrapReferenceData(error);
     return data as T;
   }
 
@@ -198,43 +240,65 @@ export class SupabaseRepository implements Repository {
   }
 
   async listSystems(): Promise<SystemRecord[]> {
-    const { data, error } = await this.client.from('systems').select('*').order('name');
+    const { data, error } = await this.client
+      .from('systems')
+      .select('*')
+      .order('display_order')
+      .order('name')
+      .order('id');
     wrap(error);
-    return (data ?? []).map((r) => ({ id: r.id, name: r.name, archived: r.archived, createdAt: r.created_at }));
+    return (data ?? []).map(mapSystem);
   }
 
   async listLocations(): Promise<LocationRecord[]> {
-    const { data, error } = await this.client.from('locations').select('*').order('name');
+    const { data, error } = await this.client
+      .from('locations')
+      .select('*')
+      .order('display_order')
+      .order('name')
+      .order('id');
     wrap(error);
-    return (data ?? []).map((r) => ({ id: r.id, name: r.name, archived: r.archived, createdAt: r.created_at }));
+    return (data ?? []).map(mapLocation);
   }
 
   async createSystem(_s: Session, name: string): Promise<SystemRecord> {
-    const { data, error } = await this.client.from('systems').insert({ name }).select().single();
-    wrap(error);
-    return { id: data.id, name: data.name, archived: data.archived, createdAt: data.created_at };
+    return mapSystem(await this.referenceDataRpc<Record<string, unknown>>('create_system', { p_name: name }));
   }
 
   async renameSystem(_s: Session, id: string, name: string): Promise<void> {
-    wrap((await this.client.from('systems').update({ name }).eq('id', id)).error);
+    await this.referenceDataRpc('rename_system', { p_system_id: id, p_name: name });
   }
 
   async setSystemArchived(_s: Session, id: string, archived: boolean): Promise<void> {
-    wrap((await this.client.from('systems').update({ archived }).eq('id', id)).error);
+    await this.referenceDataRpc('set_system_active', { p_system_id: id, p_active: !archived });
+  }
+
+  async moveSystem(_s: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void> {
+    await this.referenceDataRpc('move_system', { p_system_id: id, p_direction: direction });
+  }
+
+  async deleteSystem(_s: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
+    return this.referenceDataRpc<ReferenceDataDeleteOutcome>('delete_system', { p_system_id: id });
   }
 
   async createLocation(_s: Session, name: string): Promise<LocationRecord> {
-    const { data, error } = await this.client.from('locations').insert({ name }).select().single();
-    wrap(error);
-    return { id: data.id, name: data.name, archived: data.archived, createdAt: data.created_at };
+    return mapLocation(await this.referenceDataRpc<Record<string, unknown>>('create_location', { p_name: name }));
   }
 
   async renameLocation(_s: Session, id: string, name: string): Promise<void> {
-    wrap((await this.client.from('locations').update({ name }).eq('id', id)).error);
+    await this.referenceDataRpc('rename_location', { p_location_id: id, p_name: name });
   }
 
   async setLocationArchived(_s: Session, id: string, archived: boolean): Promise<void> {
-    wrap((await this.client.from('locations').update({ archived }).eq('id', id)).error);
+    await this.referenceDataRpc('set_location_active', { p_location_id: id, p_active: !archived });
+  }
+
+  async moveLocation(_s: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void> {
+    await this.referenceDataRpc('move_location', { p_location_id: id, p_direction: direction });
+  }
+
+  async deleteLocation(_s: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
+    return this.referenceDataRpc<ReferenceDataDeleteOutcome>('delete_location', { p_location_id: id });
   }
 
   async setUserRole(_s: Session, userId: string, role: Role): Promise<void> {
