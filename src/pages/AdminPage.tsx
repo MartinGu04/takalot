@@ -148,7 +148,7 @@ function MoveMenu({
         ref={triggerRef}
         type="button"
         disabled={disabled || (!canMoveUp && !canMoveDown)}
-        aria-label={`הזזת ${recordName}`}
+        aria-label={`שינוי סדר עבור ${recordName}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
@@ -161,7 +161,7 @@ function MoveMenu({
         }}
         className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-hairline-strong bg-surface px-2.5 py-2 text-sm font-medium text-text-primary shadow-soft hover:bg-surface-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
       >
-        הזזה
+        שינוי סדר
         <IconChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       <FloatingPopover
@@ -175,7 +175,7 @@ function MoveMenu({
         <div
           id={menuId}
           role="menu"
-          aria-label={`אפשרויות הזזה עבור ${recordName}`}
+          aria-label={`אפשרויות שינוי סדר עבור ${recordName}`}
           onKeyDown={handleMenuKeyDown}
         >
           <button
@@ -290,7 +290,7 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
     <div>
       <form
         onSubmit={submitCreate}
-        className="surface mb-4 grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+        className="surface mb-4 grid grid-cols-1 items-start gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto]"
       >
         <Field label={copy.createLabel} required hint="השם נשמר לאחר הסרת רווחים בתחילתו ובסופו.">
           {(a) => (
@@ -303,7 +303,11 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
             />
           )}
         </Field>
-        <Button type="submit" disabled={!name.trim() || create.isPending}>
+        <Button
+          type="submit"
+          className="sm:mt-[1.625rem]"
+          disabled={!name.trim() || create.isPending}
+        >
           {create.isPending ? 'מוסיף…' : 'הוספה'}
         </Button>
       </form>
@@ -367,8 +371,8 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
                     </Button>
                   )}
                   <Button
-                    variant="danger"
-                    className="size-11 shrink-0 p-0!"
+                    variant="ghost"
+                    className="size-11 shrink-0 border border-transparent bg-transparent p-0! text-red-700! shadow-none hover:border-red-300! hover:bg-red-50! hover:text-red-800! focus-visible:border-red-300! focus-visible:bg-red-50! focus-visible:outline-red-600 dark:text-red-400! dark:hover:border-red-900! dark:hover:bg-red-950/40! dark:hover:text-red-300! dark:focus-visible:border-red-900! dark:focus-visible:bg-red-950/40! dark:focus-visible:outline-red-400"
                     disabled={busy}
                     aria-label={`מחיקת ${record.name}`}
                     title={`מחיקת ${record.name}`}

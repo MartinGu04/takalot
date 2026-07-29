@@ -41,12 +41,17 @@ describe('reference-data management UI', () => {
     let systemCard = cardNamed(systemName);
     expect(within(systemCard).getByText('פעיל')).toBeInTheDocument();
     expect(within(systemCard).getByText(/סדר תצוגה:/)).toBeInTheDocument();
-    const moveButton = within(systemCard).getByRole('button', { name: `הזזת ${systemName}` });
+    const moveButton = within(systemCard).getByRole('button', {
+      name: `שינוי סדר עבור ${systemName}`,
+    });
+    expect(moveButton).toHaveTextContent('שינוי סדר');
     expect(moveButton).toHaveAttribute('aria-haspopup', 'menu');
     expect(moveButton).toHaveAttribute('aria-expanded', 'false');
     moveButton.focus();
     await user.keyboard('{ArrowDown}');
-    const moveMenu = screen.getByRole('menu', { name: `אפשרויות הזזה עבור ${systemName}` });
+    const moveMenu = screen.getByRole('menu', {
+      name: `אפשרויות שינוי סדר עבור ${systemName}`,
+    });
     const moveUp = within(moveMenu).getByRole('menuitem', { name: 'למעלה' });
     expect(moveUp).toBeEnabled();
     expect(within(moveMenu).getByRole('menuitem', { name: 'למטה' })).toBeDisabled();
@@ -56,10 +61,14 @@ describe('reference-data management UI', () => {
     expect(moveButton).toHaveAttribute('aria-expanded', 'false');
 
     const betaCard = cardNamed('מערכת בטא');
-    const betaMoveButton = within(betaCard).getByRole('button', { name: 'הזזת מערכת בטא' });
+    const betaMoveButton = within(betaCard).getByRole('button', {
+      name: 'שינוי סדר עבור מערכת בטא',
+    });
     betaMoveButton.focus();
     await user.keyboard('{ArrowDown}');
-    const betaMoveMenu = screen.getByRole('menu', { name: 'אפשרויות הזזה עבור מערכת בטא' });
+    const betaMoveMenu = screen.getByRole('menu', {
+      name: 'אפשרויות שינוי סדר עבור מערכת בטא',
+    });
     const betaMoveUp = within(betaMoveMenu).getByRole('menuitem', { name: 'למעלה' });
     const betaMoveDown = within(betaMoveMenu).getByRole('menuitem', { name: 'למטה' });
     await waitFor(() => expect(betaMoveUp).toHaveFocus());
@@ -88,9 +97,11 @@ describe('reference-data management UI', () => {
     systemCard = cardNamed('מערכת לאחר שינוי');
     await within(systemCard).findByText('פעיל');
 
-    await user.click(
-      within(systemCard).getByRole('button', { name: 'מחיקת מערכת לאחר שינוי' }),
-    );
+    const deleteSystemButton = within(systemCard).getByRole('button', {
+      name: 'מחיקת מערכת לאחר שינוי',
+    });
+    expect(deleteSystemButton).toHaveAttribute('title', 'מחיקת מערכת לאחר שינוי');
+    await user.click(deleteSystemButton);
     const deleteDialog = screen.getByRole('dialog', { name: 'מחיקת מערכת / עמדה' });
     expect(deleteDialog).toHaveTextContent('פריט שמקושר לתקלה או לרשומה היסטורית יישמר');
     await user.click(within(deleteDialog).getByRole('button', { name: 'בקשת מחיקה' }));
