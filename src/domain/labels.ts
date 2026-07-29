@@ -9,7 +9,7 @@ import type {
   NotificationType,
 } from './types';
 
-export const APP_NAME = 'Nexus';
+export const APP_NAME = 'AVARIA';
 export const APP_TAGLINE = 'מערכת ניהול ומעקב תקלות';
 
 export const roleLabels: Record<Role, string> = {

@@ -11,7 +11,7 @@ import { Sidebar } from './Sidebar';
 import { ThemeToggle } from './ThemeToggle';
 import { navItems } from './navItems';
 import { IconBell, IconLogOut, IconPlus, IconUsers } from './icons';
-import { NexusMark } from './NexusMark';
+import { AvariaIcon } from './AvariaBrand';
 import { FloatingPopover } from './FloatingPopover';
 
 function DemoBanner() {
@@ -240,7 +240,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-40 border-b border-hairline bg-surface/90 backdrop-blur-sm">
           <div className="flex items-center gap-2 px-4 py-2">
             <Link to="/" className="flex min-w-0 items-center gap-2 md:hidden" data-testid="brand-name-mobile">
-              <NexusMark className="size-7" />
+              <AvariaIcon className="size-7" />
               <span className="truncate text-base font-extrabold tracking-tight text-text-primary">{APP_NAME}</span>
             </Link>
             <div className="ms-auto flex min-w-0 items-center gap-1">

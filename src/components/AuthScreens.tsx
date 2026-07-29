@@ -1,22 +1,21 @@
 // Full-screen states that gate the app before normal routing: initial auth
 // restoration (splash), authenticated-but-unauthorized, transient
 // authorization-check failure, and hard configuration errors.
-import { APP_NAME, APP_TAGLINE } from '../domain/labels';
-import { NexusMark } from './NexusMark';
+import { APP_NAME } from '../domain/labels';
+import { AvariaAuthBrandPanel } from './AvariaBrand';
 import { Button, Spinner } from './ui';
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl border border-hairline bg-surface p-6 text-center shadow-elevated sm:p-8">
-        <div className="flex flex-col items-center gap-3">
-          <NexusMark className="size-12" />
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-text-primary">{APP_NAME}</h1>
-            <p className="mt-1 text-sm text-muted">{APP_TAGLINE}</p>
+    <div className="flex min-h-dvh items-center justify-center bg-canvas px-4 py-6 sm:px-6 sm:py-10">
+      <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-hairline bg-surface shadow-elevated lg:min-h-[30rem] lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
+        <AvariaAuthBrandPanel compact />
+        <div className="flex flex-col justify-center p-6 text-center sm:p-10">
+          <div className="mx-auto w-full max-w-md">
+            <p className="text-xs font-bold tracking-[0.18em] text-brand-700 dark:text-brand-300">{APP_NAME}</p>
+            {children}
           </div>
         </div>
-        {children}
       </div>
     </div>
   );
@@ -53,7 +52,7 @@ export function UnauthorizedScreen({
             מחובר/ת עם <span dir="ltr" className="font-medium">{email}</span>
           </p>
         )}
-        <p className="mt-2 text-sm text-secondary">החשבון הזה אינו רשום בכוח האדם של Nexus.</p>
+        <p className="mt-2 text-sm text-secondary">החשבון הזה אינו רשום בכוח האדם של AVARIA.</p>
         <p className="mt-1 text-sm text-muted">יש לפנות לאחמ״ש, לנגד או למנהל המערכת.</p>
         <Button variant="secondary" className="mt-5 w-full" onClick={onLogout}>
           התנתקות

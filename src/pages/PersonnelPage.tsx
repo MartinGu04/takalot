@@ -59,7 +59,7 @@ export default function PersonnelPage() {
   const createMutation = useAppMutation((input: PendingPersonnelInput) => repo().createPendingPersonnel(session, input), {
     invalidate: [['personnel']],
     successText:
-      'איש הצוות נוסף וממתין להתחברות הראשונה עם חשבון Google שהוגדר. אין צורך בקישור מיוחד — יש להיכנס לכתובת הרגילה של Nexus.',
+      'איש הצוות נוסף וממתין להתחברות הראשונה עם חשבון Google שהוגדר. אין צורך בקישור מיוחד — יש להיכנס לכתובת הרגילה של AVARIA.',
     onSuccess: () => setAddOpen(false),
   });
 
@@ -191,7 +191,7 @@ export default function PersonnelPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="page-title">כוח אדם</h1>
-          <p className="mt-1 text-sm text-muted">מי מורשה להיכנס ל־Nexus ובאיזה תפקיד</p>
+          <p className="mt-1 text-sm text-muted">מי מורשה להיכנס ל־AVARIA ובאיזה תפקיד</p>
         </div>
         <Button onClick={() => setAddOpen(true)}>
           <IconPlus className="size-4" />
@@ -402,7 +402,7 @@ export default function PersonnelPage() {
         open={!!deactivatingEntry}
         onClose={() => setDeactivatingEntry(null)}
         title="השבתת משתמש"
-        message={`להשבית את ${deactivatingEntry?.fullName ?? ''}? לא ניתן יהיה להתחבר ל-Nexus עד להפעלה מחדש.`}
+        message={`להשבית את ${deactivatingEntry?.fullName ?? ''}? לא ניתן יהיה להתחבר ל-AVARIA עד להפעלה מחדש.`}
         confirmLabel="השבתה"
         danger
         submitting={deactivateMutation.isPending}
@@ -420,7 +420,7 @@ export default function PersonnelPage() {
         open={!!recoveringEntry}
         onClose={() => setRecoveringEntry(null)}
         title="ווידוא הסרת חשבון ההתחברות"
-        message={`הפרופיל של ${recoveringEntry?.fullName ?? ''} ב-Nexus כבר נמחק לצמיתות ומושבת -- פעולה זו אינה מוחקת אותו מחדש. היא רק מנסה שוב לוודא שחשבון ההתחברות שלו הוסר מ-Supabase Auth.`}
+        message={`הפרופיל של ${recoveringEntry?.fullName ?? ''} ב-AVARIA כבר נמחק לצמיתות ומושבת -- פעולה זו אינה מוחקת אותו מחדש. היא רק מנסה שוב לוודא שחשבון ההתחברות שלו הוסר מ-Supabase Auth.`}
         confirmLabel="ניסיון חוזר"
         submitting={retryAuthDeleteMutation.isPending}
         onConfirm={() => recoveringEntry && retryAuthDeleteMutation.mutate(recoveringEntry.id)}

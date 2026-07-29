@@ -115,7 +115,7 @@ describe('page structure and terminology', () => {
   it('shows the header, subtitle and tabs with counts; no UUID/Supabase wording anywhere on the page', async () => {
     await openPersonnel('login-u-admin');
     expect(screen.getByRole('heading', { name: 'כוח אדם' })).toBeInTheDocument();
-    expect(screen.getByText('מי מורשה להיכנס ל־Nexus ובאיזה תפקיד')).toBeInTheDocument();
+    expect(screen.getByText('מי מורשה להיכנס ל־AVARIA ובאיזה תפקיד')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^ממתינים להתחברות/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^פעילים/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^לא פעילים/ })).toBeInTheDocument();
@@ -164,7 +164,7 @@ describe('adding personnel', () => {
 
     expect(
       await screen.findByText(
-        'איש הצוות נוסף וממתין להתחברות הראשונה עם חשבון Google שהוגדר. אין צורך בקישור מיוחד — יש להיכנס לכתובת הרגילה של Nexus.',
+        'איש הצוות נוסף וממתין להתחברות הראשונה עם חשבון Google שהוגדר. אין צורך בקישור מיוחד — יש להיכנס לכתובת הרגילה של AVARIA.',
       ),
     ).toBeInTheDocument();
     expect(await within(main()).findByText('טכנאי חדש')).toBeInTheDocument();
@@ -374,7 +374,7 @@ describe('permanent deletion', () => {
     await user.click(within(rowFor('מאיה רוזן (דמו)')).getByRole('button', { name: 'מחיקה' }));
     const dialog = await screen.findByRole('dialog', { name: 'מחיקת משתמש לצמיתות' });
     expect(within(dialog).getByText(/בלתי הפיכה/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/חשבון ההתחברות הנוכחי של המשתמש ל-Nexus.*Supabase Auth/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/חשבון ההתחברות הנוכחי של המשתמש ל-AVARIA.*Supabase Auth/)).toBeInTheDocument();
     expect(within(dialog).getByText(/יסומן לצמיתות כ"נמחק"/)).toBeInTheDocument();
     // Split across nodes (the "לא" is a bold <span>) -- match on the <li>'s
     // full text content instead of a single text node.

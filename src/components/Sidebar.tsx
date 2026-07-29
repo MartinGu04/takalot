@@ -6,7 +6,7 @@ import type { Profile } from '../domain/types';
 import { navItems } from './navItems';
 import { ThemeToggle } from './ThemeToggle';
 import { IconLogOut, IconPlus } from './icons';
-import { NexusMark } from './NexusMark';
+import { AvariaIcon } from './AvariaBrand';
 
 /** Desktop RTL sidebar: brand, primary nav, and the current-user section. Hidden below md. */
 export function Sidebar({ user }: { user: Profile }) {
@@ -17,7 +17,7 @@ export function Sidebar({ user }: { user: Profile }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-e border-hairline bg-surface md:flex">
       <Link to="/" className="flex items-center gap-2.5 px-4 pt-5 pb-4" data-testid="brand-name">
-        <NexusMark className="size-9" />
+        <AvariaIcon className="size-9" />
         <span className="text-lg font-extrabold tracking-tight text-text-primary">{APP_NAME}</span>
       </Link>
 
