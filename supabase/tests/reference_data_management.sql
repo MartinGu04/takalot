@@ -58,6 +58,7 @@ language sql as $$
   insert into results (test, result, detail)
   values (p_test, case when p_ok then 'PASS' else 'FAIL' end, coalesce(p_detail, ''));
 $$;
+grant execute on function pg_temp.check_result(text, boolean, text) to authenticated;
 
 -- ===== Schema, indexes, trigger, policies, and grants =====
 select pg_temp.check_result(
