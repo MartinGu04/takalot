@@ -31,10 +31,26 @@
 -- because trailing whitespace is meaningful, but so the RPC's boundary
 -- agrees byte-for-byte with what the UI already prevents a well-behaved
 -- caller from ever sending.
+--
+-- Also closes a raw-error gap found in Final Review: description/
+-- operational_impact previously had NO controlled required-ness check at
+-- all -- a missing key, explicit JSON null, empty string, or whitespace-only
+-- value fell straight through to the raw `not null`/CHECK constraint from
+-- migration 0001, surfacing Postgres-native wording (e.g. "null value in
+-- column \"description\" ... violates not-null constraint", SQLSTATE 23502)
+-- to a direct RPC caller instead of a clean Hebrew message. v_description/
+-- v_operational_impact below are trimmed-and-nulled exactly like every
+-- other optional-become-required field in this function (v_owner_user_id_raw,
+-- v_recipient, ...), and a null value now raises a controlled exception --
+-- with the exact same message text as createIncidentSchema's own
+-- `nonBlank(400, ...)` refine ("<label>: שדה חובה") -- before either field
+-- ever reaches the INSERT.
 create or replace function create_incident(p_input jsonb) returns incidents
 language plpgsql security definer set search_path = public as $$
 declare
   v_incident incidents;
+  v_description text := nullif(trim(coalesce(p_input->>'description', '')), '');
+  v_operational_impact text := nullif(trim(coalesce(p_input->>'operationalImpact', '')), '');
   v_reported_ops reported_to_ops := (p_input->>'reportedToOps')::reported_to_ops;
   v_recipient text := case when (p_input->>'reportedToOps') = 'yes'
     then nullif(trim(coalesce(p_input->>'reportedToOpsRecipient', '')), '') else null end;
@@ -73,14 +89,19 @@ begin
   -- New in migration 0022: authoritative 400-character caps, mirroring the
   -- frontend exactly. length() on a jsonb->>'key' extraction of a missing
   -- key is length(NULL) = NULL, and `NULL > 400` is NULL (not true), so a
-  -- missing key never raises here -- it still fails the pre-existing
-  -- not-null "יש להזין תיאור"/"יש להזין השפעה מבצעית" checks below exactly
-  -- as before this migration.
+  -- missing key never raises here -- it falls through to the required
+  -- check immediately below instead.
   if length(p_input->>'description') > 400 then
     raise exception 'validation: תיאור התקלה: עד 400 תווים';
   end if;
+  if v_description is null then
+    raise exception 'validation: תיאור התקלה: שדה חובה';
+  end if;
   if length(p_input->>'operationalImpact') > 400 then
     raise exception 'validation: השפעה מבצעית: עד 400 תווים';
+  end if;
+  if v_operational_impact is null then
+    raise exception 'validation: השפעה מבצעית: שדה חובה';
   end if;
   if v_reported_ops = 'yes' and v_recipient is null then
     raise exception 'validation: יש להזין למי דווח';
@@ -101,10 +122,10 @@ begin
     allocate_incident_number(),
     (p_input->>'systemId')::uuid,
     (p_input->>'locationId')::uuid,
-    trim(p_input->>'description'),
+    v_description,
     (p_input->>'severity')::incident_severity,
     (p_input->>'status')::incident_status,
-    trim(p_input->>'operationalImpact'),
+    v_operational_impact,
     v_owner_user_id,
     v_owner_external_name,
     (p_input->>'discoveredAt')::timestamptz,

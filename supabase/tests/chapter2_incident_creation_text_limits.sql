@@ -2,13 +2,17 @@
 -- תיאור התקלה (description) and השפעה מבצעית (operational_impact).
 --
 -- Covers: exactly-400 succeeds (boundary, not off-by-one); 401 is rejected
--- with the exact Hebrew message for both fields; a missing key still hits
--- the pre-existing "required" validation, not a spurious length error; a
--- direct INSERT with a description/operational_impact far longer than 400
--- characters still succeeds (proving there is deliberately NO table CHECK
--- constraint, so historical/long-text rows are never blocked or rewritten);
--- such a historical row remains fully readable; unrelated
--- authorization/validation/grant behavior is unchanged.
+-- with the exact Hebrew message for both fields; missing key / explicit
+-- JSON null / empty string / whitespace-only are ALL rejected with the same
+-- clean, controlled Hebrew "שדה חובה" message for both fields -- and
+-- specifically NEVER with the raw Postgres NOT NULL (23502) or CHECK
+-- (23514) constraint wording that migration 0001's bare column constraints
+-- would otherwise surface to a direct RPC caller; a direct INSERT with a
+-- description/operational_impact far longer than 400 characters still
+-- succeeds (proving there is deliberately NO table CHECK constraint, so
+-- historical/long-text rows are never blocked or rewritten); such a
+-- historical row remains fully readable; unrelated authorization/
+-- validation/grant behavior is unchanged.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -64,6 +68,7 @@ grant execute on function pg_temp.base_input(jsonb) to authenticated;
 do $$
 declare
   v_incident incidents;
+  v_state text;
 begin
   perform pg_temp.as_user('00000000-0000-0000-0000-0000000000e1');
   set local role authenticated;
@@ -110,17 +115,94 @@ begin
   end;
 
   -- =====================================================================
-  -- 4. A missing description key still hits the PRE-EXISTING "required"
-  --    validation (raised by the not-null insert/trim path further down),
-  --    never the new length check -- a missing key must never itself look
-  --    like a length violation.
+  -- 4. description: missing key / explicit JSON null / empty string /
+  --    whitespace-only are ALL rejected with the SAME clean, controlled
+  --    Hebrew "שדה חובה" message -- and specifically NEVER with the raw
+  --    Postgres NOT NULL (23502) wording that migration 0001's bare
+  --    `description text not null check (...)` would otherwise surface to
+  --    a direct RPC caller bypassing the new guard entirely.
   -- =====================================================================
   begin
-    perform create_incident(pg_temp.base_input('{"description": null}'::jsonb));
-    insert into results (test, result, detail) values ('a null description is never treated as a length violation', 'FAIL', 'succeeded');
+    perform create_incident(pg_temp.base_input('{}'::jsonb) - 'description');
+    insert into results (test, result, detail) values ('description missing key: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
   exception when others then
-    insert into results (test, result, detail) values ('a null description is never treated as a length violation',
-      case when sqlerrm <> 'validation: תיאור התקלה: עד 400 תווים' then 'PASS' else 'FAIL' end, sqlerrm);
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('description missing key: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: תיאור התקלה: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('description', null)));
+    insert into results (test, result, detail) values ('description explicit JSON null: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('description explicit JSON null: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: תיאור התקלה: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('description', '')));
+    insert into results (test, result, detail) values ('description empty string: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('description empty string: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: תיאור התקלה: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('description', '   ')));
+    insert into results (test, result, detail) values ('description whitespace-only: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('description whitespace-only: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: תיאור התקלה: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  -- =====================================================================
+  -- 4b. operationalImpact: the same four cases, mirroring 4 exactly.
+  -- =====================================================================
+  begin
+    perform create_incident(pg_temp.base_input('{}'::jsonb) - 'operationalImpact');
+    insert into results (test, result, detail) values ('operationalImpact missing key: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('operationalImpact missing key: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: השפעה מבצעית: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('operationalImpact', null)));
+    insert into results (test, result, detail) values ('operationalImpact explicit JSON null: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('operationalImpact explicit JSON null: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: השפעה מבצעית: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('operationalImpact', '')));
+    insert into results (test, result, detail) values ('operationalImpact empty string: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('operationalImpact empty string: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: השפעה מבצעית: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform create_incident(pg_temp.base_input(jsonb_build_object('operationalImpact', '   ')));
+    insert into results (test, result, detail) values ('operationalImpact whitespace-only: rejected cleanly, no raw SQLSTATE', 'FAIL', 'succeeded');
+  exception when others then
+    get stacked diagnostics v_state = returned_sqlstate;
+    insert into results (test, result, detail) values ('operationalImpact whitespace-only: rejected cleanly, no raw SQLSTATE',
+      case when sqlerrm = 'validation: השפעה מבצעית: שדה חובה' and v_state not in ('23502', '23514') then 'PASS' else 'FAIL' end,
+      'sqlstate=' || v_state || ' msg=' || sqlerrm);
   end;
 
   -- =====================================================================
