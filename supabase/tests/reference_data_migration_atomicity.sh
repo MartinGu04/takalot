@@ -129,7 +129,7 @@ awk '
 ' "$MIGRATION" >"$LATE_COPY" || fail "could not build the temporary late-failure migration"
 
 LATE_OUTPUT="$TMP_DIR/late-output.txt"
-if "${PSQL[@]}" -d "$LATE_DB" -v ON_ERROR_STOP=1 -f "$LATE_COPY" >"$LATE_OUTPUT" 2>&1; then
+if "${PSQL[@]}" -d "$LATE_DB" -v ON_ERROR_STOP=1 -f - <"$LATE_COPY" >"$LATE_OUTPUT" 2>&1; then
   fail "deliberately introduced late failure unexpectedly succeeded"
 fi
 if ! grep -q "__reference_data_atomicity_late_failure__" "$LATE_OUTPUT"; then

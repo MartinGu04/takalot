@@ -26,6 +26,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
 
       - name: Prepare disposable PostgreSQL 16
+        id: postgresql
         run: |
           sudo apt-get update
           sudo apt-get install --yes postgresql-contrib
@@ -42,12 +43,15 @@ jobs:
           test "${pgcrypto_available}" = "1"
 
       - name: Run SQL suite
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
         run: bash supabase/tests/run.sh
 
       - name: Verify migration atomicity
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
         run: bash supabase/tests/reference_data_migration_atomicity.sh
 
       - name: Verify reference-data concurrency
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
         run: bash supabase/tests/reference_data_concurrency.sh
 
       - name: Clean up fixed test database
