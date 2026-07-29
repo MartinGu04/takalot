@@ -41,8 +41,32 @@ describe('reference-data management UI', () => {
     let systemCard = cardNamed(systemName);
     expect(within(systemCard).getByText('פעיל')).toBeInTheDocument();
     expect(within(systemCard).getByText(/סדר תצוגה:/)).toBeInTheDocument();
-    expect(within(systemCard).getByRole('button', { name: `הזזת ${systemName} למעלה` })).toBeEnabled();
-    expect(within(systemCard).getByRole('button', { name: `הזזת ${systemName} למטה` })).toBeDisabled();
+    const moveButton = within(systemCard).getByRole('button', { name: `הזזת ${systemName}` });
+    expect(moveButton).toHaveAttribute('aria-haspopup', 'menu');
+    expect(moveButton).toHaveAttribute('aria-expanded', 'false');
+    moveButton.focus();
+    await user.keyboard('{ArrowDown}');
+    const moveMenu = screen.getByRole('menu', { name: `אפשרויות הזזה עבור ${systemName}` });
+    const moveUp = within(moveMenu).getByRole('menuitem', { name: 'למעלה' });
+    expect(moveUp).toBeEnabled();
+    expect(within(moveMenu).getByRole('menuitem', { name: 'למטה' })).toBeDisabled();
+    await waitFor(() => expect(moveUp).toHaveFocus());
+    await user.keyboard('{Escape}');
+    expect(moveButton).toHaveFocus();
+    expect(moveButton).toHaveAttribute('aria-expanded', 'false');
+
+    const betaCard = cardNamed('מערכת בטא');
+    const betaMoveButton = within(betaCard).getByRole('button', { name: 'הזזת מערכת בטא' });
+    betaMoveButton.focus();
+    await user.keyboard('{ArrowDown}');
+    const betaMoveMenu = screen.getByRole('menu', { name: 'אפשרויות הזזה עבור מערכת בטא' });
+    const betaMoveUp = within(betaMoveMenu).getByRole('menuitem', { name: 'למעלה' });
+    const betaMoveDown = within(betaMoveMenu).getByRole('menuitem', { name: 'למטה' });
+    await waitFor(() => expect(betaMoveUp).toHaveFocus());
+    await user.keyboard('{ArrowDown}');
+    expect(betaMoveDown).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(within(betaCard).getByRole('button', { name: 'שינוי שם' })).toHaveFocus();
 
     await user.click(within(systemCard).getByRole('button', { name: 'שינוי שם' }));
     const renameDialog = screen.getByRole('dialog', { name: 'שינוי שם מערכת / עמדה' });
@@ -64,7 +88,9 @@ describe('reference-data management UI', () => {
     systemCard = cardNamed('מערכת לאחר שינוי');
     await within(systemCard).findByText('פעיל');
 
-    await user.click(within(systemCard).getByRole('button', { name: 'מחיקה' }));
+    await user.click(
+      within(systemCard).getByRole('button', { name: 'מחיקת מערכת לאחר שינוי' }),
+    );
     const deleteDialog = screen.getByRole('dialog', { name: 'מחיקת מערכת / עמדה' });
     expect(deleteDialog).toHaveTextContent('פריט שמקושר לתקלה או לרשומה היסטורית יישמר');
     await user.click(within(deleteDialog).getByRole('button', { name: 'בקשת מחיקה' }));
@@ -82,7 +108,9 @@ describe('reference-data management UI', () => {
     expect(within(locationCard).getByText('פעיל')).toBeInTheDocument();
 
     // Referenced deletion is visibly distinguished from physical deletion.
-    await user.click(within(cardNamed('אתר 1')).getByRole('button', { name: 'מחיקה' }));
+    await user.click(
+      within(cardNamed('אתר 1')).getByRole('button', { name: 'מחיקת אתר 1' }),
+    );
     const referencedDeleteDialog = screen.getByRole('dialog', { name: 'מחיקת מיקום' });
     await user.click(within(referencedDeleteDialog).getByRole('button', { name: 'בקשת מחיקה' }));
     expect(await screen.findByText(/המיקום נמצא בשימוש ולכן הועבר למצב לא פעיל/)).toBeInTheDocument();

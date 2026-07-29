@@ -1,10 +1,12 @@
 // System administrator screen: systems/positions, locations, audit log.
 // User/personnel management lives on the dedicated כוח אדם page (/personnel).
-import { useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSession } from '../auth/AuthContext';
 import { useProfiles, useSystems, useLocations, useAuditLogs, useAppMutation, repo } from '../data/hooks';
 import { Badge, Button, Dialog, EmptyState, ErrorState, Field, Input, Spinner, useToast } from '../components/ui';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { FloatingPopover } from '../components/FloatingPopover';
+import { IconChevronDown, IconTrash } from '../components/icons';
 import type { LocationRecord, SystemRecord } from '../domain/types';
 import { formatDateTime } from '../lib/time';
 
@@ -31,6 +33,178 @@ const CONFIG_COPY = {
     archivedByDelete: 'המיקום נמצא בשימוש ולכן הועבר למצב לא פעיל ולא נמחק.',
   },
 } as const;
+
+function MoveMenu({
+  recordName,
+  canMoveUp,
+  canMoveDown,
+  disabled,
+  onMove,
+}: {
+  recordName: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  disabled: boolean;
+  onMove: (direction: 'up' | 'down') => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const focusOnOpen = useRef<'first' | 'last'>('first');
+
+  const menuItems = () =>
+    Array.from(
+      panelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [],
+    );
+
+  const openMenu = (focus: 'first' | 'last') => {
+    focusOnOpen.current = focus;
+    setOpen(true);
+  };
+
+  const closeAndFocusTrigger = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const selectDirection = (direction: 'up' | 'down') => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    onMove(direction);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => {
+      const items = menuItems();
+      const target = focusOnOpen.current === 'last' ? items.at(-1) : items[0];
+      target?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeAndFocusTrigger();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const focusAdjacentPageControl = (backwards: boolean) => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const controls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !panelRef.current?.contains(element));
+    const currentIndex = controls.indexOf(trigger);
+    controls[currentIndex + (backwards ? -1 : 1)]?.focus();
+  };
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      setOpen(false);
+      focusAdjacentPageControl(event.shiftKey);
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    event.preventDefault();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === 'Home') {
+      items[0].focus();
+    } else if (event.key === 'End') {
+      items.at(-1)?.focus();
+    } else {
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + step + items.length) % items.length;
+      items[nextIndex].focus();
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled || (!canMoveUp && !canMoveDown)}
+        aria-label={`הזזת ${recordName}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => (open ? setOpen(false) : openMenu('first'))}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            openMenu(event.key === 'ArrowUp' ? 'last' : 'first');
+          }
+        }}
+        className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-hairline-strong bg-surface px-2.5 py-2 text-sm font-medium text-text-primary shadow-soft hover:bg-surface-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+      >
+        הזזה
+        <IconChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <FloatingPopover
+        anchorRef={triggerRef}
+        panelRef={panelRef}
+        open={open}
+        width={156}
+        align="start"
+        className="popover-panel z-50 animate-scale-in p-1.5"
+      >
+        <div
+          id={menuId}
+          role="menu"
+          aria-label={`אפשרויות הזזה עבור ${recordName}`}
+          onKeyDown={handleMenuKeyDown}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            disabled={!canMoveUp || disabled}
+            onClick={() => selectDirection('up')}
+            className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-right text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span aria-hidden="true">↑</span>
+            למעלה
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            disabled={!canMoveDown || disabled}
+            onClick={() => selectDirection('down')}
+            className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-right text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span aria-hidden="true">↓</span>
+            למטה
+          </button>
+        </div>
+      </FloatingPopover>
+    </>
+  );
+}
 
 function ConfigTab({ kind }: { kind: ConfigKind }) {
   const session = useSession();
@@ -157,32 +331,26 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
                   <p className="mt-1 text-xs text-muted">סדר תצוגה: {record.displayOrder}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:justify-end">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:justify-end">
+                  <MoveMenu
+                    recordName={record.name}
+                    canMoveUp={index > 0}
+                    canMoveDown={index < (data?.length ?? 0) - 1}
+                    disabled={busy}
+                    onMove={(direction) => move.mutate({ id: record.id, direction })}
+                  />
                   <Button
-                    variant="secondary"
-                    className="px-3"
-                    disabled={busy || index === 0}
-                    aria-label={`הזזת ${record.name} למעלה`}
-                    onClick={() => move.mutate({ id: record.id, direction: 'up' })}
+                    variant="accent"
+                    className="px-2.5!"
+                    disabled={busy}
+                    onClick={() => openRename(record)}
                   >
-                    ↑ למעלה
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    className="px-3"
-                    disabled={busy || index === (data?.length ?? 0) - 1}
-                    aria-label={`הזזת ${record.name} למטה`}
-                    onClick={() => move.mutate({ id: record.id, direction: 'down' })}
-                  >
-                    ↓ למטה
-                  </Button>
-                  <Button variant="secondary" className="px-3" disabled={busy} onClick={() => openRename(record)}>
                     שינוי שם
                   </Button>
                   {record.archived ? (
                     <Button
-                      variant="secondary"
-                      className="px-3"
+                      variant="success"
+                      className="px-2!"
                       disabled={busy}
                       onClick={() => setArchived.mutate({ id: record.id, archived: false })}
                     >
@@ -190,8 +358,8 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
                     </Button>
                   ) : (
                     <Button
-                      variant="secondary"
-                      className="px-3"
+                      variant="warning"
+                      className="px-2!"
                       disabled={busy}
                       onClick={() => setConfirming({ type: 'deactivate', record })}
                     >
@@ -199,12 +367,14 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
                     </Button>
                   )}
                   <Button
-                    variant="ghost"
-                    className="px-3 text-red-700 dark:text-red-400"
+                    variant="danger"
+                    className="size-11 shrink-0 p-0!"
                     disabled={busy}
+                    aria-label={`מחיקת ${record.name}`}
+                    title={`מחיקת ${record.name}`}
                     onClick={() => setConfirming({ type: 'delete', record })}
                   >
-                    מחיקה
+                    <IconTrash className="size-5" />
                   </Button>
                 </div>
               </div>
