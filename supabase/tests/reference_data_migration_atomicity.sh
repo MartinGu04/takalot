@@ -132,8 +132,11 @@ LATE_OUTPUT="$TMP_DIR/late-output.txt"
 if "${PSQL[@]}" -d "$LATE_DB" -v ON_ERROR_STOP=1 -f "$LATE_COPY" >"$LATE_OUTPUT" 2>&1; then
   fail "deliberately introduced late failure unexpectedly succeeded"
 fi
-grep -q "__reference_data_atomicity_late_failure__" "$LATE_OUTPUT" \
-  || fail "temporary migration did not reach the deliberate late failure"
+if ! grep -q "__reference_data_atomicity_late_failure__" "$LATE_OUTPUT"; then
+  echo "----- captured late migration output -----" >&2
+  cat "$LATE_OUTPUT" >&2
+  fail "temporary migration did not reach the deliberate late failure"
+fi
 assert_no_0024_artifacts "$LATE_DB"
 echo "PASS: late statement failure rolled the complete migration back"
 echo "ALL REFERENCE-DATA MIGRATION ATOMICITY CHECKS PASS"
