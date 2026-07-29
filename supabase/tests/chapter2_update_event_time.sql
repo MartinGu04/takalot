@@ -31,8 +31,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000e3', 'Viewer', 'viewer', true),
   ('00000000-0000-0000-0000-0000000000e4', 'Other Technician', 'technician', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f701', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f702', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f701', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f702', 'Loc', 1);
 
 -- Reject-only fixtures (version never advances -- expectedVersion=1 is
 -- reusable across every rejected attempt against them).

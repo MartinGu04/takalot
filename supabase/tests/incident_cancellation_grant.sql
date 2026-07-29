@@ -17,8 +17,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000e1', 'Shift Supervisor', 'shift_supervisor', true),
   ('00000000-0000-0000-0000-0000000000e2', 'Technician', 'technician', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f501', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f502', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f501', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f502', 'Loc', 1);
 
 insert into incidents (id, number, system_id, location_id, description, severity, status,
                        operational_impact, owner_user_id, discovered_at, created_by, updated_by,

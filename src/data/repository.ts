@@ -99,6 +99,9 @@ export interface ExportAuditInfo {
   filtersDescription: string;
 }
 
+export type ReferenceDataMoveDirection = 'up' | 'down';
+export type ReferenceDataDeleteOutcome = 'deleted' | 'archived';
+
 export interface Repository {
   readonly mode: 'demo' | 'supabase';
 
@@ -112,9 +115,13 @@ export interface Repository {
   createSystem(session: Session, name: string): Promise<SystemRecord>;
   renameSystem(session: Session, id: string, name: string): Promise<void>;
   setSystemArchived(session: Session, id: string, archived: boolean): Promise<void>;
+  moveSystem(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void>;
+  deleteSystem(session: Session, id: string): Promise<ReferenceDataDeleteOutcome>;
   createLocation(session: Session, name: string): Promise<LocationRecord>;
   renameLocation(session: Session, id: string, name: string): Promise<void>;
   setLocationArchived(session: Session, id: string, archived: boolean): Promise<void>;
+  moveLocation(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void>;
+  deleteLocation(session: Session, id: string): Promise<ReferenceDataDeleteOutcome>;
 
   // --- linked-personnel management (role ceilings enforced in the database) ---
   setUserRole(session: Session, userId: string, role: Role): Promise<void>;

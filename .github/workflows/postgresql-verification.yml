@@ -1,0 +1,61 @@
+name: PostgreSQL verification
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - ".github/workflows/postgresql-verification.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  postgresql-verification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+
+    steps:
+      - name: Check out repository
+        # actions/checkout v5.1.0
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+
+      - name: Prepare disposable PostgreSQL 16
+        id: postgresql
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-contrib
+          sudo systemctl start postgresql.service
+          sudo -u postgres pg_isready
+
+          server_version="$(sudo -u postgres psql -v ON_ERROR_STOP=1 -Atqc "show server_version;")"
+          server_version_num="$(sudo -u postgres psql -v ON_ERROR_STOP=1 -Atqc "show server_version_num;")"
+          echo "PostgreSQL version: ${server_version}"
+          test "${server_version_num}" -ge 160000
+          test "${server_version_num}" -lt 170000
+
+          pgcrypto_available="$(sudo -u postgres psql -v ON_ERROR_STOP=1 -Atqc "select count(*) from pg_available_extensions where name = 'pgcrypto';")"
+          test "${pgcrypto_available}" = "1"
+
+      - name: Run SQL suite
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
+        run: bash supabase/tests/run.sh
+
+      - name: Verify migration atomicity
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
+        run: bash supabase/tests/reference_data_migration_atomicity.sh
+
+      - name: Verify reference-data concurrency
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
+        run: bash supabase/tests/reference_data_concurrency.sh
+
+      - name: Clean up fixed test database
+        if: ${{ always() }}
+        run: |
+          sudo -u postgres psql -v ON_ERROR_STOP=1 -d postgres \
+            -c "drop database if exists takalot_migtest with (force);"

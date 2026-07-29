@@ -33,8 +33,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000c3', 'Viewer', 'viewer', true),
   ('00000000-0000-0000-0000-0000000000c4', 'Technician Actor', 'technician', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f801', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f802', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f801', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f802', 'Loc', 1);
 
 -- A HISTORICAL incident, inserted directly (as any pre-migration row would
 -- exist) with no reported_to_comms/wisdom_reported values supplied at all --

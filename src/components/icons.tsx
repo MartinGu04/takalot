@@ -56,6 +56,17 @@ export function IconArchive(props: IconProps) {
   );
 }
 
+export function IconTrash(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3.5 5.5h13" />
+      <path d="M8 3.2h4l.8 2.3H7.2L8 3.2Z" />
+      <path d="m5 5.5.7 10.1a1.2 1.2 0 0 0 1.2 1.1h6.2a1.2 1.2 0 0 0 1.2-1.1L15 5.5" />
+      <path d="M8.2 8.5v5.2M11.8 8.5v5.2" />
+    </svg>
+  );
+}
+
 export function IconShield(props: IconProps) {
   return (
     <svg {...base(props)}>

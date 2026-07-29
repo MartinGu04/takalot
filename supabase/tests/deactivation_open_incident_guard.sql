@@ -25,8 +25,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000c4', 'Owner Of Nothing', 'technician', true),
   ('00000000-0000-0000-0000-0000000000c5', 'Reassignment Target', 'shift_supervisor', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f301', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f302', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f301', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f302', 'Loc', 1);
 
 -- An OPEN incident owned by c2.
 insert into incidents (id, number, system_id, location_id, description, severity, status,

@@ -110,6 +110,7 @@ export interface SystemRecord {
   id: string;
   name: string;
   archived: boolean;
+  displayOrder: number;
   createdAt: string;
 }
 
@@ -117,6 +118,7 @@ export interface LocationRecord {
   id: string;
   name: string;
   archived: boolean;
+  displayOrder: number;
   createdAt: string;
 }
 

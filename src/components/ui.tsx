@@ -20,13 +20,19 @@ function cx(...parts: (string | false | null | undefined)[]): string {
 }
 
 // ---------- Button ----------
-type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost';
+type ButtonVariant = 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'danger' | 'ghost';
 
 const buttonStyles: Record<ButtonVariant, string> = {
   primary:
     'bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300 dark:bg-brand-500 dark:hover:bg-brand-400 dark:disabled:bg-brand-900',
   secondary:
     'bg-surface text-text-primary border border-hairline-strong shadow-soft hover:bg-surface-hover',
+  accent:
+    'border border-brand-300 bg-brand-50 text-brand-900 shadow-soft hover:bg-brand-100 disabled:opacity-50 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200 dark:hover:bg-brand-900/60',
+  success:
+    'border border-green-300 bg-green-50 text-green-900 shadow-soft hover:bg-green-100 disabled:opacity-50 dark:border-green-800 dark:bg-green-950/50 dark:text-green-200 dark:hover:bg-green-900/60',
+  warning:
+    'border border-amber-300 bg-amber-50 text-amber-950 shadow-soft hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-900/60',
   danger:
     'bg-red-700 text-white hover:bg-red-800 disabled:bg-red-300 dark:bg-red-600 dark:hover:bg-red-500',
   ghost:

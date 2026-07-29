@@ -27,8 +27,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000e1', 'Supervisor Limits', 'shift_supervisor', true),
   ('00000000-0000-0000-0000-0000000000e2', 'Owner Limits', 'technician', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f901', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f902', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f901', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f902', 'Loc', 1);
 
 -- A HISTORICAL incident, inserted directly with a description/impact far
 -- longer than 400 characters (as any pre-migration row created under the

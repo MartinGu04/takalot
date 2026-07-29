@@ -1637,3 +1637,199 @@ describe('export permission enforcement', () => {
     expect(logs.some((l) => l.action === 'export_generated')).toBe(true);
   });
 });
+
+describe('reference-data management parity (migration 0024)', () => {
+  it('creates trimmed systems and locations at the deterministic end of their separate namespaces', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const system = await repo.createSystem(admin, '  מערכת חדשה  ');
+    const location = await repo.createLocation(admin, '  מערכת חדשה  ');
+
+    expect(system.name).toBe('מערכת חדשה');
+    expect(location.name).toBe('מערכת חדשה'); // separate namespaces
+    expect((await repo.listSystems()).at(-1)).toMatchObject({ id: system.id, displayOrder: system.displayOrder });
+    expect((await repo.listLocations()).at(-1)).toMatchObject({ id: location.id, displayOrder: location.displayOrder });
+
+    const logs = await repo.listAuditLogs(admin, {});
+    expect(logs.some((log) => log.action === 'system_created' && log.entityId === system.id)).toBe(true);
+    expect(logs.some((log) => log.action === 'location_created' && log.entityId === location.id)).toBe(true);
+  });
+
+  it('rejects unauthorized and inactive administrators authoritatively', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.createSystem(supervisor1, 'אסור')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(repo.createLocation(viewer, 'אסור')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.profiles.find((profile) => profile.id === DEMO_USERS.admin)!.active = false;
+    storage.save(seeded);
+    const inactiveRepo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    await expect(inactiveRepo.createSystem(admin, 'אסור')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('rejects empty, whitespace-only, and overlong names', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.createSystem(admin, '')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(repo.createLocation(admin, '   ')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(repo.createSystem(admin, 'א'.repeat(121))).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('reserves normalized names globally, including inactive rows, while keeping namespaces separate', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const system = await repo.createSystem(admin, 'Control Alpha');
+    await repo.setSystemArchived(admin, system.id, true);
+
+    await expect(repo.createSystem(admin, '  control alpha  ')).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('להפעיל מחדש'),
+    });
+    await expect(repo.createLocation(admin, 'CONTROL ALPHA')).resolves.toMatchObject({ name: 'CONTROL ALPHA' });
+    await expect(repo.createLocation(admin, ' control alpha ')).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: expect.stringContaining('להפעיל מחדש'),
+    });
+  });
+
+  it('renames without changing the stable id and rejects a normalized duplicate or missing id', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const record = await repo.createSystem(admin, 'שם לפני');
+    await repo.renameSystem(admin, record.id, '  שם אחרי  ');
+
+    expect((await repo.listSystems()).find((system) => system.id === record.id)?.name).toBe('שם אחרי');
+    await expect(repo.renameSystem(admin, record.id, ' מערכת אלפא ')).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    await expect(repo.renameLocation(admin, 'missing', 'שם')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('sorts equal order values deterministically and safely moves up/down at every boundary', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.systems.forEach((system) => {
+      system.displayOrder = 50;
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+
+    const firstRead = (await repo.listSystems()).map((system) => system.id);
+    expect((await repo.listSystems()).map((system) => system.id)).toEqual(firstRead);
+
+    const firstId = firstRead[0];
+    await repo.moveSystem(admin, firstId, 'up');
+    expect((await repo.listSystems())[0].id).toBe(firstId);
+
+    const secondId = (await repo.listSystems())[1].id;
+    await repo.moveSystem(admin, secondId, 'up');
+    expect((await repo.listSystems())[0].id).toBe(secondId);
+    await repo.moveSystem(admin, secondId, 'down');
+    expect((await repo.listSystems())[1].id).toBe(secondId);
+
+    const locations = await repo.listLocations();
+    const lastId = locations.at(-1)!.id;
+    await repo.moveLocation(admin, lastId, 'down');
+    expect((await repo.listLocations()).at(-1)!.id).toBe(lastId);
+    await repo.moveLocation(admin, lastId, 'up');
+    expect((await repo.listLocations()).at(-2)!.id).toBe(lastId);
+  });
+
+  it('deactivates selectors, preserves historical rendering, and reactivation restores availability', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setSystemArchived(admin, 'sys-alpha', true);
+    await repo.setLocationArchived(admin, 'loc-1', true);
+
+    expect((await repo.listSystems()).find((system) => system.id === 'sys-alpha')).toMatchObject({
+      archived: true,
+      name: 'מערכת אלפא',
+    });
+    expect((await repo.listLocations()).find((location) => location.id === 'loc-1')).toMatchObject({
+      archived: true,
+      name: 'אתר 1',
+    });
+    expect((await repo.listIncidents(admin)).some((incident) => incident.systemId === 'sys-alpha')).toBe(true);
+    await expect(repo.createIncident(supervisor1, baseCreateInput())).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'יש לבחור מערכת / עמדה פעילה.',
+    });
+
+    await repo.setSystemArchived(admin, 'sys-alpha', false);
+    await repo.setLocationArchived(admin, 'loc-1', false);
+    await expect(repo.createIncident(supervisor1, baseCreateInput())).resolves.toMatchObject({
+      systemId: 'sys-alpha',
+      locationId: 'loc-1',
+    });
+  });
+
+  it('physically deletes never-used rows, frees their names, and archives referenced rows instead', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const unusedSystem = await repo.createSystem(admin, 'זמני למחיקה');
+    const unusedLocation = await repo.createLocation(admin, 'מיקום זמני למחיקה');
+
+    await expect(repo.deleteSystem(admin, unusedSystem.id)).resolves.toBe('deleted');
+    await expect(repo.deleteLocation(admin, unusedLocation.id)).resolves.toBe('deleted');
+    const systemsAfterDelete = await repo.listSystems();
+    const locationsAfterDelete = await repo.listLocations();
+    expect(systemsAfterDelete.some((system) => system.id === unusedSystem.id)).toBe(false);
+    expect(systemsAfterDelete.map((system) => system.displayOrder)).toEqual(
+      systemsAfterDelete.map((_, index) => index + 1),
+    );
+    expect(locationsAfterDelete.map((location) => location.displayOrder)).toEqual(
+      locationsAfterDelete.map((_, index) => index + 1),
+    );
+    await expect(repo.createSystem(admin, ' זמני למחיקה ')).resolves.toMatchObject({ name: 'זמני למחיקה' });
+    await expect(repo.createLocation(admin, ' מיקום זמני למחיקה ')).resolves.toMatchObject({
+      name: 'מיקום זמני למחיקה',
+    });
+
+    await expect(repo.deleteSystem(admin, 'sys-alpha')).resolves.toBe('archived');
+    await expect(repo.deleteLocation(admin, 'loc-1')).resolves.toBe('archived');
+    expect((await repo.listSystems()).find((system) => system.id === 'sys-alpha')?.archived).toBe(true);
+    expect((await repo.listLocations()).find((location) => location.id === 'loc-1')?.archived).toBe(true);
+    expect((await repo.listIncidents(admin)).some((incident) => incident.systemId === 'sys-alpha')).toBe(true);
+  });
+
+  it('returns controlled not-found errors for deletion and move operations', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.deleteSystem(admin, 'missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(repo.deleteLocation(admin, 'missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(repo.moveSystem(admin, 'missing', 'up')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(
+      repo.moveLocation(admin, 'loc-1', 'sideways' as 'up'),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('blocks reactivation when stale demo storage contains a legacy normalized conflict', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.systems.push({
+      id: 'legacy-duplicate',
+      name: ' מערכת אלפא ',
+      archived: true,
+      displayOrder: 99,
+      createdAt: FIXED_NOW.toISOString(),
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+
+    await expect(repo.setSystemArchived(admin, 'legacy-duplicate', false)).rejects.toMatchObject({
+      code: 'CONFLICT',
+    });
+    expect((await repo.listSystems()).find((system) => system.id === 'legacy-duplicate')?.archived).toBe(true);
+  });
+
+  it('backfills old persisted demo rows with stable display orders without removing or renaming them', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    delete seeded.referenceDataSchemaVersion;
+    for (const record of [...seeded.systems, ...seeded.locations]) {
+      delete (record as Partial<typeof record>).displayOrder;
+    }
+    const originalSystemIds = seeded.systems.map((system) => system.id).sort();
+    storage.save(seeded);
+
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    const systems = await repo.listSystems();
+    expect(systems.map((system) => system.id).sort()).toEqual(originalSystemIds);
+    expect(systems.every((system) => Number.isInteger(system.displayOrder) && system.displayOrder > 0)).toBe(true);
+    expect(storage.load()?.referenceDataSchemaVersion).toBe(1);
+  });
+});
