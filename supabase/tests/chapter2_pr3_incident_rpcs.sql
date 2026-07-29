@@ -54,8 +54,8 @@ insert into profiles (id, full_name, role, active) values
 insert into profiles (id, full_name, role, active, deleted_at, deleted_by) values
   ('00000000-0000-0000-0000-0000000000d6', 'Tombstoned Performer', 'technician', false, now(), '00000000-0000-0000-0000-0000000000d1');
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f401', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f402', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f401', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f402', 'Loc', 1);
 
 -- f410: a normal open incident owned by d2, discovered 1 day ago -- the main
 -- fixture for cancel_incident/add_incident_report/set_incident_status_check

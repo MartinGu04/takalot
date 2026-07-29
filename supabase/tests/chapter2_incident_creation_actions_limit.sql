@@ -26,8 +26,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000f1', 'Supervisor Actions', 'shift_supervisor', true),
   ('00000000-0000-0000-0000-0000000000f2', 'Owner Actions', 'technician', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000fa01', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000fa02', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000fa01', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000fa02', 'Loc', 1);
 
 create temp table results (id serial, test text, result text, detail text);
 grant all on results to authenticated, anon;

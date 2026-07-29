@@ -22,8 +22,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000d3', 'Inactive Tech', 'technician', false),
   ('00000000-0000-0000-0000-0000000000d4', 'Supervisor', 'shift_supervisor', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f601', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f602', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f601', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f602', 'Loc', 1);
 
 -- General-purpose open incident used across cancellation/report/status-check/severity sections.
 insert into incidents (id, number, system_id, location_id, description, severity, status,

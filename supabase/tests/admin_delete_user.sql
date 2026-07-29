@@ -45,8 +45,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000b8', 'Tech Three Pre-Inactive', 'technician', false),
   ('00000000-0000-0000-0000-000000000b10', 'Viewer Two', 'viewer', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f201', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f202', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f201', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f202', 'Loc', 1);
 
 -- An OPEN incident owned by Tech Two, to exercise the guard.
 insert into incidents (id, number, system_id, location_id, description, severity, status,

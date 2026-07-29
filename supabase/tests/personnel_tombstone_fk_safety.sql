@@ -31,8 +31,8 @@ insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000a2', 'Departed Tech', 'technician', true),
   ('00000000-0000-0000-0000-0000000000a3', 'Control Tech', 'technician', true);
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f101', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f102', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f101', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f102', 'Loc', 1);
 
 -- Incident + full timeline history attributed to the soon-to-depart user.
 insert into incidents (id, number, system_id, location_id, description, severity, status,

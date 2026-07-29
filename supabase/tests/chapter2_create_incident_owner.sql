@@ -30,8 +30,8 @@ insert into profiles (id, full_name, role, active) values
 insert into profiles (id, full_name, role, active, deleted_at, deleted_by) values
   ('00000000-0000-0000-0000-0000000000b4', 'Tombstoned Owner', 'technician', false, now(), '00000000-0000-0000-0000-0000000000b1');
 
-insert into systems (id, name) values ('00000000-0000-0000-0000-00000000f601', 'Sys');
-insert into locations (id, name) values ('00000000-0000-0000-0000-00000000f602', 'Loc');
+insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f601', 'Sys', 1);
+insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f602', 'Loc', 1);
 
 -- A HISTORICAL incident with external-owner-only, inserted directly (as any
 -- pre-migration row would exist) -- must remain fully readable and
