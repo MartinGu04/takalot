@@ -158,6 +158,18 @@ describe('IncidentCreatePage: form behavior', () => {
     expect(await screen.findByText('יש להזין תיאור')).toBeInTheDocument();
   });
 
+  it('requires an actual explanation when "ללא צפי כרגע" is selected', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.click(screen.getByRole('checkbox', { name: 'יש צפי לעדכון הבא' }));
+    await user.type(screen.getByLabelText(/^נימוק ל"ללא צפי כרגע"/), 'ללא צפי כרגע');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+
+    expect(await screen.findByText('יש להזין נימוק ממשי ל"ללא צפי כרגע"')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'פתיחת תקלה' })).toBeInTheDocument();
+  });
+
   it('disables the submit button while submitting, preventing a duplicate call', async () => {
     const { LocalDemoRepository } = await import('../data/local/localRepository');
     const original = LocalDemoRepository.prototype.createIncident;

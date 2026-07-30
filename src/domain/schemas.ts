@@ -1,5 +1,6 @@
 // Zod schemas shared by forms (client) and the data layer (server-side style validation).
 import { z } from 'zod';
+import { meaningfulNoDeadlineReason } from './deadline';
 
 /** Reject empty or whitespace-only values. */
 const nonBlank = (max: number, label: string) =>
@@ -136,11 +137,11 @@ export const createIncidentSchema = z
         message: 'לא ניתן לקבוע גורם חיצוני כבעל אחריות בעת פתיחת תקלה',
       });
     }
-    if (!data.nextUpdateDue && !(data.noDeadlineReason ?? '').trim()) {
+    if (!data.nextUpdateDue && !meaningfulNoDeadlineReason(data.noDeadlineReason)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['nextUpdateDue'],
-        message: 'יש להזין צפי לעדכון הבא, או לסמן "ללא צפי כרגע" עם נימוק',
+        message: 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
       });
     }
     checkReportedToOpsRecipient(data, ctx);
@@ -186,11 +187,11 @@ export const updateIncidentSchema = z
         message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
       });
     }
-    if (!data.nextUpdateDue && !(data.noDeadlineReason ?? '').trim()) {
+    if (!data.nextUpdateDue && !meaningfulNoDeadlineReason(data.noDeadlineReason)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['nextUpdateDue'],
-        message: 'יש להזין צפי לעדכון הבא, או לסמן "ללא צפי כרגע" עם נימוק',
+        message: 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
       });
     }
     checkReportedToOpsRecipient(data, ctx);

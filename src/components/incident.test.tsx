@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { IncidentCard, StatusBadge } from './incident';
+import { IncidentCard, NextUpdateNote, StatusBadge } from './incident';
 import { statusLabels } from '../domain/labels';
 import type { Incident, IncidentStatus } from '../domain/types';
 
@@ -106,4 +106,37 @@ describe('StatusBadge: Chapter 2 statuses render a label without throwing', () =
       expect(screen.getByText(statusLabels[status])).toBeInTheDocument();
     });
   }
+});
+
+function incidentWithoutDeadline(noDeadlineReason: string | null): Incident {
+  return {
+    status: 'in_progress',
+    nextUpdateDue: null,
+    noDeadlineReason,
+  } as Incident;
+}
+
+describe('NextUpdateNote without a deadline', () => {
+  it('does not repeat the generic label when legacy data stores it as the reason', () => {
+    render(
+      <NextUpdateNote
+        incident={incidentWithoutDeadline('  ללא צפי כרגע  ')}
+        now={new Date('2026-07-30T00:00:00.000Z')}
+      />,
+    );
+
+    expect(screen.getByText('ללא צפי כרגע', { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText('ללא צפי כרגע — ללא צפי כרגע')).not.toBeInTheDocument();
+  });
+
+  it('keeps a genuine explanation after the generic label', () => {
+    render(
+      <NextUpdateNote
+        incident={incidentWithoutDeadline('  ממתין לבירור מול ספק  ')}
+        now={new Date('2026-07-30T00:00:00.000Z')}
+      />,
+    );
+
+    expect(screen.getByText('ללא צפי כרגע — ממתין לבירור מול ספק')).toBeInTheDocument();
+  });
 });

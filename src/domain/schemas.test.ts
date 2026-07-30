@@ -29,6 +29,61 @@ function baseInput(overrides: Partial<CreateIncidentInput> = {}) {
   };
 }
 
+function baseUpdateInput(overrides: Record<string, unknown> = {}) {
+  return {
+    expectedVersion: 1,
+    eventTime: new Date().toISOString(),
+    actionsTaken: 'נבדק',
+    findings: '',
+    nextSteps: '',
+    status: 'in_progress',
+    severity: 'medium',
+    operationalImpact: 'השפעה',
+    changeReason: '',
+    nextUpdateDue: new Date(Date.now() + 3600_000).toISOString(),
+    noDeadlineReason: null,
+    ownerUserId: 'u-tech-1',
+    ownerExternalName: null,
+    reportedToOps: 'no',
+    ...overrides,
+  };
+}
+
+describe('no-deadline reasons are genuine explanations', () => {
+  it.each([
+    ['create', createIncidentSchema, baseInput],
+    ['update', updateIncidentSchema, baseUpdateInput],
+  ])('rejects the generic display label as the %s reason', (_name, schema, input) => {
+    const result = schema.safeParse(
+      input({
+        nextUpdateDue: null,
+        noDeadlineReason: '  ללא צפי כרגע  ',
+      }),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some(
+          (issue) => issue.path[0] === 'nextUpdateDue' && issue.message === 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it.each([
+    ['create', createIncidentSchema, baseInput],
+    ['update', updateIncidentSchema, baseUpdateInput],
+  ])('accepts a genuine %s explanation', (_name, schema, input) => {
+    const result = schema.safeParse(
+      input({
+        nextUpdateDue: null,
+        noDeadlineReason: 'ממתין לבירור מול ספק',
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+});
+
 describe('createIncidentSchema: 400-character limits', () => {
   it('accepts description/operationalImpact at exactly 400 characters (the boundary)', () => {
     const result = createIncidentSchema.safeParse(

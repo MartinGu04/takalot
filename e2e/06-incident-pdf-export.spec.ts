@@ -14,9 +14,11 @@ test('authorized user exports a complete incident PDF', async ({ page }) => {
   await page.getByRole('link', { name: /2026-001/ }).click();
   await expect(page.getByRole('heading', { name: /2026-001/ })).toBeVisible();
 
+  await page.getByRole('button', { name: 'פעולות נוספות' }).click();
+  const moreActions = page.getByRole('menu', { name: 'פעולות נוספות לתקלה' });
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'ייצוא PDF' }).click(),
+    moreActions.getByRole('menuitem', { name: 'ייצוא PDF' }).click(),
   ]);
   await expect(page.getByText('קובץ ה-PDF הופק בהצלחה')).toBeVisible();
 

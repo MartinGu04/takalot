@@ -46,7 +46,7 @@ const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value:
 };
 
 /** A permanent, subtle 1px border per KPI card identity -- brand/purple for
- *  open, red for critical/high, orange for overdue. Unlike the icon/value
+ *  open, red for critical/high, yellow for overdue. Unlike the icon/value
  *  color above (which dims to neutral once its count is zero, so an empty
  *  dashboard never looks alarming), this border is a calm category marker,
  *  not an urgency signal, so it stays constant regardless of count. Same
@@ -55,7 +55,7 @@ const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value:
 const kpiBorderStyles: Record<KpiTone, string> = {
   brand: 'border-brand-200 dark:border-brand-800',
   red: 'border-red-200 dark:border-red-800',
-  orange: 'border-orange-200 dark:border-orange-800',
+  orange: 'border-yellow-300 dark:border-yellow-700',
 };
 
 /**
