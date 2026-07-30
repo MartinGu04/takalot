@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type HTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
@@ -213,6 +214,58 @@ export function TruncatedTooltip({
       >
         {text}
       </span>
+    </span>
+  );
+}
+
+// ---------- Avatar ----------
+/**
+ * The signed-in person's avatar: their provider profile image when one is
+ * available, and the long-standing initial otherwise.
+ *
+ * The initial is ALWAYS rendered and the image is layered over it, absolutely
+ * positioned inside the same fixed-size box. That gives three things for free:
+ * the box never changes size, so nothing around it can shift; a slow image
+ * shows the initial rather than a blank or broken frame while it loads; and a
+ * URL that fails to load (expired Google link, offline, blocked host) simply
+ * uncovers the initial again via onError.
+ *
+ * `className` carries the caller's existing size/shape/colour classes verbatim
+ * so each call site keeps the exact avatar it had before.
+ */
+export function Avatar({
+  src,
+  name,
+  className,
+  imgClassName,
+  ...rest
+}: {
+  src?: string | null;
+  name: string;
+  className?: string;
+  imgClassName?: string;
+} & Omit<HTMLAttributes<HTMLSpanElement>, 'className' | 'children'>) {
+  const [failed, setFailed] = useState(false);
+  // A different URL deserves a fresh attempt -- otherwise one failure would
+  // permanently suppress the image for the rest of the session.
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  const showImage = !!src && !failed;
+  return (
+    <span className={cx('relative overflow-hidden', className)} {...rest}>
+      {name.charAt(0)}
+      {showImage && (
+        <img
+          src={src}
+          alt=""
+          // Google's avatar host rejects some cross-origin referrers; sending
+          // none keeps the image working without any additional permission.
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+          className={cx('absolute inset-0 size-full object-cover', imgClassName)}
+        />
+      )}
     </span>
   );
 }

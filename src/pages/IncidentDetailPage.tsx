@@ -507,14 +507,25 @@ export default function IncidentDetailPage() {
         />
       </section>
 
-      <UpdateDialog
-        open={dialog === 'update'}
-        onClose={() => setDialog(null)}
-        incident={incident}
-        submitting={updateFullMutation.isPending || updateTechMutation.isPending}
-        onSubmitFull={(input) => updateFullMutation.mutate(input)}
-        onSubmitTechnician={(input) => updateTechMutation.mutate(input)}
-      />
+      {/* Mounted only while open. The dialog seeds its structured fields
+          (status/severity/impact/owner/deadline/reporting) from `incident` in
+          its useState initializers, which run once per mount -- so mounting
+          per opening is what makes every fresh opening show the incident's
+          CURRENT values rather than whatever they were when this page first
+          rendered, and makes a confirmed successful submission (the only
+          thing that clears `dialog`) start the next update clean.
+          A failed submission or a version conflict leaves `dialog` set, so
+          the dialog stays mounted with every entered value intact. */}
+      {dialog === 'update' && (
+        <UpdateDialog
+          open
+          onClose={() => setDialog(null)}
+          incident={incident}
+          submitting={updateFullMutation.isPending || updateTechMutation.isPending}
+          onSubmitFull={(input) => updateFullMutation.mutate(input)}
+          onSubmitTechnician={(input) => updateTechMutation.mutate(input)}
+        />
+      )}
       <AssignDialog
         open={dialog === 'assign'}
         onClose={() => setDialog(null)}

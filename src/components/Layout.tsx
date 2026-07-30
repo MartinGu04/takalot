@@ -8,6 +8,7 @@ import { APP_NAME, roleLabels, notificationTypeLabels } from '../domain/labels';
 import { formatRelative } from '../lib/time';
 import { useSession } from '../auth/AuthContext';
 import { Sidebar } from './Sidebar';
+import { Avatar } from './ui';
 import { ThemeToggle } from './ThemeToggle';
 import { navItems } from './navItems';
 import { IconBell, IconLogOut, IconPlus, IconUsers } from './icons';
@@ -152,7 +153,7 @@ function NotificationsMenu() {
 
 /** Mobile-only identity control: avatar opens a small menu with logout. Desktop shows this in the sidebar instead. */
 function MobileUserMenu() {
-  const { user, logout } = useAuth();
+  const { user, logout, avatarUrl } = useAuth();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -185,9 +186,11 @@ function MobileUserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="flex size-7 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200">
-          {user.fullName.charAt(0)}
-        </span>
+        <Avatar
+          src={avatarUrl}
+          name={user.fullName}
+          className="flex size-7 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
+        />
       </button>
       <FloatingPopover
         anchorRef={anchorRef}

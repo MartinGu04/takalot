@@ -86,3 +86,44 @@ describe('Archive: terminal incidents only', () => {
     expect(within(timeline).getByText('נפתחה בטעות על ידי המפעיל')).toBeInTheDocument();
   });
 });
+
+describe('Archive: closed-only navigation from the dashboard counter', () => {
+  it('clicking the closed counter lands on an archive showing closed incidents and no cancelled ones', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+
+    // Give the archive a cancelled incident to exclude.
+    await cancelIncidentOneAsAdmin(user);
+    const sidebar = document.querySelector('aside') as HTMLElement;
+    await user.click(within(sidebar).getByRole('link', { name: /מצב נוכחי/ }));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    await user.click(await within(main()).findByTestId('closed-total'));
+    await within(main()).findByRole('heading', { name: /ארכיון/ });
+
+    expect(await within(main()).findByText(INC5_TEXT)).toBeInTheDocument();
+    expect(within(main()).queryByText(INC1_TEXT)).not.toBeInTheDocument();
+    expect(within(main()).queryByText('בוטלה')).not.toBeInTheDocument();
+    // The filter is visible and reversible, not an invisible URL-only state.
+    expect(within(main()).getByLabelText('סינון לפי תוצאה')).toHaveValue('closed');
+  });
+
+  it('"לכל הארכיון" lands on the same closed-only view, and clearing the filter restores both outcomes', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await cancelIncidentOneAsAdmin(user);
+    const sidebar = document.querySelector('aside') as HTMLElement;
+    await user.click(within(sidebar).getByRole('link', { name: /מצב נוכחי/ }));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    await user.click(within(main()).getByRole('link', { name: 'לכל הארכיון' }));
+    await within(main()).findByRole('heading', { name: /ארכיון/ });
+    expect(within(main()).queryByText(INC1_TEXT)).not.toBeInTheDocument();
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי תוצאה'), '');
+    expect(await within(main()).findByText(INC1_TEXT)).toBeInTheDocument();
+    expect(within(main()).getByText(INC5_TEXT)).toBeInTheDocument();
+  });
+});

@@ -999,6 +999,14 @@ export class LocalDemoRepository implements Repository {
     }
   }
 
+  async countClosedIncidents(session: Session): Promise<number> {
+    // Same contract as the Supabase implementation: literally status ===
+    // 'closed', counted over every incident (never the truncated/sorted list
+    // a view happens to be showing), and never including 'cancelled'.
+    this.requireCap(session, 'view_all_incidents');
+    return this.db.incidents.filter((i) => i.status === 'closed').length;
+  }
+
   async getIncident(session: Session, id: string): Promise<Incident | null> {
     this.requireCap(session, 'view_all_incidents');
     const incident = this.db.incidents.find((i) => i.id === id);

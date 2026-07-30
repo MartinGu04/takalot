@@ -5,13 +5,21 @@
 // authorization), transient profile-check failure => retryable error screen
 // (NOT unauthorized), and logout clearing back to the login screen.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { extractAvatarUrl } from './AuthContext';
 
 type AuthListener = (event: string, session: unknown) => void;
 
+type MockAuthUser = {
+  id: string;
+  email: string;
+  user_metadata?: Record<string, unknown>;
+  identities?: { identity_data?: Record<string, unknown> }[];
+};
+
 const state: {
-  session: { user: { id: string; email: string } } | null;
+  session: { user: MockAuthUser } | null;
   listeners: AuthListener[];
   getProfile: ReturnType<typeof vi.fn>;
   claimPending: ReturnType<typeof vi.fn>;
@@ -59,6 +67,7 @@ vi.mock('../data', () => ({
     listSystems: async () => [],
     listLocations: async () => [],
     listIncidents: async () => [],
+    countClosedIncidents: async () => 0,
     listNotifications: async () => [],
     listHandovers: async () => [],
     canExport: async () => false,
@@ -347,5 +356,110 @@ describe('supabase mode: logout from the app', () => {
     expect(mockAuth.signOut).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'מצב נוכחי' })).not.toBeInTheDocument());
     expect(await screen.findByTestId('google-login-button')).toBeInTheDocument();
+  });
+});
+
+describe('extractAvatarUrl: reading the Google profile image defensively', () => {
+  it('prefers user_metadata.avatar_url', () => {
+    expect(
+      extractAvatarUrl({
+        user_metadata: { avatar_url: 'https://lh3.googleusercontent.com/a/one', picture: 'https://other/two' },
+      }),
+    ).toBe('https://lh3.googleusercontent.com/a/one');
+  });
+
+  it('falls back to user_metadata.picture when avatar_url is absent', () => {
+    expect(extractAvatarUrl({ user_metadata: { picture: 'https://lh3.googleusercontent.com/a/two' } })).toBe(
+      'https://lh3.googleusercontent.com/a/two',
+    );
+  });
+
+  it('falls back to linked identity metadata when neither top-level key is present', () => {
+    expect(
+      extractAvatarUrl({
+        user_metadata: { full_name: 'דנה לוי' },
+        identities: [{ identity_data: { picture: 'https://lh3.googleusercontent.com/a/three' } }],
+      }),
+    ).toBe('https://lh3.googleusercontent.com/a/three');
+  });
+
+  it('returns null when no metadata carries an image', () => {
+    expect(extractAvatarUrl({ user_metadata: { full_name: 'דנה לוי' } })).toBeNull();
+    expect(extractAvatarUrl({})).toBeNull();
+    expect(extractAvatarUrl(null)).toBeNull();
+    expect(extractAvatarUrl(undefined)).toBeNull();
+  });
+
+  it('ignores blank, non-string, and non-http values so nothing unsafe reaches an <img src>', () => {
+    expect(extractAvatarUrl({ user_metadata: { avatar_url: '   ' } })).toBeNull();
+    expect(extractAvatarUrl({ user_metadata: { avatar_url: 42 } })).toBeNull();
+    expect(extractAvatarUrl({ user_metadata: { avatar_url: 'javascript:alert(1)' } })).toBeNull();
+    expect(extractAvatarUrl({ user_metadata: { avatar_url: 'data:image/png;base64,AAAA' } })).toBeNull();
+    // A later usable candidate still wins over an earlier unusable one.
+    expect(
+      extractAvatarUrl({ user_metadata: { avatar_url: 'javascript:alert(1)', picture: 'https://ok/img.png' } }),
+    ).toBe('https://ok/img.png');
+  });
+});
+
+describe('supabase mode: Google profile picture in the app shell', () => {
+  it('renders the session image in the sidebar and mobile user menu, over the initial', async () => {
+    state.session = {
+      user: {
+        id: 'auth-user-1',
+        email: 'real@example.com',
+        user_metadata: { avatar_url: 'https://lh3.googleusercontent.com/a/photo' },
+      },
+    };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    const images = document.querySelectorAll('img[src="https://lh3.googleusercontent.com/a/photo"]');
+    // Desktop sidebar + mobile user menu are both in the DOM (CSS decides
+    // which is visible), so both identity spots carry the image.
+    expect(images.length).toBe(2);
+    for (const img of images) {
+      expect(img).toHaveAttribute('alt', '');
+      expect(img.parentElement?.textContent).toContain('מ'); // the initial stays underneath
+    }
+  });
+
+  it('shows the initials avatar and no image when the session carries no usable metadata', async () => {
+    state.session = { user: { id: 'auth-user-1', email: 'real@example.com', user_metadata: {} } };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    // Scoped to the identity control itself -- the shell also renders the
+    // AVARIA brand image, which is unrelated to the avatar.
+    const menuButton = screen.getAllByLabelText('תפריט משתמש')[0];
+    expect(menuButton.querySelector('img')).toBeNull();
+    expect(menuButton.textContent).toBe('מ');
+  });
+
+  it('falls back to the initial when the profile image fails to load', async () => {
+    state.session = {
+      user: {
+        id: 'auth-user-1',
+        email: 'real@example.com',
+        user_metadata: { picture: 'https://lh3.googleusercontent.com/a/gone' },
+      },
+    };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    const images = Array.from(
+      document.querySelectorAll<HTMLImageElement>('img[src="https://lh3.googleusercontent.com/a/gone"]'),
+    );
+    expect(images.length).toBeGreaterThan(0);
+    for (const img of images) fireEvent.error(img);
+    await waitFor(() =>
+      expect(document.querySelectorAll('img[src="https://lh3.googleusercontent.com/a/gone"]').length).toBe(0),
+    );
+    // The identity block is still there, now showing the initial.
+    expect(screen.getAllByLabelText('תפריט משתמש')[0].textContent).toBe('מ');
   });
 });

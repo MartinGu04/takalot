@@ -4,14 +4,14 @@ import { hasCapability } from '../domain/permissions';
 import { APP_NAME, roleLabels } from '../domain/labels';
 import type { Profile } from '../domain/types';
 import { navItems } from './navItems';
-import { TruncatedTooltip } from './ui';
+import { Avatar, TruncatedTooltip } from './ui';
 import { ThemeToggle } from './ThemeToggle';
 import { IconLogOut, IconPlus } from './icons';
 import { AvariaIcon } from './AvariaBrand';
 
 /** Desktop RTL sidebar: brand, primary nav, and the current-user section. Hidden below md. */
 export function Sidebar({ user }: { user: Profile }) {
-  const { logout } = useAuth();
+  const { logout, avatarUrl } = useAuth();
   const items = navItems(user.role);
   const canCreate = hasCapability(user.role, 'create_incident');
 
@@ -68,12 +68,12 @@ export function Sidebar({ user }: { user: Profile }) {
 
       <div className="border-t border-hairline p-3.5">
         <div className="flex items-center gap-2.5 rounded-xl bg-surface-active/60 p-3">
-          <span
+          <Avatar
             aria-hidden
+            src={avatarUrl}
+            name={user.fullName}
             className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-base font-bold text-white"
-          >
-            {user.fullName.charAt(0)}
-          </span>
+          />
           {/* The signed-in name is the one label here that can be arbitrarily
               long, so truncation is kept (the compact layout depends on it)
               and the full value is recovered on hover AND keyboard focus

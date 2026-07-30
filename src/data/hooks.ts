@@ -36,6 +36,20 @@ export function useIncidents(filters: IncidentFilters = {}, sort: IncidentSort =
   });
 }
 
+/**
+ * Total closed-incident count. Keyed under the 'incidents' prefix on purpose:
+ * useAppMutation's default invalidation list contains ['incidents'], and
+ * TanStack Query matches keys by prefix -- so closing, reopening, or
+ * cancelling an incident refreshes this count with no extra wiring.
+ */
+export function useClosedIncidentCount() {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['incidents', 'closed-count'],
+    queryFn: () => repo().countClosedIncidents(session),
+  });
+}
+
 export function useIncident(id: string | undefined) {
   const session = useSession();
   return useQuery({

@@ -1833,3 +1833,65 @@ describe('reference-data management parity (migration 0024)', () => {
     expect(storage.load()?.referenceDataSchemaVersion).toBe(1);
   });
 });
+
+describe('closed-incident count (countClosedIncidents)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('counts exactly the seeded closed incidents', async () => {
+    // Seed has inc-5 and inc-6 closed, and nothing cancelled.
+    expect(await repo.countClosedIncidents(admin)).toBe(2);
+  });
+
+  it('never counts a cancelled incident', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.cancelIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'נפתחה בטעות',
+    });
+    // The archive now holds three terminal incidents, but only two of them
+    // are closed.
+    const terminal = await repo.listIncidents(admin, { terminalOnly: true });
+    expect(terminal.length).toBe(3);
+    expect(await repo.countClosedIncidents(admin)).toBe(2);
+  });
+
+  it('follows closure and reopening', async () => {
+    const before = await repo.countClosedIncidents(admin);
+    const incident = await repo.getIncident(supervisor1, 'inc-1');
+    const closed = await repo.closeIncident(supervisor1, 'inc-1', {
+      expectedVersion: incident!.version,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(await repo.countClosedIncidents(admin)).toBe(before + 1);
+
+    await repo.reopenIncident(manager, 'inc-1', {
+      expectedVersion: closed.version,
+      reason: 'התקלה חזרה',
+      nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
+      ownerUserId: DEMO_USERS.tech1,
+      ownerExternalName: null,
+    } as ReopenIncidentInput);
+    expect(await repo.countClosedIncidents(admin)).toBe(before);
+  });
+
+  it('is not derived from the incident list, so it is unaffected by list filters or paging', async () => {
+    // A caller-supplied filter narrows listIncidents but must never narrow
+    // the total.
+    const oneOnly = await repo.listIncidents(admin, { terminalOnly: true, severity: ['high'] });
+    expect(oneOnly.length).toBeLessThan(2);
+    expect(await repo.countClosedIncidents(admin)).toBe(2);
+  });
+
+  it('requires the view capability, exactly like every other incident read', async () => {
+    const stranger = session('u-not-a-user', 'viewer');
+    await expect(repo.countClosedIncidents(stranger)).rejects.toThrow(AppError);
+  });
+});
