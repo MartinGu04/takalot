@@ -133,6 +133,10 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     note: null,
     refId: null,
     createdAt: at(offset),
+    // Seed data represents pre-existing history, exactly like any real
+    // incident predating operation grouping: operationId is null unless a
+    // caller deliberately overrides it.
+    operationId: null,
     ...extra,
   });
 

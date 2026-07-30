@@ -231,6 +231,7 @@ export class LocalDemoRepository implements Repository {
       note: null,
       refId: null,
       createdAt: ts,
+      operationId: null,
       ...extra,
     };
     this.db.incidentEvents.push(event);
@@ -1108,8 +1109,10 @@ export class LocalDemoRepository implements Repository {
     const wisdomLine = incident.wisdomReported
       ? `כן (מספר תקלה: ${incident.wisdomIncidentNumber})`
       : 'לא';
+    const operationId = newId();
     this.addEvent(incident.id, 'created', actor.id, {
       eventTime: input.discoveredAt,
+      operationId,
       note:
         `פעולות שבוצעו עד כה: ${input.actionsTaken.trim()}\n` +
         `תקשוב למבצעים: ${commsLine}\n` +
@@ -1120,6 +1123,8 @@ export class LocalDemoRepository implements Repository {
         field: 'reported_to_ops_recipient',
         newValue: incident.reportedToOpsRecipient,
         note: `דווח למבצעים: ${incident.reportedToOpsRecipient}`,
+        eventTime: input.discoveredAt,
+        operationId,
       });
     }
     if (input.status !== 'new') {
@@ -1127,6 +1132,8 @@ export class LocalDemoRepository implements Repository {
         field: 'status',
         oldValue: 'new',
         newValue: input.status,
+        eventTime: input.discoveredAt,
+        operationId,
       });
     }
     this.audit(actor.id, 'incident_created', 'incident', incident.id, {
@@ -1161,7 +1168,7 @@ export class LocalDemoRepository implements Repository {
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
     incident.lastUpdateAt = ts;
-    this.addEvent(incidentId, 'acknowledged', actor.id);
+    this.addEvent(incidentId, 'acknowledged', actor.id, { operationId: newId() });
     this.audit(actor.id, 'incident_acknowledged', 'incident', incidentId, {
       incidentNumber: incident.number,
     });
@@ -1207,18 +1214,25 @@ export class LocalDemoRepository implements Repository {
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
+    const operationId = newId();
     this.addEvent(incidentId, 'update', actor.id, {
       eventTime: input.eventTime,
       refId: update.id,
+      operationId,
     });
 
-    // Protected-field diffs → dedicated events
+    // Protected-field diffs → dedicated events. Each shares the update's own
+    // operationId and its user-selected eventTime -- mirroring update_incident
+    // (migration 0026): only the 'update' row itself used to carry the actual
+    // event time, leaving these six silently stamped with "now" instead.
     if (input.status !== incident.status) {
       this.addEvent(incidentId, 'status_change', actor.id, {
         field: 'status',
         oldValue: incident.status,
         newValue: input.status,
         note: input.changeReason.trim() || null,
+        eventTime: input.eventTime,
+        operationId,
       });
     }
     if (input.severity !== incident.severity) {
@@ -1227,6 +1241,8 @@ export class LocalDemoRepository implements Repository {
         oldValue: incident.severity,
         newValue: input.severity,
         note: input.changeReason.trim() || null,
+        eventTime: input.eventTime,
+        operationId,
       });
       this.audit(actor.id, 'incident_severity_changed', 'incident', incidentId, {
         incidentNumber: incident.number,
@@ -1239,6 +1255,8 @@ export class LocalDemoRepository implements Repository {
         field: 'operational_impact',
         oldValue: incident.operationalImpact,
         newValue: input.operationalImpact.trim(),
+        eventTime: input.eventTime,
+        operationId,
       });
     }
     const newOwnerLabel = this.ownerLabel(input.ownerUserId, input.ownerExternalName);
@@ -1251,6 +1269,8 @@ export class LocalDemoRepository implements Repository {
         field: 'owner',
         oldValue: oldOwnerLabel,
         newValue: newOwnerLabel,
+        eventTime: input.eventTime,
+        operationId,
       });
       this.audit(actor.id, 'incident_assigned', 'incident', incidentId, {
         incidentNumber: incident.number,
@@ -1270,6 +1290,8 @@ export class LocalDemoRepository implements Repository {
         oldValue: incident.nextUpdateDue,
         newValue: input.nextUpdateDue,
         note: input.nextUpdateDue ? null : `ללא צפי כרגע: ${(input.noDeadlineReason ?? '').trim()}`,
+        eventTime: input.eventTime,
+        operationId,
       });
     }
     const newRecipient =
@@ -1280,6 +1302,8 @@ export class LocalDemoRepository implements Repository {
         oldValue: incident.reportedToOpsRecipient,
         newValue: newRecipient,
         note: `דווח למבצעים: ${reportedToOpsLabels[input.reportedToOps]}${newRecipient ? ` (${newRecipient})` : ''}`,
+        eventTime: input.eventTime,
+        operationId,
       });
     }
 
@@ -1336,7 +1360,11 @@ export class LocalDemoRepository implements Repository {
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
-    this.addEvent(incidentId, 'update', actor.id, { eventTime: input.eventTime, refId: update.id });
+    this.addEvent(incidentId, 'update', actor.id, {
+      eventTime: input.eventTime,
+      refId: update.id,
+      operationId: newId(),
+    });
 
     incident.version += 1;
     incident.updatedAt = ts;
@@ -1372,6 +1400,7 @@ export class LocalDemoRepository implements Repository {
       oldValue: oldLabel,
       newValue: newLabel,
       note: input.note.trim() || null,
+      operationId: newId(),
     });
     this.audit(actor.id, 'incident_assigned', 'incident', incidentId, {
       incidentNumber: incident.number,
@@ -1426,6 +1455,7 @@ export class LocalDemoRepository implements Repository {
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
     incident.lastUpdateAt = ts;
+    const operationId = newId();
 
     if (fullyReady) {
       // Full readiness: the incident actually closes.
@@ -1439,6 +1469,7 @@ export class LocalDemoRepository implements Repository {
       this.addEvent(incidentId, 'closed', actor.id, {
         newValue: input.readiness,
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}`,
+        operationId,
       });
       this.audit(actor.id, 'incident_closed', 'incident', incidentId, {
         incidentNumber: incident.number,
@@ -1450,6 +1481,7 @@ export class LocalDemoRepository implements Repository {
           oldValue: oldRecipient,
           newValue: incident.reportedToOpsRecipient,
           note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+          operationId,
         });
       }
     } else {
@@ -1472,6 +1504,7 @@ export class LocalDemoRepository implements Repository {
         oldValue: oldStatus,
         newValue: 'partial_readiness',
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון החלקי שבוצע: ${input.resolution.trim()}\nפעולות המשך: ${incident.followUpNotes}\nגורם מטפל אחראי המשך: ${this.ownerLabel(incident.ownerUserId, incident.ownerExternalName)}`,
+        operationId,
       });
       this.audit(actor.id, 'incident_partial_readiness', 'incident', incidentId, {
         incidentNumber: incident.number,
@@ -1483,6 +1516,7 @@ export class LocalDemoRepository implements Repository {
           oldValue: oldRecipient,
           newValue: incident.reportedToOpsRecipient,
           note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+          operationId,
         });
       }
     }
@@ -1528,6 +1562,7 @@ export class LocalDemoRepository implements Repository {
       newValue: 'cancelled',
       note: reason,
       eventTime: input.eventTime,
+      operationId: newId(),
     });
     this.audit(actor.id, 'incident_cancelled', 'incident', incidentId, {
       incidentNumber: incident.number,
@@ -1557,6 +1592,7 @@ export class LocalDemoRepository implements Repository {
       note: input.reason.trim(),
       oldValue: 'closed',
       newValue: 'reopened',
+      operationId: newId(),
     });
     this.audit(actor.id, 'incident_reopened', 'incident', incidentId, {
       incidentNumber: incident.number,
@@ -1613,6 +1649,7 @@ export class LocalDemoRepository implements Repository {
     this.addEvent(incidentId, 'correction', actor.id, {
       refId: input.refId,
       note: input.text.trim(),
+      operationId: newId(),
     });
     this.audit(actor.id, 'incident_correction', 'incident', incidentId, {
       incidentNumber: incident.number,
@@ -1636,7 +1673,7 @@ export class LocalDemoRepository implements Repository {
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
-    this.addEvent(incidentId, 'follow_up_completed', actor.id, { note: note.trim() });
+    this.addEvent(incidentId, 'follow_up_completed', actor.id, { note: note.trim(), operationId: newId() });
     this.audit(actor.id, 'incident_follow_up_completed', 'incident', incidentId, {
       incidentNumber: incident.number,
     });
@@ -1694,6 +1731,10 @@ export class LocalDemoRepository implements Repository {
     );
     const systemsById = new Map(this.db.systems.map((s) => [s.id, s.name]));
     const locationsById = new Map(this.db.locations.map((l) => [l.id, l.name]));
+    // Allocated ONCE, outside the loop: one handover-creation action, shared
+    // across every included incident's own timeline -- not N separate
+    // operations, mirroring create_handover (migration 0026).
+    const operationId = newId();
     for (const inc of included) {
       const lastUpdate = this.db.incidentUpdates
         .filter((u) => u.incidentId === inc.id)
@@ -1715,7 +1756,7 @@ export class LocalDemoRepository implements Repository {
         snapshotNextUpdateDue: inc.nextUpdateDue,
       };
       this.db.handoverItems.push(item);
-      this.addEvent(inc.id, 'handover_included', actor.id, { refId: handover.id });
+      this.addEvent(inc.id, 'handover_included', actor.id, { refId: handover.id, operationId });
     }
 
     this.notify(
@@ -1746,8 +1787,11 @@ export class LocalDemoRepository implements Repository {
     handover.acceptedAt = ts;
     handover.acceptedBy = actor.id;
 
+    // Allocated ONCE, outside the loop: one acceptance action, shared across
+    // every incident it covers -- mirrors accept_handover (migration 0026).
+    const operationId = newId();
     for (const item of this.db.handoverItems.filter((i) => i.handoverId === handoverId)) {
-      this.addEvent(item.incidentId, 'handover_accepted', actor.id, { refId: handoverId });
+      this.addEvent(item.incidentId, 'handover_accepted', actor.id, { refId: handoverId, operationId });
     }
     this.audit(actor.id, 'handover_accepted', 'handover', handoverId);
     this.persist();

@@ -205,6 +205,12 @@ export interface IncidentEvent {
   note: string | null;
   refId: string | null; // e.g. corrected update/event id, handover id
   createdAt: string;
+  /** Groups every row one user operation produced (e.g. all the field
+   *  changes from one "עדכון תקלה" submission) under one shared id. Null on
+   *  every row written before this field existed, and permanently so --
+   *  incident_events is append-only, so a historical row can never be
+   *  backfilled. Null is a normal, expected value, not missing data. */
+  operationId: string | null;
 }
 
 export type HandoverStatus = 'pending' | 'accepted';
