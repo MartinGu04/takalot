@@ -4,6 +4,7 @@ import type { Incident, IncidentStatus, Profile, Severity } from '../domain/type
 import { severityLabels, statusLabels, readinessLabels } from '../domain/labels';
 import { isOverdue, overdueText } from '../domain/overdue';
 import { formatDateTime, formatRelative } from '../lib/time';
+import { meaningfulNoDeadlineReason, NO_DEADLINE_LABEL } from '../domain/deadline';
 import { Badge } from './ui';
 import { IconChevronLeft } from './icons';
 
@@ -49,9 +50,10 @@ export function ownerDisplay(incident: Incident, profiles: Profile[] | undefined
 export function NextUpdateNote({ incident, now }: { incident: Incident; now: Date }) {
   if (incident.status === 'closed') return null;
   if (!incident.nextUpdateDue) {
+    const reason = meaningfulNoDeadlineReason(incident.noDeadlineReason);
     return (
       <span className="text-sm text-muted">
-        ללא צפי כרגע{incident.noDeadlineReason ? ` — ${incident.noDeadlineReason}` : ''}
+        {NO_DEADLINE_LABEL}{reason ? ` — ${reason}` : ''}
       </span>
     );
   }

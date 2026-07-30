@@ -47,6 +47,8 @@ describe('top metrics reflect the real seeded data', () => {
     for (const btn of [open, criticalHigh, overdue]) {
       expect(btn.tagName).toBe('BUTTON');
     }
+    expect(overdue).toHaveClass('border-yellow-300', 'dark:border-yellow-700');
+    expect(overdue).not.toHaveClass('border-orange-200', 'dark:border-orange-800');
   });
 });
 

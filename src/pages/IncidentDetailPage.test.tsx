@@ -102,6 +102,18 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
     expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
   });
 
+  it('requires an actual explanation when an update removes the next-update deadline', async () => {
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון ללא צפי');
+    await user.click(within(dialog).getByRole('checkbox', { name: 'יש צפי לעדכון הבא' }));
+    await user.type(within(dialog).getByLabelText(/^נימוק ל"ללא צפי כרגע"/), 'ללא צפי כרגע');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+    expect(await within(dialog).findByText('יש להזין נימוק ממשי ל"ללא צפי כרגע"')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
+  });
+
   it('submits successfully end-to-end: dialog closes, success toast, incident refreshes, and the timeline records the update with its actual event time', async () => {
     const { user } = await openUpdateDialogAsAdmin();
     const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
@@ -223,17 +235,61 @@ async function openIncidentDetailAsAdmin() {
   return user;
 }
 
+async function openMoreActions(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await within(main()).findByRole('button', { name: 'פעולות נוספות' }));
+  return screen.findByRole('menu', { name: 'פעולות נוספות לתקלה' });
+}
+
 async function openCancelDialogAsAdmin() {
   const user = await openIncidentDetailAsAdmin();
-  await user.click(await within(main()).findByRole('button', { name: 'ביטול תקלה' }));
+  const menu = await openMoreActions(user);
+  await user.click(within(menu).getByRole('menuitem', { name: 'ביטול תקלה' }));
   const dialog = await screen.findByRole('dialog', { name: 'ביטול תקלה' });
   return { user, dialog };
 }
 
+describe('incident actions: hierarchy and overflow', () => {
+  it('keeps update primary, close/assignment secondary, and separates export from destructive cancellation', async () => {
+    const user = await openIncidentDetailAsAdmin();
+    const actions = await within(main()).findByRole('region', { name: 'פעולות תקלה' });
+    const update = within(actions).getByRole('button', { name: 'עדכון תקלה' });
+    const close = within(actions).getByRole('button', { name: 'סגירת תקלה' });
+    const assign = within(actions).getByRole('button', { name: 'שינוי גורם מטפל' });
+
+    expect(update).toHaveClass('bg-brand-600');
+    expect(close).toHaveClass('bg-surface');
+    expect(assign).toHaveClass('bg-surface');
+    expect(within(actions).queryByRole('button', { name: 'ייצוא PDF' })).not.toBeInTheDocument();
+    expect(within(actions).queryByRole('button', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
+
+    const menu = await openMoreActions(user);
+    expect(within(menu).getByRole('menuitem', { name: 'ייצוא PDF' })).toBeInTheDocument();
+    const cancel = within(menu).getByRole('menuitem', { name: 'ביטול תקלה' });
+    expect(cancel).toHaveClass('text-red-700');
+    expect(cancel.parentElement).toHaveClass('border-t');
+  });
+
+  it('opens from the keyboard, supports arrow navigation, and returns focus on Escape', async () => {
+    const user = await openIncidentDetailAsAdmin();
+    const trigger = await within(main()).findByRole('button', { name: 'פעולות נוספות' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    const menu = await screen.findByRole('menu', { name: 'פעולות נוספות לתקלה' });
+    const pdf = within(menu).getByRole('menuitem', { name: 'ייצוא PDF' });
+    const cancel = within(menu).getByRole('menuitem', { name: 'ביטול תקלה' });
+    await waitFor(() => expect(pdf).toHaveFocus());
+    await user.keyboard('{ArrowDown}');
+    expect(cancel).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+  });
+});
+
 describe('incident cancellation: visibility', () => {
   it('offers the action to an operational role on an open incident', async () => {
-    await openIncidentDetailAsAdmin();
-    expect(await within(main()).findByRole('button', { name: 'ביטול תקלה' })).toBeInTheDocument();
+    const user = await openIncidentDetailAsAdmin();
+    const menu = await openMoreActions(user);
+    expect(within(menu).getByRole('menuitem', { name: 'ביטול תקלה' })).toBeInTheDocument();
   });
 
   it('does not offer the action to a technician (no cancel_incident capability)', async () => {
@@ -245,7 +301,7 @@ describe('incident cancellation: visibility', () => {
     const card = await within(main()).findByText(INC1_TEXT);
     await user.click(card.closest('a.incident-card') as HTMLElement);
     await within(main()).findByText(INC1_TEXT); // confirms the detail page loaded
-    expect(screen.queryByRole('button', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'פעולות נוספות' })).not.toBeInTheDocument();
   });
 
   it('does not offer the action once the incident is already terminal (closed)', async () => {
@@ -259,7 +315,8 @@ describe('incident cancellation: visibility', () => {
       .find((a) => (a as HTMLAnchorElement).getAttribute('href')?.startsWith('/incidents/'));
     await user.click(link as HTMLElement);
     await within(main()).findByText('סיכום סגירה'); // confirms we landed on a closed incident's page
-    expect(screen.queryByRole('button', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
+    const menu = await openMoreActions(user);
+    expect(within(menu).queryByRole('menuitem', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
   });
 });
 
@@ -291,9 +348,10 @@ describe('incident cancellation: dialog and submission', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'ביטול תקלה' })).not.toBeInTheDocument());
 
     await waitFor(() => expect(within(main()).getAllByText('בוטלה').length).toBeGreaterThan(0));
-    expect(within(main()).queryByRole('button', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
     expect(within(main()).queryByRole('button', { name: 'סגירת תקלה' })).not.toBeInTheDocument();
     expect(within(main()).queryByRole('button', { name: 'עדכון תקלה' })).not.toBeInTheDocument();
+    const menu = await openMoreActions(user);
+    expect(within(menu).queryByRole('menuitem', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
 
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
     expect(within(timeline).getByText('התקלה נפתחה בטעות על ידי המפעיל')).toBeInTheDocument();

@@ -35,7 +35,9 @@ async function goToArchive(user: ReturnType<typeof userEvent.setup>) {
 async function cancelIncidentOneAsAdmin(user: ReturnType<typeof userEvent.setup>) {
   const card = await within(main()).findByText(INC1_TEXT);
   await user.click(card.closest('a.incident-card') as HTMLElement);
-  await user.click(await within(main()).findByRole('button', { name: 'ביטול תקלה' }));
+  await user.click(await within(main()).findByRole('button', { name: 'פעולות נוספות' }));
+  const menu = await screen.findByRole('menu', { name: 'פעולות נוספות לתקלה' });
+  await user.click(within(menu).getByRole('menuitem', { name: 'ביטול תקלה' }));
   const dialog = await screen.findByRole('dialog', { name: 'ביטול תקלה' });
   await user.type(within(dialog).getByLabelText(/^סיבת הביטול/), 'נפתחה בטעות על ידי המפעיל');
   await user.click(within(dialog).getByRole('button', { name: 'בטל תקלה' }));

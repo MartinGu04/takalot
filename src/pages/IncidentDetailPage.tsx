@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import {
   useIncident,
@@ -28,6 +28,7 @@ import { CorrectionDialog, FollowUpDialog } from '../components/dialogs/SimpleTe
 import { buildIncidentPdf, incidentPdfFilename } from '../exports/incidentPdf';
 import { downloadPdf } from '../exports/pdf';
 import { AppError } from '../data/repository';
+import { IconChevronDown } from '../components/icons';
 import type {
   UpdateIncidentInput,
   TechnicianUpdateInput,
@@ -36,6 +37,164 @@ import type {
   CancelIncidentInput,
   ReopenIncidentInput,
 } from '../domain/schemas';
+
+function IncidentMoreActions({
+  canExport,
+  canCancel,
+  onExport,
+  onCancel,
+}: {
+  canExport: boolean;
+  canCancel: boolean;
+  onExport: () => void;
+  onCancel: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const focusOnOpen = useRef<'first' | 'last'>('first');
+
+  const menuItems = () =>
+    Array.from(panelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+
+  const closeAndFocusTrigger = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const openMenu = (focus: 'first' | 'last') => {
+    focusOnOpen.current = focus;
+    setOpen(true);
+  };
+
+  const selectAction = (action: () => void) => {
+    setOpen(false);
+    triggerRef.current?.focus();
+    action();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => {
+      const items = menuItems();
+      (focusOnOpen.current === 'last' ? items.at(-1) : items[0])?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeAndFocusTrigger();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [open]);
+
+  const focusAdjacentPageControl = (backwards: boolean) => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const controls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => !panelRef.current?.contains(element));
+    const currentIndex = controls.indexOf(trigger);
+    controls[currentIndex + (backwards ? -1 : 1)]?.focus();
+  };
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      setOpen(false);
+      focusAdjacentPageControl(event.shiftKey);
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const items = menuItems();
+    if (items.length === 0) return;
+    event.preventDefault();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === 'Home') {
+      items[0].focus();
+    } else if (event.key === 'End') {
+      items.at(-1)?.focus();
+    } else {
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + step + items.length) % items.length;
+      items[nextIndex].focus();
+    }
+  };
+
+  if (!canExport && !canCancel) return null;
+
+  return (
+    <div className="relative w-full sm:ms-auto sm:w-auto">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => (open ? setOpen(false) : openMenu('first'))}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            openMenu(event.key === 'ArrowUp' ? 'last' : 'first');
+          }
+        }}
+        className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-hairline-strong bg-surface px-4 py-2 text-sm font-medium text-text-primary shadow-soft hover:bg-surface-hover active:scale-[0.98] sm:w-auto"
+      >
+        פעולות נוספות
+        <IconChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          ref={panelRef}
+          className="popover-panel absolute bottom-full end-0 z-50 mb-2 w-full min-w-52 animate-scale-in p-1.5 sm:w-56"
+        >
+          <div id={menuId} role="menu" aria-label="פעולות נוספות לתקלה" onKeyDown={handleMenuKeyDown}>
+            {canExport && (
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => selectAction(onExport)}
+                className="flex min-h-10 w-full items-center rounded-lg px-3 py-2 text-right text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+              >
+                ייצוא PDF
+              </button>
+            )}
+            {canCancel && (
+              <div className={canExport ? 'mt-1 border-t border-hairline pt-1' : undefined}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => selectAction(onCancel)}
+                  className="flex min-h-10 w-full items-center rounded-lg px-3 py-2 text-right text-sm font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50"
+                >
+                  ביטול תקלה
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function IncidentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -144,6 +303,16 @@ export default function IncidentDetailPage() {
     incident.followUpRequired &&
     !incident.followUpCompletedAt &&
     !isTerminal;
+  const canUpdate = canFullUpdate || canTechUpdate;
+  const hasActions =
+    canAck ||
+    canUpdate ||
+    canAssign ||
+    canClose ||
+    canCancel ||
+    canReopen ||
+    canCompleteFollowUp ||
+    Boolean(canExport);
 
   const exportPdf = async () => {
     try {
@@ -271,24 +440,54 @@ export default function IncidentDetailPage() {
         </div>
       )}
 
-      <div className="surface sticky bottom-16 z-10 mt-4 flex flex-wrap gap-2 bg-surface/95 p-3 backdrop-blur md:static md:bottom-auto">
-        {canAck && <Button onClick={() => ackMutation.mutate(undefined)} disabled={ackMutation.isPending}>אישור קבלה</Button>}
-        {(canFullUpdate || canTechUpdate) && <Button onClick={() => setDialog('update')}>עדכון תקלה</Button>}
-        {canAssign && <Button variant="secondary" onClick={() => setDialog('assign')}>שינוי גורם מטפל</Button>}
-        {canClose && <Button variant="danger" onClick={() => setDialog('close')}>סגירת תקלה</Button>}
-        {canCancel && (
-          <Button
-            variant="secondary"
-            className="text-red-700 hover:text-red-800 dark:text-red-400"
-            onClick={() => setDialog('cancel')}
-          >
-            ביטול תקלה
-          </Button>
-        )}
-        {canReopen && <Button variant="secondary" onClick={() => setDialog('reopen')}>פתיחה מחדש</Button>}
-        {canCompleteFollowUp && <Button variant="secondary" onClick={() => setDialog('followup')}>השלמת פעולות המשך</Button>}
-        {canExport && <Button variant="secondary" onClick={exportPdf}>ייצוא PDF</Button>}
-      </div>
+      {hasActions && (
+        <section
+          aria-label="פעולות תקלה"
+          className="surface sticky bottom-16 z-10 mt-4 grid grid-cols-1 gap-2 bg-surface/95 p-3 backdrop-blur md:static md:bottom-auto sm:flex sm:flex-wrap sm:items-center"
+        >
+          {canUpdate && (
+            <Button className="w-full sm:w-auto" onClick={() => setDialog('update')}>
+              עדכון תקלה
+            </Button>
+          )}
+          {canClose && (
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => setDialog('close')}>
+              סגירת תקלה
+            </Button>
+          )}
+          {canAssign && (
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => setDialog('assign')}>
+              שינוי גורם מטפל
+            </Button>
+          )}
+          {canAck && (
+            <Button
+              className="w-full sm:w-auto"
+              variant="secondary"
+              onClick={() => ackMutation.mutate(undefined)}
+              disabled={ackMutation.isPending}
+            >
+              אישור קבלה
+            </Button>
+          )}
+          {canReopen && (
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => setDialog('reopen')}>
+              פתיחה מחדש
+            </Button>
+          )}
+          {canCompleteFollowUp && (
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => setDialog('followup')}>
+              השלמת פעולות המשך
+            </Button>
+          )}
+          <IncidentMoreActions
+            canExport={Boolean(canExport)}
+            canCancel={canCancel}
+            onExport={() => void exportPdf()}
+            onCancel={() => setDialog('cancel')}
+          />
+        </section>
+      )}
 
       <section className="mt-6">
         <h2 className="section-title mb-2">ציר זמן</h2>
