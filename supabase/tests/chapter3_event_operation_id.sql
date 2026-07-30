@@ -12,24 +12,27 @@
 -- id without needing propagation (no eventTime input, or already
 -- propagated by 0017/0020); a directly-inserted historical row keeping
 -- operation_id = NULL and remaining fully readable; reject_mutation()
--- still blocking UPDATE/DELETE via the new column; RLS unaffected; and the
--- full ACL / SECURITY DEFINER / owner / signature / search_path
--- verification for all 14 functions -- proving 0026 did not widen, narrow,
--- or otherwise touch any function's privileges, including the two that are
+-- still blocking UPDATE/DELETE via the new column; RLS unaffected; and an
+-- explicit expected-contract verification of ACL / SECURITY DEFINER / owner
+-- / signature / search_path for all 14 functions -- confirming 0026 widened,
+-- narrowed, or otherwise touched none of them, including the two that are
 -- deliberately still unreachable by authenticated (add_incident_report,
 -- set_incident_status_check).
 --
--- The ACL/security-metadata check is a fixed expected matrix, not a live
--- before/after diff: by the time any test file runs, 0025/0026 are already
--- part of the applied chain (this suite runs after the full migration
--- sequence, exactly like every other suite in this directory), so there is
--- no "before" snapshot available inside the test transaction itself. The
--- matrix below was derived by reading every grant/revoke statement across
--- 0003, 0005-0009, 0013, 0017, 0018, and 0024 in migration order (the only
--- files that ever grant or revoke EXECUTE on these 14 functions) and
--- re-verified against a live PostgreSQL 16 instance with the full chain
--- applied. 0026 itself contains no grant/revoke statement, so this
--- expected matrix IS the pre-0026 state as well as the post-0026 state.
+-- The ACL/security-metadata section is NOT a live before/after diff: by the
+-- time any test file runs, 0025/0026 are already part of the applied chain
+-- (this suite runs after the full migration sequence, exactly like every
+-- other suite in this directory), so there is no "before" state available
+-- inside the test transaction itself. What it checks instead is a fixed
+-- expected-contract matrix, derived by reading every grant/revoke/ownership
+-- statement across 0003, 0005-0009, 0013, 0017, 0018, and 0024 in migration
+-- order (the only files that ever touch these 14 functions' privileges or
+-- ownership) and independently re-verified against a live PostgreSQL 16
+-- instance with the full chain applied, checked against each function's
+-- actual, currently active definition. 0026 itself contains no grant,
+-- revoke, or ownership statement, so this expected matrix describes both
+-- the pre-0026 and the post-0026 state -- 0026 was never expected to change
+-- it, and this section confirms it did not.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -605,11 +608,15 @@ end $$;
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
 
 -- =====================================================================
--- 18. Full ACL / SECURITY DEFINER / owner / signature / search_path
---     verification, for all 14 functions this migration's 0026 half
---     touches. Expected values derived from the complete grant/revoke
---     history (0003, 0005-0009, 0013, 0017, 0018, 0024) and from each
---     function's own `create or replace function` header.
+-- 18. Expected-contract verification of ACL / SECURITY DEFINER / owner /
+--     signature / search_path, for all 14 functions this migration's 0026
+--     half touches. This is NOT a before/after diff (see this file's own
+--     header) -- it checks each function's actual, currently active
+--     definition against a fixed expected matrix derived from the complete
+--     grant/revoke/ownership history (0003, 0005-0009, 0013, 0017, 0018,
+--     0024) and from each function's own `create or replace function`
+--     header (search_path/SECURITY DEFINER are restated there, not
+--     automatically carried over -- see 0026's own header for why).
 -- =====================================================================
 create temp table expected_rpc_metadata (
   proname text primary key,
@@ -633,8 +640,12 @@ insert into expected_rpc_metadata (proname, identity_args, search_path, authenti
   ('add_incident_correction',      'p_incident_id uuid, p_input jsonb',               'public', true),
   ('accept_handover',              'p_handover_id uuid',                             'public', true);
 
+-- Signature: the same name and argument list as before means CREATE OR
+-- REPLACE updated the same catalog row rather than creating a new function
+-- (see below) -- checked here against the expected contract, not against a
+-- live "before" capture.
 insert into results (test, result, detail)
-select 'signature unchanged: ' || e.proname,
+select 'signature matches expected contract: ' || e.proname,
   case when p.proname is not null and pg_get_function_identity_arguments(p.oid) = e.identity_args
     then 'PASS' else 'FAIL' end,
   coalesce(pg_get_function_identity_arguments(p.oid), '<missing>') || ' vs expected ' || e.identity_args
@@ -642,28 +653,35 @@ from expected_rpc_metadata e
 left join pg_proc p on p.proname = e.proname
   and p.pronamespace = (select oid from pg_namespace where nspname = 'public');
 
+-- SECURITY DEFINER is NOT automatically carried over by CREATE OR REPLACE --
+-- it is restated in every function body in 0026 (see that migration's own
+-- header). This checks the restatement actually took effect.
 insert into results (test, result, detail)
-select 'SECURITY DEFINER preserved: ' || e.proname,
+select 'SECURITY DEFINER matches expected contract: ' || e.proname,
   case when p.prosecdef then 'PASS' else 'FAIL' end, 'prosecdef=' || coalesce(p.prosecdef::text, '<missing>')
 from expected_rpc_metadata e
 join pg_proc p on p.proname = e.proname
   and p.pronamespace = (select oid from pg_namespace where nspname = 'public');
 
--- Owner preserved: every function's owner still equals the CURRENT
--- session's own role -- the role that ran every migration in this suite,
--- including 0026 -- with no hardcoded role name. CREATE OR REPLACE
--- FUNCTION never reassigns ownership, so this is expected to hold
--- regardless of which role happens to be running these tests.
+-- Owner: CREATE OR REPLACE FUNCTION updates the same catalog row and never
+-- reassigns ownership on its own, and no ALTER OWNER statement appears
+-- anywhere in 0026, so every function's owner is expected to still equal
+-- the CURRENT session's own role -- the role that ran every migration in
+-- this suite, including 0026 -- with no hardcoded role name. Checked here
+-- against that expectation, not derived from a captured "before" value.
 insert into results (test, result, detail)
-select 'owner preserved (still the migration-applying role): ' || e.proname,
+select 'owner matches expected contract (still the migration-applying role): ' || e.proname,
   case when p.proowner = (select oid from pg_roles where rolname = current_user) then 'PASS' else 'FAIL' end,
   'owner=' || p.proowner::regrole::text || ' current_user=' || current_user
 from expected_rpc_metadata e
 join pg_proc p on p.proname = e.proname
   and p.pronamespace = (select oid from pg_namespace where nspname = 'public');
 
+-- search_path is NOT automatically carried over by CREATE OR REPLACE either
+-- -- like SECURITY DEFINER, it is restated in every function body in 0026.
+-- This checks the restatement matches each function's expected value.
 insert into results (test, result, detail)
-select 'search_path preserved: ' || e.proname,
+select 'search_path matches expected contract: ' || e.proname,
   case when coalesce(
     (select split_part(cfg, '=', 2) from unnest(p.proconfig) cfg where cfg like 'search_path=%'),
     ''
@@ -686,7 +704,7 @@ join pg_proc p on p.proname = e.proname
   and p.pronamespace = (select oid from pg_namespace where nspname = 'public');
 
 insert into results (test, result, detail)
-select 'no PUBLIC or anon EXECUTE (unchanged from before): ' || e.proname,
+select 'no PUBLIC or anon EXECUTE (per expected contract): ' || e.proname,
   case when not exists (
     select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
     where (a.grantee = 0 or a.grantee = 'anon'::regrole) and a.privilege_type = 'EXECUTE'

@@ -43,16 +43,38 @@
 -- product change (retroactive closure time), explicitly out of scope here.
 --
 -- ===== What this migration explicitly does NOT do =====
--- No GRANT or REVOKE statement appears anywhere below. CREATE OR REPLACE
--- FUNCTION preserves a function's existing privileges, SECURITY DEFINER
--- setting, owner, and search_path exactly as they already are -- it cannot
--- change any of them -- so every function's existing ACL (including
--- add_incident_report's and set_incident_status_check's still-deliberately-
--- ABSENT `authenticated` grant, see 0017 §19 and 0018) is untouched by
--- construction, not merely by omission. This migration's own test suite
--- (chapter3_event_operation_id.sql) asserts exactly that: a before/after
--- snapshot diff of pg_proc's ACL, prosecdef, proowner, argument signature,
--- and proconfig (search_path) for every function this file replaces.
+-- No GRANT, REVOKE, or ALTER OWNER statement appears anywhere below.
+--
+-- ACL and owner: every function below keeps its exact existing name and
+-- argument signature, so CREATE OR REPLACE FUNCTION updates the SAME
+-- catalog row rather than dropping and recreating it -- its owner and
+-- accumulated GRANT/REVOKE history (from 0003, 0005-0009, 0013, 0017, 0018,
+-- and 0024, including add_incident_report's and set_incident_status_check's
+-- still-deliberately-ABSENT `authenticated` grant, see 0017 §19 and 0018)
+-- therefore carry over automatically. Nothing here issues a separate
+-- ownership or privilege statement that could change either.
+--
+-- SECURITY DEFINER and search_path are DIFFERENT: they are attributes of a
+-- function's own definition, not of the catalog row's identity, so
+-- CREATE OR REPLACE does NOT carry them over on its own -- omitting either
+-- one in a replacement would silently revert that function to SECURITY
+-- INVOKER and no search_path override. Every replacement below explicitly
+-- restates `security definer` and its exact prior `set search_path = ...`
+-- value (`public` for most of these functions, or the empty-string
+-- `set search_path = ''` style 0017 introduced for four of them) -- both
+-- remain as they were because they are restated identically here, not
+-- because CREATE OR REPLACE preserves them on its own.
+--
+-- This migration's own test suite (chapter3_event_operation_id.sql) verifies
+-- all of the above: not a live before/after diff (0026 is already part of
+-- the applied migration chain by the time any test file runs, so there is
+-- no "before" state available inside a test transaction), but an explicit
+-- expected-contract check -- a fixed matrix of ACL, SECURITY DEFINER, owner,
+-- argument signature, and search_path derived by reading the complete
+-- grant/revoke/ownership history across 0003, 0005-0009, 0013, 0017, 0018,
+-- and 0024, and verified against every one of the 14 functions' actual,
+-- currently active definitions.
+--
 -- Grouping/severity of transition rules, lifecycle behaviour, validation
 -- messages, and every non-incident_events write are byte-for-byte unchanged
 -- below -- only `v_operation_id` declarations and `operation_id`/`event_time`
@@ -1083,7 +1105,10 @@ end;
 $$;
 
 -- No grant/revoke statements below this line: every function above already
--- existed before this migration, and CREATE OR REPLACE FUNCTION preserves
--- every existing privilege, SECURITY DEFINER flag, owner, and search_path
--- setting exactly as-is. See chapter3_event_operation_id.sql for the
--- before/after ACL snapshot diff that verifies this for all 14 functions.
+-- existed before this migration. CREATE OR REPLACE FUNCTION preserves ACL
+-- and owner automatically (same catalog row, no separate privilege or
+-- ownership statement issued here); SECURITY DEFINER and search_path are
+-- explicitly restated in each function body above rather than preserved
+-- automatically. See chapter3_event_operation_id.sql for the
+-- expected-contract verification (not a before/after diff) that confirms
+-- all of this for all 14 functions.
