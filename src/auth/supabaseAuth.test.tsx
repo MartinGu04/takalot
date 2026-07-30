@@ -35,7 +35,9 @@ const mockAuth = {
     for (const cb of state.listeners) cb('SIGNED_OUT', null);
     return { error: null };
   }),
-  signInWithOAuth: vi.fn(async () => ({ data: {}, error: null })),
+  signInWithOAuth: vi.fn(
+    async (): Promise<{ data: Record<string, never>; error: Error | null }> => ({ data: {}, error: null }),
+  ),
 };
 
 vi.mock('../data/appMode', () => ({
@@ -80,6 +82,7 @@ beforeEach(() => {
   state.claimPending = vi.fn().mockResolvedValue(null);
   state.bootstrapAdmin = vi.fn().mockResolvedValue(null);
   mockAuth.signInWithOAuth.mockClear();
+  mockAuth.signInWithOAuth.mockResolvedValue({ data: {}, error: null });
   mockAuth.signOut.mockClear();
   window.history.pushState({}, '', '/');
 });
@@ -99,6 +102,46 @@ describe('supabase mode: signed out', () => {
     expect(mockAuth.signInWithOAuth).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'google' }),
     );
+  });
+
+  it('shows the redirecting state while the Google OAuth launch is pending', async () => {
+    const user = userEvent.setup();
+    mockAuth.signInWithOAuth.mockReturnValue(new Promise(() => {}));
+
+    render(<App />);
+    const button = await screen.findByTestId('google-login-button');
+    await user.click(button);
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent('מעביר להזדהות…');
+  });
+
+  it('shows a controlled launch error and restores the Google button', async () => {
+    const user = userEvent.setup();
+    mockAuth.signInWithOAuth.mockResolvedValue({
+      data: {},
+      error: new Error('provider launch failed'),
+    });
+
+    render(<App />);
+    const button = await screen.findByTestId('google-login-button');
+    await user.click(button);
+
+    expect(
+      await screen.findByText(
+        'לא ניתן להתחיל את תהליך ההתחברות. יש לבדוק את החיבור ולנסות שוב.',
+      ),
+    ).toHaveAttribute('role', 'alert');
+    expect(button).toBeEnabled();
+  });
+
+  it('surfaces an OAuth provider error returned on the login URL', async () => {
+    window.history.pushState({}, '', '/login?error=access_denied');
+
+    render(<App />);
+
+    expect(await screen.findByText('ההתחברות דרך Google נכשלה.')).toHaveAttribute('role', 'alert');
+    expect(screen.getByTestId('google-login-button')).toBeEnabled();
   });
 
   it('redirects a protected route to the login screen', async () => {
@@ -252,7 +295,7 @@ describe('supabase mode: identity without authorization', () => {
 
     render(<App />);
     const screenEl = await screen.findByTestId('unauthorized-screen');
-    expect(within(screenEl).getByText('החשבון הזה אינו רשום בכוח האדם של Nexus.')).toBeInTheDocument();
+    expect(within(screenEl).getByText('החשבון הזה אינו רשום בכוח האדם של AVARIA.')).toBeInTheDocument();
     expect(within(screenEl).getByText('יש לפנות לאחמ״ש, לנגד או למנהל המערכת.')).toBeInTheDocument();
     expect(screenEl.textContent).not.toMatch(/supabase|uuid|database|מסד נתונים/i);
   });

@@ -120,7 +120,7 @@ test.describe('notification popover stays inside the viewport', () => {
 });
 
 test.describe('dashboard KPI responsive layout', () => {
-  test('open-incidents card spans the full row on mobile, with the other two side by side below it', async ({ page }) => {
+  test('all three KPI cards stack at equal full width on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await loginAs(page, DEMO_USERS.supervisor1);
 
@@ -133,12 +133,12 @@ test.describe('dashboard KPI responsive layout', () => {
     const overdueBox = await overdueStat.boundingBox();
     expect(primaryBox && criticalBox && overdueBox).toBeTruthy();
     if (primaryBox && criticalBox && overdueBox) {
-      // Primary card is wider than either secondary card (spans the row).
-      expect(primaryBox.width).toBeGreaterThan(criticalBox.width);
-      // The two secondary cards sit side by side (roughly the same vertical position).
-      expect(Math.abs(criticalBox.y - overdueBox.y)).toBeLessThan(5);
-      // ...and below the primary card.
+      // The approved mobile dashboard uses one full-width column for all
+      // three operational KPI cards.
+      expect(primaryBox.width).toBeCloseTo(criticalBox.width, 0);
+      expect(criticalBox.width).toBeCloseTo(overdueBox.width, 0);
       expect(criticalBox.y).toBeGreaterThan(primaryBox.y);
+      expect(overdueBox.y).toBeGreaterThan(criticalBox.y);
     }
   });
 

@@ -94,8 +94,9 @@ test.describe('contextual affordance is keyboard-accessible', () => {
     // Real keyboard navigation (Tab), not a scripted .focus() call, so the
     // browser actually sets the focus-visible flag Tailwind's
     // group-focus-visible: variant depends on -- inc-1 is the sole card in
-    // "דורש טיפול עכשיו", immediately after the primary stat in tab order.
-    await page.getByRole('button', { name: /תקלות פתוחות/ }).focus();
+    // "דורש טיפול עכשיו", immediately after the three KPI controls in tab
+    // order. Start from the final KPI so one real Tab reaches the card.
+    await page.getByRole('button', { name: /עדכונים באיחור/ }).focus();
     await page.keyboard.press('Tab');
     await expect(card).toBeFocused();
     await expect(chevron).toHaveCSS('opacity', '1');

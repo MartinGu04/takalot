@@ -13,7 +13,7 @@ beforeEach(() => {
 describe('RTL layout', () => {
   it('renders the document root as RTL Hebrew', async () => {
     render(<App />);
-    await screen.findByRole('heading', { name: 'Nexus' });
+    await screen.findByRole('heading', { name: 'AVARIA' });
     expect(document.documentElement.getAttribute('dir')).toBe('rtl');
     expect(document.documentElement.getAttribute('lang')).toBe('he');
   });
@@ -53,15 +53,19 @@ describe('RTL layout', () => {
 });
 
 describe('branding', () => {
-  it('shows Nexus as the primary brand identity on the login screen', async () => {
+  it('shows AVARIA as the primary brand identity on the login screen', async () => {
     render(<App />);
-    await screen.findByRole('heading', { name: 'Nexus' });
-    expect(screen.getByTestId('brand-name').textContent).toContain('Nexus');
+    const brandHeading = await screen.findByRole('heading', { name: 'AVARIA' });
+    expect(brandHeading).toHaveAttribute('data-testid', 'brand-name');
+    expect(within(brandHeading).getByRole('img', { name: 'AVARIA' })).toHaveAttribute(
+      'src',
+      '/branding/avaria-logo-full.png',
+    );
     expect(screen.queryByRole('heading', { name: 'מעקב תקלות' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Takalot' })).not.toBeInTheDocument();
   });
 
-  it('shows Nexus branding in the application shell after login, not the legacy product name', async () => {
+  it('shows AVARIA branding in the application shell after login, not the legacy product name', async () => {
     const user = userEvent.setup();
     render(<App />);
     const loginButton = await screen.findByTestId('login-u-supervisor-1');
@@ -71,10 +75,22 @@ describe('branding', () => {
     const brandLinks = screen.getAllByTestId(/^brand-name/);
     expect(brandLinks.length).toBeGreaterThan(0);
     for (const link of brandLinks) {
-      expect(link.textContent).toContain('Nexus');
+      expect(link.textContent).toContain('AVARIA');
+      expect(link.querySelector('img')).toHaveAttribute('src', '/branding/avaria-icon-512.png');
     }
     expect(screen.queryByText('מעקב תקלות', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText('Takalot', { exact: false })).not.toBeInTheDocument();
+  });
+
+  it('preserves the session-expired message inside the branded login presentation', async () => {
+    localStorage.setItem('takalot-demo-session-user', 'missing-demo-user');
+
+    render(<App />);
+
+    expect(
+      await screen.findByText(/פג תוקף ההתחברות\. יש להתחבר מחדש כדי להמשיך/),
+    ).toHaveAttribute('role', 'alert');
+    expect(screen.getByRole('heading', { name: 'AVARIA' })).toBeInTheDocument();
   });
 });
 

@@ -69,7 +69,7 @@ export function PersonnelFormDialog({
         <Field label="שם מלא" required>
           {(a) => <Input {...a} value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={120} autoFocus />}
         </Field>
-        <Field label="כתובת חשבון Google" required hint="הכתובת שאיתה איש הצוות יתחבר ל-Nexus">
+        <Field label="כתובת חשבון Google" required hint="הכתובת שאיתה איש הצוות יתחבר ל-AVARIA">
           {(a) => (
             <Input
               {...a}

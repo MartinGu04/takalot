@@ -33,7 +33,7 @@ test('archive search accepts a full word without losing focus', async ({ page })
   // Only inc-5 (מערכת בטא) is closed; inc-2 (also בטא) is still open and
   // therefore excluded from the archive, so exactly one match is expected.
   await page.waitForTimeout(500);
-  await expect(page.getByText('1 תקלות סגורות תואמות')).toBeVisible();
+  await expect(page.getByText('1 תקלות בארכיון תואמות')).toBeVisible();
   await expect(page.getByRole('link', { name: /2026-005/ })).toBeVisible();
 });
 
@@ -45,7 +45,7 @@ test('archive root-cause search accepts a full word without losing focus', async
   await expect(input).toHaveValue('רכיב');
   await page.waitForTimeout(500);
   // inc-6's root cause is "נזק פיזי לרכיב האנטנה כתוצאה ממזג אוויר."
-  await expect(page.getByText('1 תקלות סגורות תואמות')).toBeVisible();
+  await expect(page.getByText('1 תקלות בארכיון תואמות')).toBeVisible();
   await expect(page.getByRole('link', { name: /2026-006/ })).toBeVisible();
 });
 
@@ -57,7 +57,7 @@ test('archive resolution search accepts a full word without losing focus', async
   await expect(input).toHaveValue('רכיב');
   await page.waitForTimeout(500);
   // inc-6's resolution is "הותקן רכיב חלופי זמני. הוזמן רכיב קבוע מהספק."
-  await expect(page.getByText('1 תקלות סגורות תואמות')).toBeVisible();
+  await expect(page.getByText('1 תקלות בארכיון תואמות')).toBeVisible();
   await expect(page.getByRole('link', { name: /2026-006/ })).toBeVisible();
 });
 

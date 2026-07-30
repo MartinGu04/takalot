@@ -10,7 +10,7 @@ test('shift supervisor creates an incident, assigns a technician, adds an update
   await page.getByLabel('תיאור התקלה').fill('בדיקת קצה לקצה: תקלה נוצרה על ידי מבחן אוטומטי');
   await page.getByLabel('השפעה מבצעית').fill('השפעה מבצעית לבדיקה אוטומטית');
   await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית על ידי הבדיקה האוטומטית');
-  await page.getByLabel('גורם מטפל פנימי').selectOption({ label: 'יואב כהן (דמו)' });
+  await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
   await page.locator('form button[type="submit"]').click();
 
   // Redirects to the new incident's detail page with a success confirmation.
