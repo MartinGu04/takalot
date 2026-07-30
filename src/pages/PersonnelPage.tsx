@@ -17,6 +17,7 @@ import { Badge, Button, EmptyState, ErrorState, Input, Select, Spinner, useToast
 import { PersonnelFormDialog } from '../components/dialogs/PersonnelFormDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DeleteUserDialog } from '../components/dialogs/DeleteUserDialog';
+import { ActionMenu } from '../components/ActionMenu';
 import { IconPlus } from '../components/icons';
 
 type Tab = 'pending' | 'active' | 'inactive';
@@ -25,6 +26,22 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'pending', label: 'ממתינים להתחברות' },
   { key: 'active', label: 'פעילים' },
   { key: 'inactive', label: 'לא פעילים' },
+];
+
+/**
+ * Display order for the role groups below, highest authority first. This
+ * mirrors the role hierarchy the system already implements -- the strict
+ * (non-peer) ceilings in allowedAssignRoles/allowedManageRoles and their
+ * database counterparts role_ceiling_allows_assign/role_ceiling_allows_manage
+ * -- but it is presentation only: grouping changes nothing about who may
+ * manage whom, which stays entirely with those ceilings.
+ */
+const ROLE_GROUP_ORDER: Role[] = [
+  'system_admin',
+  'professional_manager',
+  'shift_supervisor',
+  'technician',
+  'viewer',
 ];
 
 function usePersonnel() {
@@ -175,8 +192,151 @@ export default function PersonnelPage() {
     return byTab.filter((e) => e.fullName.toLowerCase().includes(q) || (e.email ?? '').toLowerCase().includes(q));
   }, [data, tab, search]);
 
+  // Grouping is applied to `rows` -- i.e. AFTER the active tab and the search
+  // query have already selected the result set -- so it only ever reorganizes
+  // what the user can currently see. Groups with no members in that set are
+  // omitted entirely rather than rendered empty.
+  const groups = useMemo(
+    () =>
+      ROLE_GROUP_ORDER.map((role) => ({ role, entries: rows.filter((e) => e.role === role) })).filter(
+        (group) => group.entries.length > 0,
+      ),
+    [rows],
+  );
+
   if (isLoading) return <Spinner label="טוען כוח אדם…" />;
   if (isError) return <ErrorState message="שגיאה בטעינת כוח אדם." onRetry={() => refetch()} />;
+
+  // Row rendering is shared by every role group. Both branches keep their
+  // existing eligibility rules verbatim -- only the presentation of the
+  // edit/delete controls changed (visible buttons -> one overflow menu).
+  function renderRow(entry: PersonnelEntry) {
+    if (entry.kind === 'pending') {
+      const canManage = assignRoles.includes(entry.role);
+      return (
+        <div
+          key={entry.id}
+          data-personnel-row={entry.id}
+          className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+            <p className="truncate text-xs text-muted" dir="ltr">
+              {entry.email}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
+            <Badge color="orange">{personnelStatusLabels.pending}</Badge>
+            {canManage && (
+              <ActionMenu
+                label={`פעולות עבור ${entry.fullName}`}
+                items={[
+                  { label: 'עריכה', onSelect: () => setEditingEntry(entry) },
+                  // A pending entry is cancelled, not deleted -- it has no
+                  // account to remove yet. The label stays "ביטול" so the
+                  // action keeps meaning exactly what it always did.
+                  { label: 'ביטול', destructive: true, onSelect: () => setCancelingEntry(entry) },
+                ]}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // A tombstoned profile is permanent history, not manageable
+    // personnel: no עריכה toggle, no role/active controls, and no
+    // repeated delete action -- the frontend just doesn't offer
+    // them (the database rejects all three regardless).
+    const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state !== 'deleted';
+    // Recovery-only: the SAME role-ceiling/self exclusion as
+    // canManage, but for an already-tombstoned profile -- offers
+    // nothing except retrying/verifying Auth-account removal
+    // (never role, activation, edit, or repeated deletion).
+    const canRecoverAuth = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state === 'deleted';
+    const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
+    const expanded = canManage && expandedId === entry.id;
+    return (
+      <div key={entry.id} data-personnel-row={entry.id} className="flex flex-col gap-2 px-3 py-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+            {entry.email && (
+              <p className="truncate text-xs text-muted" dir="ltr">
+                {entry.email}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
+            <Badge color={entry.state === 'active' ? 'green' : entry.state === 'deleted' ? 'red' : 'neutral'}>
+              {personnelStatusLabels[entry.state]}
+            </Badge>
+            {entry.id === session.userId && <Badge color="blue">אתה</Badge>}
+            {canManage && (
+              <ActionMenu
+                label={`פעולות עבור ${entry.fullName}`}
+                items={[
+                  {
+                    label: 'עריכה',
+                    onSelect: () => setExpandedId(expanded ? null : entry.id),
+                  },
+                  {
+                    label: 'מחיקה',
+                    destructive: true,
+                    disabled: soleActiveAdmin,
+                    title: soleActiveAdmin ? 'לא ניתן למחוק את מנהל המערכת הפעיל האחרון' : undefined,
+                    onSelect: () => setDeletingEntry(entry),
+                  },
+                ]}
+              />
+            )}
+            {canRecoverAuth && (
+              <Button variant="ghost" className="px-2" onClick={() => setRecoveringEntry(entry)}>
+                ווידוא הסרת חשבון ההתחברות
+              </Button>
+            )}
+          </div>
+        </div>
+        {expanded && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-active/60 p-2 sm:me-auto">
+            <Select
+              aria-label={`תפקיד ${entry.fullName}`}
+              className="w-auto"
+              value={entry.role}
+              disabled={soleActiveAdmin}
+              title={soleActiveAdmin ? 'לא ניתן לשנות את תפקיד מנהל המערכת הפעיל האחרון' : undefined}
+              onChange={(e) => {
+                const newRole = e.target.value as Role;
+                if (newRole !== entry.role) setRoleChangeRequest({ entry, newRole });
+              }}
+            >
+              {manageRoles.map((r) => (
+                <option key={r} value={r}>
+                  {personnelRoleLabels[r]}
+                </option>
+              ))}
+            </Select>
+            {entry.state === 'active' ? (
+              <Button
+                variant="secondary"
+                disabled={soleActiveAdmin}
+                title={soleActiveAdmin ? 'לא ניתן להשבית את מנהל המערכת הפעיל האחרון' : undefined}
+                onClick={() => setDeactivatingEntry(entry)}
+              >
+                השבתה
+              </Button>
+            ) : (
+              <Button variant="secondary" onClick={() => activateMutation.mutate(entry.id)}>
+                הפעלה
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const emptyTitle = search.trim()
     ? 'לא נמצאו אנשי צוות התואמים לחיפוש.'
@@ -232,135 +392,20 @@ export default function PersonnelPage() {
           <EmptyState title={emptyTitle} />
         </div>
       ) : (
-        <div className="surface mt-3 divide-y divide-hairline">
-          {rows.map((entry) => {
-            if (entry.kind === 'pending') {
-              const canManage = assignRoles.includes(entry.role);
-              return (
-                <div
-                  key={entry.id}
-                  data-personnel-row={entry.id}
-                  className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
-                    <p className="truncate text-xs text-muted" dir="ltr">
-                      {entry.email}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
-                    <Badge color="orange">{personnelStatusLabels.pending}</Badge>
-                    {canManage && (
-                      <>
-                        <Button variant="ghost" className="px-2" onClick={() => setEditingEntry(entry)}>
-                          עריכה
-                        </Button>
-                        <Button variant="ghost" className="px-2 text-red-700 dark:text-red-400" onClick={() => setCancelingEntry(entry)}>
-                          ביטול
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
-            // A tombstoned profile is permanent history, not manageable
-            // personnel: no עריכה toggle, no role/active controls, and no
-            // repeated delete action -- the frontend just doesn't offer
-            // them (the database rejects all three regardless).
-            const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state !== 'deleted';
-            // Recovery-only: the SAME role-ceiling/self exclusion as
-            // canManage, but for an already-tombstoned profile -- offers
-            // nothing except retrying/verifying Auth-account removal
-            // (never role, activation, edit, or repeated deletion).
-            const canRecoverAuth = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state === 'deleted';
-            const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
-            const expanded = canManage && expandedId === entry.id;
-            return (
-              <div key={entry.id} data-personnel-row={entry.id} className="flex flex-col gap-2 px-3 py-2.5">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
-                    {entry.email && (
-                      <p className="truncate text-xs text-muted" dir="ltr">
-                        {entry.email}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
-                    <Badge color={entry.state === 'active' ? 'green' : entry.state === 'deleted' ? 'red' : 'neutral'}>
-                      {personnelStatusLabels[entry.state]}
-                    </Badge>
-                    {entry.id === session.userId && <Badge color="blue">אתה</Badge>}
-                    {canManage && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          className="px-2"
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedId(expanded ? null : entry.id)}
-                        >
-                          עריכה
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="px-2 text-red-700 dark:text-red-400"
-                          disabled={soleActiveAdmin}
-                          title={soleActiveAdmin ? 'לא ניתן למחוק את מנהל המערכת הפעיל האחרון' : undefined}
-                          onClick={() => setDeletingEntry(entry)}
-                        >
-                          מחיקה
-                        </Button>
-                      </>
-                    )}
-                    {canRecoverAuth && (
-                      <Button variant="ghost" className="px-2" onClick={() => setRecoveringEntry(entry)}>
-                        ווידוא הסרת חשבון ההתחברות
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {expanded && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-active/60 p-2 sm:me-auto">
-                    <Select
-                      aria-label={`תפקיד ${entry.fullName}`}
-                      className="w-auto"
-                      value={entry.role}
-                      disabled={soleActiveAdmin}
-                      title={soleActiveAdmin ? 'לא ניתן לשנות את תפקיד מנהל המערכת הפעיל האחרון' : undefined}
-                      onChange={(e) => {
-                        const newRole = e.target.value as Role;
-                        if (newRole !== entry.role) setRoleChangeRequest({ entry, newRole });
-                      }}
-                    >
-                      {manageRoles.map((r) => (
-                        <option key={r} value={r}>
-                          {personnelRoleLabels[r]}
-                        </option>
-                      ))}
-                    </Select>
-                    {entry.state === 'active' ? (
-                      <Button
-                        variant="secondary"
-                        disabled={soleActiveAdmin}
-                        title={soleActiveAdmin ? 'לא ניתן להשבית את מנהל המערכת הפעיל האחרון' : undefined}
-                        onClick={() => setDeactivatingEntry(entry)}
-                      >
-                        השבתה
-                      </Button>
-                    ) : (
-                      <Button variant="secondary" onClick={() => activateMutation.mutate(entry.id)}>
-                        הפעלה
-                      </Button>
-                    )}
-                  </div>
-                )}
+        <div className="mt-3 flex flex-col gap-4">
+          {groups.map((group) => (
+            <section key={group.role} aria-labelledby={`personnel-group-${group.role}`}>
+              <h2
+                id={`personnel-group-${group.role}`}
+                className="px-1 text-xs font-bold tracking-wide text-muted uppercase"
+              >
+                {personnelRoleLabels[group.role]} ({group.entries.length})
+              </h2>
+              <div className="surface mt-1.5 divide-y divide-hairline">
+                {group.entries.map((entry) => renderRow(entry))}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </div>
       )}
 

@@ -45,10 +45,15 @@ test.describe('desktop', () => {
     await expect(row.getByText('טכנאי')).toBeVisible();
     await expect(row.getByRole('combobox')).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'השבתה' })).toHaveCount(0);
-    await expect(row.getByRole('button', { name: 'עריכה' })).toBeVisible();
+    // Row actions now live behind a single overflow trigger rather than as
+    // permanently visible buttons.
+    await expect(row.getByRole('button', { name: 'עריכה' })).toHaveCount(0);
+    const rowActions = row.getByRole('button', { name: /^פעולות עבור / });
+    await expect(rowActions).toBeVisible();
 
-    // Expanding עריכה reveals the role select and deactivate button.
-    await row.getByRole('button', { name: 'עריכה' }).click();
+    // Choosing עריכה from the menu reveals the role select and deactivate button.
+    await rowActions.click();
+    await row.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
     await expect(row.getByRole('combobox')).toBeVisible();
     await expect(row.getByRole('button', { name: 'השבתה' })).toBeVisible();
   });
@@ -106,7 +111,8 @@ test.describe('mobile', () => {
     await expect(page.getByText('לעריכה נייד')).toBeVisible();
 
     const row = page.locator('[data-personnel-row]', { hasText: 'לעריכה נייד' });
-    await row.getByRole('button', { name: 'עריכה' }).click();
+    await row.getByRole('button', { name: /^פעולות עבור / }).click();
+    await row.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
     dialog = page.getByRole('dialog', { name: 'עריכת רישום ממתין' });
     const nameField = dialog.getByLabel('שם מלא', { exact: false });
     await nameField.fill('שם עודכן נייד');
@@ -114,7 +120,8 @@ test.describe('mobile', () => {
     await expect(page.getByText('שם עודכן נייד')).toBeVisible();
 
     const updatedRow = page.locator('[data-personnel-row]', { hasText: 'שם עודכן נייד' });
-    await updatedRow.getByRole('button', { name: 'ביטול' }).click();
+    await updatedRow.getByRole('button', { name: /^פעולות עבור / }).click();
+    await updatedRow.getByRole('menu').getByRole('menuitem', { name: 'ביטול' }).click();
     const confirm = page.getByRole('dialog', { name: 'ביטול רישום ממתין' });
     await expect(confirm).toBeVisible();
     await confirm.getByRole('button', { name: 'ביטול הרישום' }).click();

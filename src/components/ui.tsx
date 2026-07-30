@@ -20,7 +20,15 @@ function cx(...parts: (string | false | null | undefined)[]): string {
 }
 
 // ---------- Button ----------
-type ButtonVariant = 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'danger' | 'ghost';
+type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'accent'
+  | 'success'
+  | 'info'
+  | 'warning'
+  | 'danger'
+  | 'ghost';
 
 const buttonStyles: Record<ButtonVariant, string> = {
   primary:
@@ -31,6 +39,12 @@ const buttonStyles: Record<ButtonVariant, string> = {
     'border border-brand-300 bg-brand-50 text-brand-900 shadow-soft hover:bg-brand-100 disabled:opacity-50 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200 dark:hover:bg-brand-900/60',
   success:
     'border border-green-300 bg-green-50 text-green-900 shadow-soft hover:bg-green-100 disabled:opacity-50 dark:border-green-800 dark:bg-green-950/50 dark:text-green-200 dark:hover:bg-green-900/60',
+  // Muted indigo, deliberately built to the same shape as `accent`/`success`
+  // (tinted surface + matching border, never a filled/solid fill): a
+  // secondary action that needs to read as its own category without ever
+  // competing with the single primary action on the screen.
+  info:
+    'border border-indigo-300 bg-indigo-50 text-indigo-900 shadow-soft hover:bg-indigo-100 disabled:opacity-50 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200 dark:hover:bg-indigo-900/60',
   warning:
     'border border-amber-300 bg-amber-50 text-amber-950 shadow-soft hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-900/60',
   danger:
@@ -146,6 +160,59 @@ export function Badge({
       )}
     >
       {children}
+    </span>
+  );
+}
+
+// ---------- Truncated text with a tooltip ----------
+/**
+ * Single-line text that truncates to its container, without the full value
+ * becoming unreachable. The visible text stays truncated; the complete value
+ * is exposed two ways at once:
+ *
+ *  - programmatically, via `aria-describedby` -> a `role="tooltip"` node that
+ *    is in the accessibility tree at all times (so a screen reader announces
+ *    the whole string regardless of hover/focus), and
+ *  - visually, revealed on BOTH pointer hover and keyboard focus.
+ *
+ * The keyboard half is why this exists rather than a plain `title=`
+ * attribute: browsers render `title` only on hover, so a keyboard user
+ * tabbing through the interface can never surface it. The trigger is
+ * therefore focusable (`tabIndex={0}`), which is what makes the reveal
+ * reachable without a pointer.
+ *
+ * Reveal is pure CSS (`group-hover` / `group-focus-within`) -- no state, no
+ * effects, and nothing to get stuck open if the element unmounts mid-hover.
+ */
+export function TruncatedTooltip({
+  text,
+  className,
+  tooltipClassName,
+}: {
+  text: string;
+  className?: string;
+  tooltipClassName?: string;
+}) {
+  const id = useId();
+  return (
+    <span className="group/tooltip relative block min-w-0">
+      <span tabIndex={0} aria-describedby={id} className={cx('block truncate rounded-sm', className)}>
+        {text}
+      </span>
+      <span
+        role="tooltip"
+        id={id}
+        // dir="auto" so a Latin or mixed-script value is laid out by its own
+        // first strong character rather than inheriting the RTL page
+        // direction, which would strand its punctuation on the wrong side.
+        dir="auto"
+        className={cx(
+          'pointer-events-none absolute bottom-full z-50 mb-1.5 hidden w-max max-w-56 rounded-lg border border-hairline bg-surface px-2 py-1 text-xs font-medium text-text-primary opacity-0 shadow-elevated transition-opacity group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100 md:block',
+          tooltipClassName,
+        )}
+      >
+        {text}
+      </span>
     </span>
   );
 }

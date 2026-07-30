@@ -450,13 +450,19 @@ export default function IncidentDetailPage() {
               עדכון תקלה
             </Button>
           )}
+          {/* Closure and reassignment stay SECONDARY to עדכון תקלה -- neither
+              is filled, and neither competes with the single primary action.
+              They only gain their own restrained tint so the two most common
+              follow-up actions stop reading as one undifferentiated pair:
+              muted green for reaching a completed state, muted indigo for
+              handing the incident to someone else. */}
           {canClose && (
-            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => setDialog('close')}>
+            <Button className="w-full sm:w-auto" variant="success" onClick={() => setDialog('close')}>
               סגירת תקלה
             </Button>
           )}
           {canAssign && (
-            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => setDialog('assign')}>
+            <Button className="w-full sm:w-auto" variant="info" onClick={() => setDialog('assign')}>
               שינוי גורם מטפל
             </Button>
           )}

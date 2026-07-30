@@ -256,9 +256,16 @@ describe('incident actions: hierarchy and overflow', () => {
     const close = within(actions).getByRole('button', { name: 'סגירת תקלה' });
     const assign = within(actions).getByRole('button', { name: 'שינוי גורם מטפל' });
 
+    // Update stays the one filled/primary action. Closure and reassignment
+    // are still secondary -- tinted surfaces, never a filled brand fill --
+    // but now carry their own distinct tone instead of both reading as the
+    // same neutral surface button.
     expect(update).toHaveClass('bg-brand-600');
-    expect(close).toHaveClass('bg-surface');
-    expect(assign).toHaveClass('bg-surface');
+    expect(close).toHaveClass('bg-green-50');
+    expect(close).not.toHaveClass('bg-brand-600');
+    expect(assign).toHaveClass('bg-indigo-50');
+    expect(assign).not.toHaveClass('bg-brand-600');
+    expect(close.className).not.toEqual(assign.className);
     expect(within(actions).queryByRole('button', { name: 'ייצוא PDF' })).not.toBeInTheDocument();
     expect(within(actions).queryByRole('button', { name: 'ביטול תקלה' })).not.toBeInTheDocument();
 

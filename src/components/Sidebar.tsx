@@ -4,6 +4,7 @@ import { hasCapability } from '../domain/permissions';
 import { APP_NAME, roleLabels } from '../domain/labels';
 import type { Profile } from '../domain/types';
 import { navItems } from './navItems';
+import { TruncatedTooltip } from './ui';
 import { ThemeToggle } from './ThemeToggle';
 import { IconLogOut, IconPlus } from './icons';
 import { AvariaIcon } from './AvariaBrand';
@@ -73,8 +74,13 @@ export function Sidebar({ user }: { user: Profile }) {
           >
             {user.fullName.charAt(0)}
           </span>
+          {/* The signed-in name is the one label here that can be arbitrarily
+              long, so truncation is kept (the compact layout depends on it)
+              and the full value is recovered on hover AND keyboard focus
+              instead of being lost to the ellipsis. The role label below is a
+              fixed enum label and needs no such treatment. */}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-text-primary">{user.fullName}</p>
+            <TruncatedTooltip text={user.fullName} className="text-sm font-bold text-text-primary" />
             <p className="mt-0.5 truncate text-xs text-muted">{roleLabels[user.role]}</p>
           </div>
           <ThemeToggle />

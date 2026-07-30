@@ -13,8 +13,10 @@ test('incident actions expose the approved hierarchy and overflow grouping', asy
 
   const actions = page.getByRole('region', { name: 'פעולות תקלה' });
   await expect(actions.getByRole('button', { name: 'עדכון תקלה' })).toHaveClass(/bg-brand-600/);
-  await expect(actions.getByRole('button', { name: 'סגירת תקלה' })).toHaveClass(/bg-surface/);
-  await expect(actions.getByRole('button', { name: 'שינוי גורם מטפל' })).toHaveClass(/bg-surface/);
+  // Closure and reassignment stay secondary (never the brand fill) while
+  // carrying their own distinct restrained tone.
+  await expect(actions.getByRole('button', { name: 'סגירת תקלה' })).toHaveClass(/bg-green-50/);
+  await expect(actions.getByRole('button', { name: 'שינוי גורם מטפל' })).toHaveClass(/bg-indigo-50/);
   await expect(actions.getByRole('button', { name: 'ייצוא PDF' })).toHaveCount(0);
   await expect(actions.getByRole('button', { name: 'ביטול תקלה' })).toHaveCount(0);
 
