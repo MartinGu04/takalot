@@ -34,10 +34,15 @@ test.describe('desktop sidebar', () => {
     await loginAs(page, DEMO_USERS.admin);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     await expect(sidebar).toBeVisible();
-    await expect(page.getByTestId('brand-name').locator('img')).toHaveAttribute(
+    const brand = page.getByTestId('brand-name');
+    await expect(brand.locator('img')).toHaveAttribute(
       'src',
       '/branding/avaria-icon-512.png',
     );
+    await expect(brand).toContainText('AVARIA');
+
+    const sidebarBox = await sidebar.locator('..').boundingBox();
+    expect(sidebarBox?.width).toBeCloseTo(280, 0);
 
     const links = sidebar.getByRole('link');
     // העברת משמרת is deliberately not a primary destination -- the /handovers
@@ -46,6 +51,19 @@ test.describe('desktop sidebar', () => {
 
     // Mobile bottom nav must not also be visible at desktop width.
     await expect(page.getByRole('navigation', { name: 'ניווט תחתון' })).toBeHidden();
+
+    const firstDestinationBox = await links.first().boundingBox();
+    expect(firstDestinationBox?.height).toBeGreaterThanOrEqual(48);
+    await expect(links.first()).toHaveAttribute('aria-current', 'page');
+
+    const clock = page.getByTestId('desktop-live-clock');
+    await expect(clock).toBeVisible();
+    const time = page.getByTestId('live-clock-time');
+    await expect(time).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+    await expect(page.getByTestId('live-clock-date')).not.toBeEmpty();
+    const firstTime = await time.textContent();
+    await expect.poll(() => time.textContent()).not.toBe(firstTime);
+    await expect(clock).not.toHaveAttribute('aria-live');
 
     expect(await page.locator('html').getAttribute('dir')).toBe('rtl');
   });
@@ -63,6 +81,7 @@ test('desktop sidebar is hidden at mobile width and the bottom nav takes over', 
   await loginAs(page, DEMO_USERS.supervisor1);
   await expect(page.getByRole('navigation', { name: 'ניווט ראשי' })).toBeHidden();
   await expect(page.getByRole('navigation', { name: 'ניווט תחתון' })).toBeVisible();
+  await expect(page.getByTestId('desktop-live-clock')).toBeHidden();
   await expect(page.getByTestId('brand-name-mobile').locator('img')).toHaveAttribute(
     'src',
     '/branding/avaria-icon-512.png',

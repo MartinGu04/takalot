@@ -13,6 +13,7 @@ import { navItems } from './navItems';
 import { IconBell, IconLogOut, IconPlus, IconUsers } from './icons';
 import { AvariaIcon } from './AvariaBrand';
 import { FloatingPopover } from './FloatingPopover';
+import { LiveClock } from './LiveClock';
 
 function DemoBanner() {
   if (!isDemoMode()) return null;
@@ -238,12 +239,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
         <DemoBanner />
         <header className="sticky top-0 z-40 border-b border-hairline bg-surface/90 backdrop-blur-sm">
-          <div className="flex items-center gap-2 px-4 py-2">
+          <div className="relative flex min-h-14 items-center gap-2 px-4 py-2 md:min-h-16 md:px-5">
             <Link to="/" className="flex min-w-0 items-center gap-2 md:hidden" data-testid="brand-name-mobile">
               <AvariaIcon className="size-7" />
               <span className="truncate text-base font-extrabold tracking-tight text-text-primary">{APP_NAME}</span>
             </Link>
-            <div className="ms-auto flex min-w-0 items-center gap-1">
+            <div className="pointer-events-none absolute inset-0 hidden items-center justify-center lg:flex">
+              <LiveClock />
+            </div>
+            <div className="relative z-10 ms-auto flex min-w-0 items-center gap-1">
               <RoleSwitcher />
               <NotificationsMenu />
               <div className="md:hidden">
