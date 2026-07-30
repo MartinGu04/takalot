@@ -474,6 +474,19 @@ export class SupabaseRepository implements Repository {
     }
   }
 
+  async countClosedIncidents(_session: Session): Promise<number> {
+    // head: true asks PostgREST for the count alone -- no rows are
+    // transferred and the 500-row list cap plays no part, so this stays exact
+    // and cheap however large the archive grows. 'cancelled' is a separate
+    // terminal outcome and is intentionally excluded.
+    const { count, error } = await this.client
+      .from('incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'closed');
+    wrap(error);
+    return count ?? 0;
+  }
+
   async getIncident(_s: Session, id: string): Promise<Incident | null> {
     const { data, error } = await this.client.from('incidents').select('*').eq('id', id).maybeSingle();
     wrap(error);

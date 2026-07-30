@@ -43,6 +43,10 @@ export function CloseDialog({
     setOwnerUserId(incident.ownerUserId ?? '');
     setOwnerExternalName(incident.ownerExternalName ?? '');
     setOwnerError(undefined);
+    // Both halves of the reporting answer are restored together: resetting
+    // only the recipient could leave a "כן" selection paired with a cleared
+    // recipient, a combination the user never chose.
+    setReportedToOps(incident.reportedToOps);
     setReportedToOpsRecipient(incident.reportedToOpsRecipient ?? '');
     setConfirming(false);
     setError(undefined);

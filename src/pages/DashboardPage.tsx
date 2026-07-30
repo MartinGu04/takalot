@@ -1,7 +1,7 @@
 // "מצב נוכחי" — the operational picture at a glance.
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useIncidents, useLocations, useProfiles, useSystems } from '../data/hooks';
+import { useClosedIncidentCount, useIncidents, useLocations, useProfiles, useSystems } from '../data/hooks';
 import { useAuth } from '../auth/AuthContext';
 import { summarizeDashboard, terminalAt } from '../domain/dashboardSummary';
 import type { Incident } from '../domain/types';
@@ -12,6 +12,9 @@ import { IconAlertTriangle, IconClock, IconPulse } from '../components/icons';
 import { IncidentListDialog } from '../components/IncidentListDialog';
 import { formatDateTime, formatRelative } from '../lib/time';
 import type { SVGProps } from 'react';
+
+/** The archive, pre-filtered to the closed outcome only (never cancelled). */
+export const CLOSED_ARCHIVE_HREF = '/archive?outcome=closed';
 
 function summarySentence(open: Incident[], overdue: Incident[]): string {
   if (open.length === 0) return 'כרגע אין תקלות פתוחות.';
@@ -173,6 +176,7 @@ function RecentTerminalRow({
 export default function DashboardPage() {
   const { user } = useAuth();
   const { data: incidents, isLoading, isError, refetch } = useIncidents({}, 'priority');
+  const { data: closedCount } = useClosedIncidentCount();
   const { data: profiles } = useProfiles();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
@@ -261,8 +265,27 @@ export default function DashboardPage() {
       {derived.recentTerminal.length > 0 && (
         <section className="mt-8">
           <div className="mb-2 flex items-baseline justify-between gap-3">
-            <h2 className="group-title">נסגרו לאחרונה</h2>
-            <Link to="/archive" className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-400">
+            <div className="flex items-baseline gap-2">
+              <h2 className="group-title">נסגרו לאחרונה</h2>
+              {/* Total closed incidents -- not the (at most five) rows
+                  rendered below, and never including cancelled ones. Kept to
+                  a small neutral pill so the section's existing hierarchy is
+                  unchanged: this is a quiet reference number, not a KPI. */}
+              {typeof closedCount === 'number' && closedCount > 0 && (
+                <Link
+                  to={CLOSED_ARCHIVE_HREF}
+                  data-testid="closed-total"
+                  aria-label={`סך הכול ${closedCount} תקלות סגורות — מעבר לארכיון`}
+                  className="rounded-full bg-surface-active px-2 py-0.5 text-xs font-semibold tabular-nums text-text-secondary hover:bg-surface-hover"
+                >
+                  {closedCount}
+                </Link>
+              )}
+            </div>
+            <Link
+              to={CLOSED_ARCHIVE_HREF}
+              className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-400"
+            >
               לכל הארכיון
             </Link>
           </div>

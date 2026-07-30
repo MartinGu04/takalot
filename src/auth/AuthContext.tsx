@@ -21,6 +21,45 @@ import { getSupabaseClient } from '../data/supabase/client';
 const DEMO_SESSION_KEY = 'takalot-demo-session-user';
 
 /**
+ * The signed-in person's Google profile image, read defensively from the
+ * session metadata Supabase already carries -- no database column, no upload,
+ * no extra OAuth scope. Google's default OIDC `profile` claim is surfaced by
+ * Supabase under more than one name depending on project/provider version, so
+ * every known location is tried in order rather than betting on one:
+ *   user_metadata.avatar_url -> user_metadata.picture -> the same two keys on
+ *   each linked identity's identity_data.
+ * Anything that is not a non-empty http(s) URL is ignored, so a malformed or
+ * hostile value (e.g. a `javascript:` string) can never reach an <img src>.
+ * Returns null when nothing usable is present -- the caller falls back to the
+ * initials avatar.
+ */
+export function extractAvatarUrl(user: unknown): string | null {
+  const candidates: unknown[] = [];
+  const u = user as
+    | { user_metadata?: Record<string, unknown>; identities?: { identity_data?: Record<string, unknown> }[] }
+    | null
+    | undefined;
+  if (!u || typeof u !== 'object') return null;
+  const meta = u.user_metadata;
+  if (meta && typeof meta === 'object') {
+    candidates.push(meta.avatar_url, meta.picture);
+  }
+  if (Array.isArray(u.identities)) {
+    for (const identity of u.identities) {
+      const data = identity?.identity_data;
+      if (data && typeof data === 'object') candidates.push(data.avatar_url, data.picture);
+    }
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (!trimmed) continue;
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  }
+  return null;
+}
+
+/**
  * - 'loading': restoring a persisted session (or exchanging an OAuth code).
  * - 'signed_out': no identity; show the login screen.
  * - 'unauthorized': identity proven (Google), but no active profiles row --
@@ -40,6 +79,10 @@ interface AuthState {
   sessionExpired: boolean;
   /** Identity email shown on the unauthorized screen (supabase mode). */
   identityEmail: string | null;
+  /** Google profile image from the authenticated session, when the provider
+   *  supplied one. Null in demo mode and whenever no usable URL exists --
+   *  callers fall back to the initials avatar. */
+  avatarUrl: string | null;
   /** Demo mode only: sign in as a fictional user. */
   login: (userId: string) => Promise<void>;
   /** Supabase mode only: start the Google OAuth redirect. */
@@ -114,6 +157,9 @@ function DemoAuthProvider({ children }: { children: ReactNode }) {
       loading,
       sessionExpired,
       identityEmail: null,
+      // Demo mode has no OAuth session and therefore no provider image; the
+      // initials avatar is the only representation there, exactly as before.
+      avatarUrl: null,
       login,
       loginWithGoogle: async () => {
         throw new Error('Google login is unavailable in demo mode');
@@ -133,6 +179,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<Profile | null>(null);
   const [identityEmail, setIdentityEmail] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const queryClient = useQueryClient();
   // Serializes profile checks: a stale check must never overwrite the state
@@ -140,10 +187,11 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   const checkSeq = useRef(0);
   const lastAuthUserId = useRef<string | null>(null);
 
-  const resolveProfile = useCallback(async (authUserId: string, email: string | null) => {
+  const resolveProfile = useCallback(async (authUserId: string, email: string | null, avatar: string | null) => {
     const seq = ++checkSeq.current;
     setStatus('loading');
     setIdentityEmail(email);
+    setAvatarUrl(avatar);
     lastAuthUserId.current = authUserId;
     try {
       // RLS on public.profiles only returns rows to active members, so a
@@ -207,7 +255,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       if (unmounted) return;
       const s = data.session;
       if (s?.user) {
-        resolveProfile(s.user.id, s.user.email ?? null);
+        resolveProfile(s.user.id, s.user.email ?? null, extractAvatarUrl(s.user));
       } else {
         checkSeq.current++;
         setStatus('signed_out');
@@ -220,13 +268,14 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         checkSeq.current++;
         setUser(null);
         setIdentityEmail(null);
+        setAvatarUrl(null);
         setStatus('signed_out');
         queryClient.clear();
         return;
       }
       if (session?.user && session.user.id !== lastAuthUserId.current) {
         // SIGNED_IN (fresh login or OAuth landing) or a user change.
-        resolveProfile(session.user.id, session.user.email ?? null);
+        resolveProfile(session.user.id, session.user.email ?? null, extractAvatarUrl(session.user));
       }
       // TOKEN_REFRESHED with the same user: nothing to re-check -- the
       // profile row, not the token, is the authorization source.
@@ -255,6 +304,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     lastAuthUserId.current = null;
     setUser(null);
     setIdentityEmail(null);
+    setAvatarUrl(null);
     setStatus('signed_out');
     setSessionExpired(false);
     queryClient.clear();
@@ -265,6 +315,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     checkSeq.current++;
     lastAuthUserId.current = null;
     setUser(null);
+    setAvatarUrl(null);
     setStatus('signed_out');
     setSessionExpired(true);
     queryClient.clear();
@@ -273,8 +324,8 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const retryAuthorization = useCallback(() => {
     const id = lastAuthUserId.current;
-    if (id) void resolveProfile(id, identityEmail);
-  }, [resolveProfile, identityEmail]);
+    if (id) void resolveProfile(id, identityEmail, avatarUrl);
+  }, [resolveProfile, identityEmail, avatarUrl]);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -284,6 +335,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       loading: status === 'loading',
       sessionExpired,
       identityEmail,
+      avatarUrl,
       login: async () => {
         throw new Error('Demo login is unavailable outside demo mode');
       },
@@ -295,7 +347,7 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       markSessionExpired,
       retryAuthorization,
     }),
-    [user, status, sessionExpired, identityEmail, loginWithGoogle, logout, markSessionExpired, retryAuthorization],
+    [user, status, sessionExpired, identityEmail, avatarUrl, loginWithGoogle, logout, markSessionExpired, retryAuthorization],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

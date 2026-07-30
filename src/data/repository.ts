@@ -172,6 +172,14 @@ export interface Repository {
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;
+  /**
+   * Total number of incidents whose lifecycle state is literally 'closed'.
+   * Deliberately NOT derived from listIncidents: that call is capped at 500
+   * rows, so counting its result would silently under-report, and its
+   * terminal scope includes cancelled incidents, which are a different
+   * outcome and are never counted here.
+   */
+  countClosedIncidents(session: Session): Promise<number>;
   getIncident(session: Session, id: string): Promise<Incident | null>;
   getIncidentEvents(session: Session, incidentId: string): Promise<IncidentEvent[]>;
   getIncidentUpdates(session: Session, incidentId: string): Promise<IncidentUpdate[]>;

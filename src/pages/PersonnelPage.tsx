@@ -409,15 +409,24 @@ export default function PersonnelPage() {
         </div>
       )}
 
-      <PersonnelFormDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        title="הוספת איש צוות"
-        submitLabel="הוספה"
-        allowedRoles={assignRoles}
-        onSubmit={(input) => createMutation.mutate(input)}
-        submitting={createMutation.isPending}
-      />
+      {/* Mounted only while open -- the same treatment the edit dialog below
+          already gets. Closing (whether by cancelling or by a CONFIRMED
+          successful creation, which is the only thing that clears addOpen)
+          unmounts the form, so the next opening starts from clean defaults
+          instead of the previously created person's details. A FAILED
+          creation leaves addOpen true, so the dialog stays mounted and every
+          entered value is preserved. */}
+      {addOpen && (
+        <PersonnelFormDialog
+          open
+          onClose={() => setAddOpen(false)}
+          title="הוספת איש צוות"
+          submitLabel="הוספה"
+          allowedRoles={assignRoles}
+          onSubmit={(input) => createMutation.mutate(input)}
+          submitting={createMutation.isPending}
+        />
+      )}
 
       {editingEntry && (
         <PersonnelFormDialog

@@ -228,6 +228,60 @@ describe('adding personnel', () => {
   });
 });
 
+describe('the add-personnel form resets only after a confirmed successful creation', () => {
+  it('reopening after a successful creation shows clean defaults, never the person just created', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('button', { name: 'הוספת איש צוות' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'הוספת איש צוות' });
+    await user.type(within(dialog).getByLabelText(/^שם מלא/), 'רס״ן דנה כהן');
+    await user.type(within(dialog).getByLabelText(/^כתובת חשבון Google/), 'dana.cohen@example.com');
+    await user.selectOptions(within(dialog).getByLabelText(/^תפקיד/), 'viewer');
+    await user.click(within(dialog).getByRole('button', { name: 'הוספה' }));
+
+    // Confirmed success: the entry really exists.
+    expect(await within(main()).findByText('רס״ן דנה כהן')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'הוספת איש צוות' })).not.toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'הוספת איש צוות' }));
+    const reopened = await screen.findByRole('dialog', { name: 'הוספת איש צוות' });
+    expect(within(reopened).getByLabelText(/^שם מלא/)).toHaveValue('');
+    expect(within(reopened).getByLabelText(/^כתובת חשבון Google/)).toHaveValue('');
+    // Role is back to the creator's default (their highest-assignable role),
+    // not the viewer that was picked for the previous person.
+    expect(within(reopened).getByLabelText(/^תפקיד/)).toHaveValue('system_admin');
+    expect(within(reopened).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('a failed creation keeps the dialog open with every entered value intact', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const { AppError } = await import('../data/repository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'createPendingPersonnel')
+      .mockRejectedValue(new AppError('NETWORK', 'אירעה שגיאה. הנתונים שהוזנו לא נשמרו — ניתן לנסות שוב.'));
+    try {
+      const user = await openPersonnel('login-u-admin');
+      await user.click(screen.getByRole('button', { name: 'הוספת איש צוות' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'הוספת איש צוות' });
+      await user.type(within(dialog).getByLabelText(/^שם מלא/), 'רס״ן דנה כהן');
+      await user.type(within(dialog).getByLabelText(/^כתובת חשבון Google/), 'dana.cohen@example.com');
+      await user.selectOptions(within(dialog).getByLabelText(/^תפקיד/), 'technician');
+      await user.click(within(dialog).getByRole('button', { name: 'הוספה' }));
+
+      expect(await screen.findByText('אירעה שגיאה. הנתונים שהוזנו לא נשמרו — ניתן לנסות שוב.')).toBeInTheDocument();
+      const stillOpen = screen.getByRole('dialog', { name: 'הוספת איש צוות' });
+      expect(within(stillOpen).getByLabelText(/^שם מלא/)).toHaveValue('רס״ן דנה כהן');
+      expect(within(stillOpen).getByLabelText(/^כתובת חשבון Google/)).toHaveValue('dana.cohen@example.com');
+      expect(within(stillOpen).getByLabelText(/^תפקיד/)).toHaveValue('technician');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('editing and cancelling a pending entry', () => {
   it('editing updates the name of a pending entry', async () => {
     const user = await openPersonnel('login-u-supervisor-1');

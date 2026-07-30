@@ -1,7 +1,7 @@
 // "מצב נוכחי" (current-status) page: exercised through the real app with the
 // demo repository (real seeded incidents, real rules) -- not a UI mock.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type AppType from '../App';
 
@@ -15,6 +15,14 @@ beforeEach(async () => {
 
 function main(): HTMLElement {
   return document.querySelector('main') as HTMLElement;
+}
+
+// The dashboard link exists in both the desktop sidebar and the mobile
+// bottom nav; scope to the sidebar so the query is unambiguous.
+async function gotoDashboard(user: ReturnType<typeof userEvent.setup>) {
+  const sidebar = document.querySelector('aside') as HTMLElement;
+  await user.click(within(sidebar).getByRole('link', { name: /מצב נוכחי/ }));
+  await screen.findByRole('heading', { name: 'מצב נוכחי' });
 }
 
 async function loginAs(userTestId: string) {
@@ -128,7 +136,13 @@ describe('information architecture: urgent, open, recently-closed', () => {
     const links = within(closedSection).getAllByRole('link');
     const numberLinks = links.filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
     expect(numberLinks.length).toBe(2);
-    expect(within(closedSection).getByRole('link', { name: 'לכל הארכיון' })).toHaveAttribute('href', '/archive');
+    // The archive link now carries the closed-outcome filter, so it lands on
+    // the same set the section and its counter describe rather than on the
+    // wider closed-and-cancelled archive.
+    expect(within(closedSection).getByRole('link', { name: 'לכל הארכיון' })).toHaveAttribute(
+      'href',
+      '/archive?outcome=closed',
+    );
   });
 
   it('"נסגרו לאחרונה" includes a cancelled incident alongside closed ones, each with its own status label', async () => {
@@ -208,5 +222,111 @@ describe('incident card content and structure', () => {
     // Reachable by keyboard: a real <a href> is natively focusable/activatable,
     // not dependent on any hover-only affordance.
     expect(card).not.toHaveAttribute('tabindex', '-1');
+  });
+});
+
+describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
+  // Seed (src/data/local/seed.ts) has exactly two closed incidents
+  // (inc-5, inc-6) and no cancelled ones.
+  it('shows the total number of closed incidents and links to the closed-only archive', async () => {
+    await loginAs('login-u-admin');
+    const counter = await within(main()).findByTestId('closed-total');
+    expect(counter).toHaveTextContent('2');
+    expect(counter).toHaveAttribute('href', '/archive?outcome=closed');
+    expect(counter).toHaveAccessibleName('סך הכול 2 תקלות סגורות — מעבר לארכיון');
+  });
+
+  it('counts every closed incident, not only the five rendered rows', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    // The list the section renders is capped at five; the count is not
+    // derived from it. Nine closed incidents must still read as nine.
+    const spy = vi.spyOn(LocalDemoRepository.prototype, 'countClosedIncidents').mockResolvedValue(9);
+    try {
+      await loginAs('login-u-admin');
+      expect(await within(main()).findByTestId('closed-total')).toHaveTextContent('9');
+      const closedSection = within(main())
+        .getByRole('heading', { name: 'נסגרו לאחרונה' })
+        .closest('section') as HTMLElement;
+      const rendered = within(closedSection)
+        .getAllByRole('link')
+        .filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
+      expect(rendered.length).toBeLessThanOrEqual(5);
+      expect(rendered.length).not.toBe(9);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('excludes cancelled incidents even while the section itself lists one', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const original = LocalDemoRepository.prototype.listIncidents;
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'listIncidents')
+      .mockImplementation(async function (this: InstanceType<typeof LocalDemoRepository>, ...args) {
+        const real = await original.apply(this, args);
+        const template = real.find((i) => i.status === 'closed');
+        if (!template) return real;
+        return [
+          ...real,
+          {
+            ...template,
+            id: 'inc-cancelled-synthetic',
+            number: '2026-999',
+            status: 'cancelled' as const,
+            closedAt: null,
+            cancelledAt: new Date().toISOString(),
+            cancelledBy: 'u-admin',
+            cancellationReason: 'נפתחה בטעות',
+          },
+        ];
+      });
+    try {
+      await loginAs('login-u-admin');
+      const closedSection = within(main())
+        .getByRole('heading', { name: 'נסגרו לאחרונה' })
+        .closest('section') as HTMLElement;
+      // The cancelled incident is visible in the section...
+      expect(within(closedSection).getByText('בוטלה')).toBeInTheDocument();
+      // ...but the counter still reports only the two genuinely closed ones.
+      expect(within(main()).getByTestId('closed-total')).toHaveTextContent('2');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('refreshes after an incident is closed and again after it is reopened', async () => {
+    const user = await loginAs('login-u-admin');
+    expect(await within(main()).findByTestId('closed-total')).toHaveTextContent('2');
+
+    // --- close inc-1 through the real closure flow ---
+    const inc1Card = (await within(main()).findByText(INC1_TEXT)).closest('a.incident-card') as HTMLElement;
+    const inc1Href = inc1Card.getAttribute('href') as string;
+    await user.click(inc1Card);
+    await user.click(await within(main()).findByRole('button', { name: 'סגירת תקלה' }));
+    const closeDialog = await screen.findByRole('dialog', { name: 'סגירת תקלה' });
+    await user.type(within(closeDialog).getByLabelText(/^סיבת התקלה/), 'תקלת חומרה');
+    await user.type(within(closeDialog).getByLabelText(/^הפתרון שבוצע/), 'הוחלף רכיב');
+    await user.click(within(closeDialog).getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(await within(closeDialog).findByRole('button', { name: 'אישור סגירת תקלה' }));
+    expect(await screen.findByText('התקלה נסגרה.')).toBeInTheDocument();
+
+    await gotoDashboard(user);
+    await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('3'));
+
+    // --- reopen it, and the count must come back down ---
+    // It is no longer an open card; it now sits in the recently-closed list,
+    // which renders the incident number rather than the description.
+    const closedRow = within(main())
+      .getAllByRole('link')
+      .find((l) => l.getAttribute('href') === inc1Href) as HTMLElement;
+    await user.click(closedRow);
+    await user.click(await within(main()).findByRole('button', { name: 'פתיחה מחדש' }));
+    const reopenDialog = await screen.findByRole('dialog', { name: 'פתיחה מחדש של תקלה' });
+    await user.type(within(reopenDialog).getByLabelText(/^סיבת הפתיחה מחדש/), 'התקלה חזרה');
+    await user.click(within(reopenDialog).getByRole('button', { name: 'פתיחה מחדש' }));
+    expect(await screen.findByText('התקלה נפתחה מחדש.')).toBeInTheDocument();
+
+    await gotoDashboard(user);
+    await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('2'));
   });
 });

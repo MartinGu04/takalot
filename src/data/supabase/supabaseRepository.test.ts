@@ -214,3 +214,52 @@ describe('SupabaseRepository reference-data RPC parity', () => {
     ]);
   });
 });
+
+describe('SupabaseRepository.countClosedIncidents', () => {
+  function repoWithCountQuery(capture: { table?: string; select?: unknown[]; eq?: unknown[] }, result: {
+    count: number | null;
+    error?: { message: string } | null;
+  }): SupabaseRepository {
+    const builder = {
+      select: (...args: unknown[]) => {
+        capture.select = args;
+        return builder;
+      },
+      eq: (...args: unknown[]) => {
+        capture.eq = args;
+        return Promise.resolve({ count: result.count, error: result.error ?? null });
+      },
+    };
+    const fakeClient = {
+      from: (table: string) => {
+        capture.table = table;
+        return builder;
+      },
+    };
+    return new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+  }
+
+  it('asks PostgREST for an exact count of status = closed, transferring no rows', async () => {
+    const capture: { table?: string; select?: unknown[]; eq?: unknown[] } = {};
+    const repo = repoWithCountQuery(capture, { count: 137 });
+
+    expect(await repo.countClosedIncidents(session)).toBe(137);
+    expect(capture.table).toBe('incidents');
+    // head: true means no rows come back, so the 500-row list cap that
+    // listIncidents applies plays no part in this number.
+    expect(capture.select?.[1]).toEqual({ count: 'exact', head: true });
+    // Literally 'closed' -- a cancelled incident is a different terminal
+    // outcome and is never counted.
+    expect(capture.eq).toEqual(['status', 'closed']);
+  });
+
+  it('reports zero rather than null when the project has no closed incidents', async () => {
+    const repo = repoWithCountQuery({}, { count: null });
+    expect(await repo.countClosedIncidents(session)).toBe(0);
+  });
+
+  it('surfaces a query failure through the shared error mapping', async () => {
+    const repo = repoWithCountQuery({}, { count: null, error: { message: 'permission: אין הרשאה' } });
+    await expect(repo.countClosedIncidents(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});

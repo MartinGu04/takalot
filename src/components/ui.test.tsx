@@ -1,9 +1,63 @@
 // Focused tests for shared UI primitives whose whole point is an
 // accessibility contract rather than a visual one.
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { TruncatedTooltip } from './ui';
+import { Avatar, TruncatedTooltip } from './ui';
+
+describe('Avatar', () => {
+  it('renders the provider image over the initial when a URL is available', () => {
+    const { container } = render(
+      <Avatar src="https://lh3.googleusercontent.com/a/photo" name="דנה לוי" className="size-10" />,
+    );
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).toHaveAttribute('src', 'https://lh3.googleusercontent.com/a/photo');
+    // The image is decorative: the adjacent name is the accessible label.
+    expect(img).toHaveAttribute('alt', '');
+    expect(img).toHaveAttribute('referrerpolicy', 'no-referrer');
+  });
+
+  it('keeps the initial rendered underneath, so a slow image shows no blank or shifting box', () => {
+    const { container } = render(<Avatar src="https://example.test/a.png" name="דנה לוי" className="size-10" />);
+    // Both present simultaneously: the box is sized by the span and its text,
+    // and the absolutely positioned image cannot change that box.
+    expect(container.textContent).toBe('ד');
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).toHaveClass('absolute');
+    expect(img).toHaveClass('inset-0');
+  });
+
+  it('falls back to the initial when the image fails to load', () => {
+    const { container } = render(<Avatar src="https://example.test/gone.png" name="דנה לוי" className="size-10" />);
+    fireEvent.error(container.querySelector('img') as HTMLImageElement);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toBe('ד');
+  });
+
+  it('renders the initial alone when no URL is available', () => {
+    const { container } = render(<Avatar src={null} name="דנה לוי" className="size-10" />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toBe('ד');
+  });
+
+  it('retries when the URL changes, so one failure does not suppress a later image', () => {
+    const { container, rerender } = render(<Avatar src="https://example.test/gone.png" name="דנה לוי" />);
+    fireEvent.error(container.querySelector('img') as HTMLImageElement);
+    expect(container.querySelector('img')).toBeNull();
+    rerender(<Avatar src="https://example.test/new.png" name="דנה לוי" />);
+    expect(container.querySelector('img')).toHaveAttribute('src', 'https://example.test/new.png');
+  });
+
+  it('keeps the call site\'s own size and shape classes', () => {
+    const { container } = render(
+      <Avatar src={null} name="דנה לוי" className="flex size-10 shrink-0 rounded-full bg-gradient-to-br" />,
+    );
+    const box = container.firstElementChild as HTMLElement;
+    expect(box).toHaveClass('size-10');
+    expect(box).toHaveClass('rounded-full');
+    expect(box).toHaveClass('shrink-0');
+  });
+});
 
 describe('TruncatedTooltip', () => {
   it('keeps the visible text truncated but never drops the full value', () => {

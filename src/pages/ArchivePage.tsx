@@ -18,6 +18,11 @@ export default function ArchivePage() {
   const rootCauseText = url.get('rootCause') ?? '';
   const resolutionText = url.get('resolution') ?? '';
   const readiness = url.get('readiness') as Readiness | undefined;
+  // Terminal outcome. The archive's default scope is both outcomes; 'closed'
+  // and 'cancelled' narrow it to one. Reached from the dashboard's closed
+  // counter and "לכל הארכיון" link, and clearable here like any other filter.
+  const outcomeParam = url.get('outcome');
+  const outcome = outcomeParam === 'closed' || outcomeParam === 'cancelled' ? outcomeParam : undefined;
   const createdFrom = url.get('from');
   const createdTo = url.get('to');
   const session = useSession();
@@ -36,6 +41,7 @@ export default function ArchivePage() {
   const { data: incidents, isLoading, isError, refetch } = useIncidents(
     {
       terminalOnly: true,
+      status: outcome ? [outcome] : undefined,
       search,
       rootCauseText: rootCauseText || undefined,
       resolutionText: resolutionText || undefined,
@@ -104,6 +110,16 @@ export default function ArchivePage() {
           aria-label="חיפוש בארכיון"
         />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <Select
+            aria-label="סינון לפי תוצאה"
+            className="min-w-0"
+            value={outcome ?? ''}
+            onChange={(e) => url.set('outcome', e.target.value || undefined)}
+          >
+            <option value="">סגורות ומבוטלות</option>
+            <option value="closed">סגורות בלבד</option>
+            <option value="cancelled">מבוטלות בלבד</option>
+          </Select>
           <Select
             aria-label="סינון לפי כשירות בסגירה"
             className="min-w-0"

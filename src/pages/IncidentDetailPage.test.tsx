@@ -182,6 +182,69 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
   });
 });
 
+describe('UpdateDialog resets only after a confirmed successful submission', () => {
+  it('reopening after a successful update clears the event-specific text and re-seeds the structured state from the now-current incident', async () => {
+    const { user, statusSelect } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+
+    // inc-1 starts in_progress. Move it to monitoring and fill every
+    // event-specific free-text field plus a reporting recipient.
+    expect(statusSelect).toHaveValue('in_progress');
+    await user.selectOptions(statusSelect, 'monitoring');
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'פעולות של העדכון הזה');
+    await user.type(within(dialog).getByLabelText(/^ממצאים/), 'ממצאים של העדכון הזה');
+    await user.type(within(dialog).getByLabelText(/^פעולות המשך/), 'המשך של העדכון הזה');
+    await user.selectOptions(within(dialog).getByLabelText(/^דווח למבצעים/), 'yes');
+    await user.type(within(dialog).getByLabelText(/^למי דווח\?/), 'יוסי מהמוקד');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+    expect(await screen.findByText('העדכון נשמר.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'עדכון תקלה' })).not.toBeInTheDocument());
+
+    await user.click(await within(main()).findByRole('button', { name: 'עדכון תקלה' }));
+    const reopened = await screen.findByRole('dialog', { name: 'עדכון תקלה' });
+
+    // Event-specific content belongs to the previous update only.
+    expect(within(reopened).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/)).toHaveValue('');
+    expect(within(reopened).getByLabelText(/^ממצאים/)).toHaveValue('');
+    expect(within(reopened).getByLabelText(/^פעולות המשך/)).toHaveValue('');
+    expect(within(reopened).queryByRole('alert')).not.toBeInTheDocument();
+
+    // Structured state is the incident's CURRENT state, freshly seeded --
+    // monitoring, not the in_progress this page first rendered with.
+    expect(within(reopened).getByRole('combobox', { name: /סטטוס נוכחי/ })).toHaveValue('monitoring');
+
+    // The event time is re-defaulted to "now" rather than kept from the
+    // previous submission.
+    const eventTime = within(reopened).getByLabelText(/^מועד העדכון בפועל/) as HTMLInputElement;
+    expect(eventTime.value.slice(0, 16)).toBe(isoToLocalInput(new Date().toISOString()).slice(0, 16));
+  });
+
+  it('after a failed update the dialog stays open and every entered value survives, including the structured ones', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const { AppError } = await import('../data/repository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'updateIncident')
+      .mockRejectedValue(new AppError('NETWORK', 'אירעה שגיאה. הנתונים שהוזנו לא נשמרו — ניתן לנסות שוב.'));
+    try {
+      const { user, statusSelect } = await openUpdateDialogAsAdmin();
+      const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+      await user.selectOptions(statusSelect, 'monitoring');
+      await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'תוכן שלא נשמר');
+      await user.type(within(dialog).getByLabelText(/^ממצאים/), 'ממצאים שלא נשמרו');
+      await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+      expect(await screen.findByText('אירעה שגיאה. הנתונים שהוזנו לא נשמרו — ניתן לנסות שוב.')).toBeInTheDocument();
+      const stillOpen = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+      expect(within(stillOpen).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/)).toHaveValue('תוכן שלא נשמר');
+      expect(within(stillOpen).getByLabelText(/^ממצאים/)).toHaveValue('ממצאים שלא נשמרו');
+      expect(within(stillOpen).getByRole('combobox', { name: /סטטוס נוכחי/ })).toHaveValue('monitoring');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('UpdateDialog status dropdown: pre-cutover target exclusion', () => {
   it('does not offer cancelled or the three not-yet-reachable waiting_* statuses as a new selection', async () => {
     const { statusSelect } = await openUpdateDialogAsAdmin();
