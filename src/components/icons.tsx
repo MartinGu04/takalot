@@ -148,6 +148,16 @@ export function IconChevronDown(props: IconProps) {
   );
 }
 
+export function IconDotsVertical(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="10" cy="4" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="10" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="16" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconChevronLeft(props: IconProps) {
   return (
     <svg {...base(props)}>

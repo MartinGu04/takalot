@@ -113,12 +113,28 @@ export function IncidentCard({
           {/* Deliberately no truncate: system/location are identifying facts,
               not decoration -- they must wrap rather than lose text to an
               ellipsis on a narrow card. */}
-          <p className="mt-1 break-words text-sm text-muted">
-            מערכת: <span className="font-medium text-text-secondary">{systemName}</span>
+          {/* Each free-text value carries its own dir="auto" rather than the
+              row inheriting one direction for everything. The label around it
+              ("מערכת:") is Hebrew and stays RTL, while a value like
+              "Alta Systems (IAF)" resolves to LTR from its own first strong
+              character -- so its parentheses and trailing punctuation land on
+              the correct side instead of being reordered by the RTL page. A
+              Hebrew or mixed value (e.g. "טיפול של אלתא (IAF)") resolves to
+              RTL by the same rule and is unaffected. */}
+          <p className="mt-1 break-words text-start text-sm text-muted">
+            מערכת:{' '}
+            <span dir="auto" className="font-medium text-text-secondary">
+              {systemName}
+            </span>
             {' · '}
-            מיקום: <span className="font-medium text-text-secondary">{locationName}</span>
+            מיקום:{' '}
+            <span dir="auto" className="font-medium text-text-secondary">
+              {locationName}
+            </span>
           </p>
-          <p className="mt-1.5 line-clamp-2 break-words text-sm text-secondary">{incident.operationalImpact}</p>
+          <p dir="auto" className="mt-1.5 line-clamp-2 break-words text-start text-sm text-secondary">
+            {incident.operationalImpact}
+          </p>
           <div className="mt-2">
             <NextUpdateNote incident={incident} now={now} />
           </div>
@@ -131,12 +147,24 @@ export function IncidentCard({
 
         {/* Metadata: a stable, vertically stacked column -- current status,
             handler, last-touched time -- instead of labels scattered across
-            the full card width. */}
-        <div className="flex shrink-0 flex-col items-start gap-1.5 sm:w-48 sm:items-end sm:border-s sm:border-hairline sm:ps-4 sm:text-end">
+            the full card width.
+
+            Alignment is logical-start throughout (right, under the page's
+            RTL direction), matching the content column beside it rather than
+            mirroring away from it: Hebrew metadata reads from the same edge
+            as everything else on the card. The divider is the column's
+            inline-start border (`border-s` + `ps-4`), which in RTL is its
+            right edge -- the side that actually faces the content column --
+            so it stays on the seam in either direction instead of drifting
+            to the card's outer edge. */}
+        <div className="flex shrink-0 flex-col items-start gap-1.5 text-start sm:w-48 sm:border-s sm:border-hairline sm:ps-4">
           <StatusBadge status={incident.status} />
-          {/* title= keeps the full handler name accessible (hover tooltip)
-              when the compact column truncates a long one. */}
+          {/* dir="auto" so an external handler written in Latin script keeps
+              its own direction; a Hebrew or mixed name such as
+              "טיפול של אלתא (IAF)" resolves to RTL from its first strong
+              character and renders its parentheses correctly. */}
           <span
+            dir="auto"
             className="max-w-full truncate text-sm font-medium text-text-primary"
             title={hasOwner ? ownerDisplay(incident, profiles) : undefined}
           >

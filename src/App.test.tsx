@@ -143,3 +143,27 @@ describe('unauthorized route protection', () => {
     expect(screen.queryByRole('link', { name: 'ניהול' })).not.toBeInTheDocument();
   });
 });
+
+describe('sidebar user area', () => {
+  it("keeps the signed-in user's full name recoverable when the compact layout truncates it", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-supervisor-1'));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' }).closest('aside') as HTMLElement;
+    const name = within(sidebar).getByText('יואב כהן (דמו)', { selector: 'span[tabindex]' });
+
+    // Still truncated -- the compact layout is preserved, not widened.
+    expect(name).toHaveClass('truncate');
+    // ...but the full value is described by a tooltip and reachable without
+    // a pointer.
+    const tooltip = within(sidebar).getByRole('tooltip');
+    expect(name).toHaveAttribute('aria-describedby', tooltip.id);
+    expect(tooltip).toHaveTextContent('יואב כהן (דמו)');
+    expect(name).toHaveAttribute('tabindex', '0');
+
+    name.focus();
+    expect(name).toHaveFocus();
+  });
+});
