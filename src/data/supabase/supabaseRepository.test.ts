@@ -263,3 +263,49 @@ describe('SupabaseRepository.countClosedIncidents', () => {
     await expect(repo.countClosedIncidents(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
+
+describe('SupabaseRepository.getIncidentEvents: operation_id mapping', () => {
+  function repoWithEventsQuery(rows: Record<string, unknown>[]): SupabaseRepository {
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      order: () => Promise.resolve({ data: rows, error: null }),
+    };
+    const fakeClient = { from: () => builder };
+    return new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+  }
+
+  const baseRow = {
+    id: 'ev-1',
+    incident_id: 'inc-1',
+    type: 'update',
+    actor_id: 'u1',
+    actor_label: null,
+    event_time: '2026-01-01T00:00:00Z',
+    server_time: '2026-01-01T00:00:00Z',
+    field: null,
+    old_value: null,
+    new_value: null,
+    note: null,
+    ref_id: null,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('maps a populated operation_id column through to operationId', async () => {
+    const repo = repoWithEventsQuery([{ ...baseRow, operation_id: 'op-123' }]);
+    const events = await repo.getIncidentEvents(session, 'inc-1');
+    expect(events[0].operationId).toBe('op-123');
+  });
+
+  it('maps a null operation_id (historical row) to null, not undefined', async () => {
+    const repo = repoWithEventsQuery([{ ...baseRow, operation_id: null }]);
+    const events = await repo.getIncidentEvents(session, 'inc-1');
+    expect(events[0].operationId).toBeNull();
+  });
+
+  it('maps a missing operation_id key (defensive) to null rather than leaking undefined', async () => {
+    const repo = repoWithEventsQuery([{ ...baseRow }]);
+    const events = await repo.getIncidentEvents(session, 'inc-1');
+    expect(events[0].operationId).toBeNull();
+  });
+});

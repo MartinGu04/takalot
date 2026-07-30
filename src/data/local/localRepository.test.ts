@@ -4,7 +4,12 @@ import { MemoryStorage } from './storage';
 import { DEMO_USERS, buildSeed } from './seed';
 import { AppError } from '../repository';
 import type { Session } from '../repository';
-import type { CreateIncidentInput, CloseIncidentInput, ReopenIncidentInput } from '../../domain/schemas';
+import type {
+  CreateIncidentInput,
+  CloseIncidentInput,
+  ReopenIncidentInput,
+  UpdateIncidentInput,
+} from '../../domain/schemas';
 import { isOpen } from '../../domain/types';
 
 function session(userId: string, role: Session['role']): Session {
@@ -1893,5 +1898,138 @@ describe('closed-incident count (countClosedIncidents)', () => {
   it('requires the view capability, exactly like every other incident read', async () => {
     const stranger = session('u-not-a-user', 'viewer');
     await expect(repo.countClosedIncidents(stranger)).rejects.toThrow(AppError);
+  });
+});
+
+describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  function baseUpdateInput(overrides: Partial<UpdateIncidentInput> = {}): UpdateIncidentInput {
+    return {
+      expectedVersion: 3,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'בוצעה בדיקה',
+      findings: '',
+      nextSteps: '',
+      status: 'in_progress',
+      severity: 'critical',
+      operationalImpact: 'אין יכולת הפעלה מלאה של מערכת אלפא. נדרש מעקף ידני.',
+      changeReason: '',
+      ownerUserId: DEMO_USERS.tech1,
+      ownerExternalName: null,
+      nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
+      noDeadlineReason: null,
+      reportedToOps: 'no',
+      reportedToOpsRecipient: null,
+      ...overrides,
+    };
+  }
+
+  it('updateIncident: every row a single call inserts (update + every changed field) shares one operationId', async () => {
+    await repo.updateIncident(
+      supervisor1,
+      'inc-1',
+      baseUpdateInput({
+        status: 'monitoring',
+        severity: 'high',
+        operationalImpact: 'השפעה חדשה',
+        ownerUserId: DEMO_USERS.tech2,
+        nextUpdateDue: new Date(FIXED_NOW.getTime() + 7200_000).toISOString(),
+        reportedToOps: 'yes',
+        reportedToOpsRecipient: 'יוסי מהמוקד',
+      }),
+    );
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    const thisCall = events.filter((e) =>
+      ['update', 'status_change', 'severity_change', 'impact_change', 'assignment_change', 'deadline_change', 'reported_to_ops_change'].includes(e.type)
+      && e.eventTime === FIXED_NOW.toISOString(),
+    );
+    expect(thisCall.length).toBe(7);
+    const operationIds = new Set(thisCall.map((e) => e.operationId));
+    expect(operationIds.size).toBe(1);
+    expect([...operationIds][0]).not.toBeNull();
+  });
+
+  it('two separate updateIncident calls on the same incident get two different operationIds', async () => {
+    const first = await repo.updateIncident(supervisor1, 'inc-1', baseUpdateInput({ status: 'monitoring' }));
+    const second = await repo.updateIncident(
+      supervisor1,
+      'inc-1',
+      baseUpdateInput({ expectedVersion: first.version, status: 'waiting_test' }),
+    );
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    // Scoped to eventTime === FIXED_NOW, which only the two calls just made
+    // use -- the seeded historical 'update' events sit at earlier offsets
+    // and must not be conflated with this call's own rows.
+    const updates = events.filter(
+      (e) => e.type === 'update' && e.refId && e.eventTime === FIXED_NOW.toISOString(),
+    );
+    const opIds = new Set(updates.map((e) => e.operationId));
+    expect(updates.length).toBe(2);
+    expect(opIds.size).toBe(2);
+    expect(second.version).toBe(first.version + 1);
+  });
+
+  it('createIncident: created + status_change + reported_to_ops_change share one operationId', async () => {
+    const incident = await repo.createIncident(
+      supervisor1,
+      baseCreateInput({ status: 'in_progress', reportedToOps: 'yes', reportedToOpsRecipient: 'יוסי מהמוקד' }),
+    );
+    const events = await repo.getIncidentEvents(supervisor1, incident.id);
+    expect(events.length).toBe(3);
+    const opIds = new Set(events.map((e) => e.operationId));
+    expect(opIds.size).toBe(1);
+    expect([...opIds][0]).not.toBeNull();
+  });
+
+  it('closeIncident: closed + reported_to_ops_change share one operationId', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'yes',
+      reportedToOpsRecipient: 'יוסי מהמוקד',
+    } as CloseIncidentInput);
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const thisCall = events.filter((e) => e.type === 'closed' || e.type === 'reported_to_ops_change');
+    expect(thisCall.length).toBe(2);
+    expect(new Set(thisCall.map((e) => e.operationId)).size).toBe(1);
+  });
+
+  it('createHandover: handover_included rows across multiple incidents share one operationId, distinct per call', async () => {
+    const h1 = await repo.createHandover(supervisor1, {
+      toUserId: DEMO_USERS.supervisor2,
+      generalNote: '',
+      itemNotes: {},
+    });
+    const events1 = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    const included1 = events1.filter((e) => e.type === 'handover_included' && e.refId === h1.id);
+    expect(included1.length).toBe(1);
+    const op1 = included1[0].operationId;
+    expect(op1).not.toBeNull();
+
+    const h2 = await repo.createHandover(supervisor1, {
+      toUserId: DEMO_USERS.manager,
+      generalNote: '',
+      itemNotes: {},
+    });
+    const events2 = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    const included2 = events2.filter((e) => e.type === 'handover_included' && e.refId === h2.id);
+    expect(included2.length).toBe(1);
+    expect(included2[0].operationId).not.toBeNull();
+    expect(included2[0].operationId).not.toBe(op1);
+  });
+
+  it('a historical seeded event reads back with operationId null', async () => {
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    const created = events.find((e) => e.id === 'ev-1-created');
+    expect(created).toBeDefined();
+    expect(created!.operationId).toBeNull();
   });
 });

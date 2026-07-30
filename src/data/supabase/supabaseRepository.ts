@@ -514,6 +514,7 @@ export class SupabaseRepository implements Repository {
       note: r.note,
       refId: r.ref_id,
       createdAt: r.created_at,
+      operationId: r.operation_id ?? null,
     }));
   }
 
