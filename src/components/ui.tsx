@@ -350,11 +350,22 @@ export function Dialog({
         aria-modal="true"
         aria-label={title}
         className={cx(
-          'max-h-[92dvh] w-full animate-scale-in overflow-y-auto rounded-t-2xl border border-hairline bg-surface p-4 shadow-elevated sm:rounded-2xl',
+          // A flex COLUMN with a capped height, not a plain block with
+          // overflow-y-auto directly on it: the header below must stay put
+          // while only the body scrolls. `min-h-0` on the body is the part
+          // that actually matters -- a flex item's default min-height is
+          // `auto`, which lets it refuse to shrink below its own content
+          // size and silently defeats `flex-1`/overflow further down,
+          // letting content quietly grow the whole panel past max-height
+          // instead of scrolling inside it. `overflow-hidden` here (rather
+          // than `-auto`) is deliberate: this outer panel itself never
+          // scrolls -- only the body below does -- and it also keeps the
+          // scrolling body's content clipped to the panel's rounded corners.
+          'flex max-h-[92dvh] w-full flex-col animate-scale-in overflow-hidden rounded-t-2xl border border-hairline bg-surface shadow-elevated sm:rounded-2xl',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
       >
-        <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex shrink-0 items-center justify-between gap-2 p-4 pb-3">
           <h2 className="section-title">{title}</h2>
           <button
             type="button"
@@ -365,7 +376,9 @@ export function Dialog({
             ✕
           </button>
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          {children}
+        </div>
       </div>
     </div>
   );
