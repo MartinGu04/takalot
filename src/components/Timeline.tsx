@@ -1,5 +1,11 @@
-// Unified chronological incident timeline. Readable on mobile; does not rely on color alone.
-import type { IncidentEvent, IncidentUpdate, Profile } from '../domain/types';
+// Unified chronological incident timeline. One user operation (one shared,
+// non-null operationId) renders as one grouped item; a primary event is
+// chosen for the item and every other row from that operation renders as a
+// compact subordinate change inside it. operationId=null (legacy) rows are
+// never grouped with anything -- see domain/timelineGrouping.ts. Readable on
+// mobile; does not rely on color, arrows, or strikethrough alone.
+import type { EventType, IncidentEvent, IncidentUpdate, Profile } from '../domain/types';
+import { groupTimelineEvents } from '../domain/timelineGrouping';
 import {
   eventTypeLabels,
   fieldLabels,
@@ -39,6 +45,7 @@ const typeIcon: Record<string, string> = {
   impact_change: '!',
   assignment_change: '→',
   deadline_change: '⏱',
+  reported_to_ops_change: '↗',
   correction: '±',
   handover_included: '⇉',
   handover_accepted: '⇉',
@@ -53,6 +60,156 @@ const typeIcon: Record<string, string> = {
 };
 
 const CORRECTABLE_TYPES = new Set(['update', 'status_change', 'severity_change', 'impact_change', 'assignment_change']);
+
+/** Creation, closure, reopening, cancellation: the incident's own lifecycle. */
+const LIFECYCLE_TYPES = new Set<EventType>(['created', 'closed', 'reopened', 'cancelled']);
+
+/**
+ * close_incident's partial-readiness branch: the incident does NOT close --
+ * it stays active, status moves to partial_readiness, follow-up stays
+ * outstanding. Deliberately not a member of LIFECYCLE_TYPES (it must never
+ * read as a completed closure), but still a significant operation, so it
+ * gets its own medium-emphasis tier instead of the plain neutral one.
+ */
+function isPartialReadinessAttempt(event: IncidentEvent): boolean {
+  return event.type === 'status_change' && event.field === 'status' && event.newValue === 'partial_readiness';
+}
+
+type EmphasisTier = 'strong' | 'medium' | 'neutral';
+
+function emphasisTier(primary: IncidentEvent): EmphasisTier {
+  if (LIFECYCLE_TYPES.has(primary.type)) return 'strong';
+  if (isPartialReadinessAttempt(primary)) return 'medium';
+  return 'neutral';
+}
+
+const iconRoundelClasses: Record<EmphasisTier, string> = {
+  strong: 'bg-brand-600 text-white dark:bg-brand-500',
+  medium:
+    'bg-orange-100 text-orange-900 border border-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:border-orange-800',
+  neutral: 'bg-surface-active text-text-secondary',
+};
+
+const titleClasses: Record<EmphasisTier, string> = {
+  strong: 'text-base font-extrabold text-text-primary',
+  medium: 'font-bold text-text-primary',
+  neutral: 'font-semibold text-text-primary',
+};
+
+/** The actual event time is always the primary, prominent timestamp -- see
+ *  the "תועד במערכת:" secondary line below for the server-recorded time,
+ *  which only appears when it differs from this one by more than 60s. */
+const eventTimeClasses: Record<EmphasisTier, string> = {
+  strong: 'text-base font-bold text-text-primary',
+  medium: 'text-sm font-semibold text-text-primary',
+  neutral: 'text-sm font-semibold text-text-secondary',
+};
+
+/**
+ * One field's before/after, always with explicit לפני/אחרי labels -- never
+ * conveyed by arrow direction, strikethrough, or color alone.
+ *
+ * reported_to_ops_change is a special case: old_value/new_value only ever
+ * carry the recipient text, while the row's own note carries the fuller
+ * "status (recipient)" fact (e.g. "דווח למבצעים: כן (יוסי)"). Rendering the
+ * generic field diff AND the note would repeat the recipient and still miss
+ * the status on the diff side, so this renders once: לפני = previous
+ * recipient (all that's available), אחרי = the note (the richer, complete
+ * fact) -- no separate note paragraph follows it, here or at the call site
+ * (see the reported_to_ops_change exclusion everywhere event.note is
+ * otherwise rendered, both for the group's primary and for subordinates).
+ *
+ * Deliberately never renders event.note itself: the primary's own note (if
+ * any) is already shown once by the caller's dedicated note paragraph, and
+ * duplicating it here would print it twice on every group whose primary
+ * carries both a field and a note (e.g. cancelled, or a lone assignment
+ * change). Subordinate notes are rendered by the caller too, for the same
+ * reason -- one place decides whether a note is shown, not two.
+ */
+function FieldChangeRow({ event }: { event: IncidentEvent }) {
+  // Plain div/span, deliberately not a semantic <dl>/<dt>/<dd> -- <dd>
+  // carries an implicit role="definition", which would collide with the
+  // incident-detail summary's own definition list (several e2e specs scope
+  // getByRole('definition') to that summary specifically, e.g. the internal
+  // owner / external handler facts). The לפני/אחרי pairing is already
+  // conveyed by the visible label text and DOM order.
+  if (event.type === 'reported_to_ops_change') {
+    return (
+      <div className="mt-1.5 text-sm">
+        <p className="font-medium text-secondary">{fieldLabels.reported_to_ops}:</p>
+        <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5">
+          <div className="flex items-baseline gap-1">
+            <span className="text-xs text-muted">לפני:</span>
+            <span className="text-secondary">{event.oldValue ?? 'ללא'}</span>
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-xs text-muted">אחרי:</span>
+            <span className="whitespace-pre-wrap break-words font-semibold text-text-primary">{event.note}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (!event.field) return null;
+  return (
+    <div className="mt-1.5 text-sm">
+      <p className="font-medium text-secondary">{fieldLabels[event.field] ?? event.field}:</p>
+      <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5">
+        <div className="flex items-baseline gap-1">
+          <span className="text-xs text-muted">לפני:</span>
+          <span className="text-secondary">{valueLabel(event.field, event.oldValue)}</span>
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span className="text-xs text-muted">אחרי:</span>
+          <span className="font-semibold text-text-primary">{valueLabel(event.field, event.newValue)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A subordinate row's own note (e.g. a status/severity/deadline change's
+ *  changeReason) -- never rendered for reported_to_ops_change, whose note is
+ *  already the "אחרי" value inside FieldChangeRow above. */
+function SubordinateNote({ event }: { event: IncidentEvent }) {
+  if (!event.note || event.type === 'reported_to_ops_change') return null;
+  return <p className="mt-0.5 whitespace-pre-wrap break-words text-xs text-secondary">{event.note}</p>;
+}
+
+function CorrectionAction({
+  event,
+  compact,
+  currentUserId,
+  canCorrectAny,
+  onCorrect,
+}: {
+  event: IncidentEvent;
+  compact: boolean;
+  currentUserId?: string;
+  canCorrectAny?: boolean;
+  onCorrect?: (refId: string, label: string) => void;
+}) {
+  if (!onCorrect || !CORRECTABLE_TYPES.has(event.type)) return null;
+  if (event.actorId !== currentUserId && !canCorrectAny) return null;
+  return (
+    <button
+      type="button"
+      className={
+        compact
+          ? 'mt-1 text-[11px] text-brand-700 hover:underline dark:text-brand-400'
+          : 'mt-1 text-xs text-brand-700 hover:underline dark:text-brand-400'
+      }
+      onClick={() =>
+        onCorrect(
+          event.type === 'update' && event.refId ? event.refId : event.id,
+          `${eventTypeLabels[event.type]} · ${formatDateTime(event.eventTime)}`,
+        )
+      }
+    >
+      תיקון רישום זה
+    </button>
+  );
+}
 
 export function Timeline({
   events,
@@ -77,16 +234,21 @@ export function Timeline({
     return <p className="py-4 text-sm text-muted">אין אירועים בציר הזמן.</p>;
   }
 
+  const groups = groupTimelineEvents(events);
+
   return (
     <ol className="relative flex flex-col gap-0">
-      {events.map((event, idx) => {
-        const update = event.refId ? updatesById.get(event.refId) : undefined;
+      {groups.map((group, idx) => {
+        const { primary, subordinates } = group;
+        const update = primary.refId ? updatesById.get(primary.refId) : undefined;
         const timesDiffer =
-          Math.abs(new Date(event.eventTime).getTime() - new Date(event.serverTime).getTime()) > 60_000;
-        const emphasized = ['closed', 'reopened', 'created', 'cancelled'].includes(event.type);
+          Math.abs(new Date(primary.eventTime).getTime() - new Date(primary.serverTime).getTime()) > 60_000;
+        const tier = emphasisTier(primary);
+        const changesHeading = primary.type === 'update' ? 'שינויים בעדכון' : 'שינויים נוספים';
+
         return (
-          <li key={event.id} className="relative flex gap-3 pb-4">
-            {idx < events.length - 1 && (
+          <li key={group.operationId ?? primary.id} className="relative flex gap-3 pb-4">
+            {idx < groups.length - 1 && (
               <span
                 aria-hidden
                 className="absolute top-7 right-[11px] bottom-0 w-px bg-hairline"
@@ -94,39 +256,31 @@ export function Timeline({
             )}
             <span
               aria-hidden
-              className={`relative z-10 mt-1 flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${
-                emphasized
-                  ? 'bg-brand-600 text-white dark:bg-brand-500'
-                  : 'bg-surface-active text-text-secondary'
-              }`}
+              className={`relative z-10 mt-1 flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${iconRoundelClasses[tier]}`}
             >
-              {typeIcon[event.type] ?? '•'}
+              {typeIcon[primary.type] ?? '•'}
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="font-semibold text-text-primary">{eventTypeLabels[event.type]}</span>
-                <span className="text-sm text-secondary">
-                  {actorName(event.actorId, event.actorLabel)}
-                </span>
-                <span className="text-xs text-muted">{formatDateTime(event.eventTime)}</span>
-                {timesDiffer && (
-                  <span className="text-xs text-muted">
-                    (נרשם בשרת: {formatDateTime(event.serverTime)})
-                  </span>
-                )}
+                <span className={titleClasses[tier]}>{eventTypeLabels[primary.type]}</span>
+                <span className="text-sm text-secondary">{actorName(primary.actorId, primary.actorLabel)}</span>
               </div>
-              {event.field && (
-                <p className="mt-0.5 text-sm text-secondary">
-                  {fieldLabels[event.field] ?? event.field}:{' '}
-                  <span className="line-through opacity-60">{valueLabel(event.field, event.oldValue)}</span>
-                  {' ← '}
-                  <strong>{valueLabel(event.field, event.newValue)}</strong>
+              {tier === 'medium' && (
+                <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">
+                  התקלה נותרת פעילה — כשירות חלקית, ממתינה להשלמת פעולות המשך
                 </p>
               )}
-              {event.type === 'closed' && event.newValue && (
-                <p className="mt-0.5 text-sm">
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className={eventTimeClasses[tier]}>{formatDateTime(primary.eventTime)}</span>
+              </div>
+              {timesDiffer && (
+                <p className="mt-0.5 text-xs text-muted">תועד במערכת: {formatDateTime(primary.serverTime)}</p>
+              )}
+              <FieldChangeRow event={primary} />
+              {primary.type === 'closed' && primary.newValue && (
+                <p className="mt-1 text-sm">
                   כשירות בסגירה:{' '}
-                  <strong>{readinessLabels[event.newValue as keyof typeof readinessLabels]}</strong>
+                  <strong>{readinessLabels[primary.newValue as keyof typeof readinessLabels]}</strong>
                 </p>
               )}
               {update && (
@@ -185,27 +339,40 @@ export function Timeline({
                   )}
                 </div>
               )}
-              {event.note && !update && (
+              {primary.note && !update && primary.type !== 'reported_to_ops_change' && (
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-secondary">
-                  {event.note}
+                  {primary.note}
                 </p>
               )}
-              {event.type === 'correction' && event.refId && (
+              {primary.type === 'correction' && primary.refId && (
                 <p className="mt-0.5 text-xs text-muted">מתייחס לרישום קודם (הרישום המקורי נשמר)</p>
               )}
-              {onCorrect && CORRECTABLE_TYPES.has(event.type) && (event.actorId === currentUserId || canCorrectAny) && (
-                <button
-                  type="button"
-                  className="mt-1 text-xs text-brand-700 hover:underline dark:text-brand-400"
-                  onClick={() =>
-                    onCorrect(
-                      event.type === 'update' && event.refId ? event.refId : event.id,
-                      `${eventTypeLabels[event.type]} · ${formatDateTime(event.eventTime)}`,
-                    )
-                  }
-                >
-                  תיקון רישום זה
-                </button>
+              <CorrectionAction
+                event={primary}
+                compact={false}
+                currentUserId={currentUserId}
+                canCorrectAny={canCorrectAny}
+                onCorrect={onCorrect}
+              />
+              {subordinates.length > 0 && (
+                <div className="mt-2 rounded-lg border border-hairline bg-surface-active/60 p-2.5">
+                  <p className="group-title">{changesHeading}</p>
+                  <ul className="mt-1.5 flex flex-col gap-2">
+                    {subordinates.map((sub) => (
+                      <li key={sub.id} className="border-t border-hairline pt-2 first:border-t-0 first:pt-0">
+                        <FieldChangeRow event={sub} />
+                        <SubordinateNote event={sub} />
+                        <CorrectionAction
+                          event={sub}
+                          compact
+                          currentUserId={currentUserId}
+                          canCorrectAny={canCorrectAny}
+                          onCorrect={onCorrect}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           </li>
