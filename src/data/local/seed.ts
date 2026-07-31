@@ -339,6 +339,11 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       findings: 'קוד השגיאה E-401 ממשיך להופיע גם לאחר החלפת הכבל.',
       nextSteps: 'בדיקת כרטיס התקשורת הראשי מול תיעוד היצרן.',
       currentStatusText: 'הצוות הטכני באתר, בודק את כרטיס התקשורת.',
+      updateReportedToOps: 'yes',
+      updateReportedToOpsRecipient: 'אחמ״ש מוקד מבצעים (דמו)',
+      updateReportedToComms: true,
+      updateReportedToCommsRecipient: 'תקשוב מוקד מבצעים (דמו)',
+      updateWisdomReported: false,
       createdAt: at(-hours(4)),
     },
     {
@@ -351,6 +356,11 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       findings: 'ייתכן שהפין העקום הוא מקור התקלה. נדרש רכיב חלופי מהמלאי.',
       nextSteps: 'איתור כרטיס חלופי והתקנתו.',
       currentStatusText: 'ממתינים לרכיב חלופי מהמלאי המרכזי.',
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: false,
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: true,
       createdAt: at(-hours(2)),
     },
     {
@@ -363,12 +373,18 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       findings: 'מאז ההחלפה לא נצפו ניתוקים. ממשיכים בניטור.',
       nextSteps: 'ניטור נוסף של 4 שעות לפני סגירה.',
       currentStatusText: 'המערכת יציבה, בניטור מעקב.',
+      updateReportedToOps: 'no',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: false,
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: false,
       createdAt: at(-hours(3)),
     },
     {
-      // Deliberately left without currentStatusText: exercises the
-      // historical/legacy render path (a record predating this field, or
-      // one where the stage-1 accept-and-persist contract saw it omitted).
+      // Deliberately left without currentStatusText or any update-specific
+      // reporting answer: exercises the historical/legacy render path (a
+      // record predating these fields, or one where an old-client payload
+      // omitted them).
       id: 'upd-7a',
       incidentId: 'inc-7',
       authorId: DEMO_USERS.tech1,
@@ -378,6 +394,11 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       findings: 'הקפיאות מתרחשות בזמן ריענון נתונים אוטומטי בשעה עגולה.',
       nextSteps: 'בדיקת תהליך הריענון האוטומטי מול הגדרות התצורה.',
       currentStatusText: null,
+      updateReportedToOps: null,
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: null,
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: null,
       createdAt: at(-hours(1)),
     },
   ];

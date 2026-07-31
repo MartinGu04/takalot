@@ -83,6 +83,33 @@ values
    '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
    now() + interval '1 day', null, 1);
 
+-- f736/f737/f738: fresh open incidents for update-specific reporting
+-- (migration 0031) coverage. f736's incident-level reported_to_ops/
+-- reported_to_ops_recipient are explicitly set to a distinctive
+-- 'yes'/recipient pair at OPENING -- proves update_incident's new
+-- update-specific reporting additions never touch these opening-time
+-- columns, even when a legacy reportedToOps/reportedToOpsRecipient payload
+-- key is also supplied on the same call.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+                       operational_impact, owner_user_id, discovered_at, created_by, updated_by,
+                       reported_to_ops, reported_to_ops_recipient, version)
+values
+  ('00000000-0000-0000-0000-00000000f736', 'T-736', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   'yes', 'ההשפעה המקורית בעת הפתיחה -- מוקד מבצעים', 1),
+  ('00000000-0000-0000-0000-00000000f737', 'T-737', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   'no', null, 1),
+  ('00000000-0000-0000-0000-00000000f738', 'T-738', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   'no', null, 1);
+
 -- f740: CLOSED, with a pre-set next_update_due/no_deadline_reason pair (as
 -- close_incident would typically leave them) -- proves reopen_incident
 -- omitting the keys preserves them.
@@ -658,6 +685,131 @@ begin
         and ic.event_time = (now() - interval '30 minutes')
         and u.event_time = (now() - interval '30 minutes')
     ) then 'PASS' else 'FAIL' end, '';
+
+  -- =====================================================================
+  -- PART C3: update_incident -- update-specific reporting (0031): three
+  -- fresh per-update questions, stored on the incident_updates row itself,
+  -- never on the incident's own opening-time reported_to_ops/
+  -- reported_to_ops_recipient/reported_to_comms/wisdom_reported columns,
+  -- and never emitting the (now-removed) reported_to_ops_change event.
+  -- =====================================================================
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000e1');
+
+  -- A fully-answered payload persists all three answers on the
+  -- incident_updates row this call inserts.
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f736', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', now() - interval '1 hour', 'expectedVersion', 1,
+        'updateReportedToOps', 'yes', 'updateReportedToOpsRecipient', 'יוסי מהמוקד',
+        'updateReportedToComms', 'yes', 'updateReportedToCommsRecipient', 'דנה מהתקשוב',
+        'updateWisdomReported', 'yes')));
+    select * into v_row from incident_updates where incident_id = '00000000-0000-0000-0000-00000000f736'
+      order by created_at desc limit 1;
+    insert into results (test, result, detail) values
+      ('update_incident: fully-answered update-specific reporting persists all three answers on incident_updates',
+        case when v_row.update_reported_to_ops = 'yes'
+          and v_row.update_reported_to_ops_recipient = 'יוסי מהמוקד'
+          and v_row.update_reported_to_comms = true
+          and v_row.update_reported_to_comms_recipient = 'דנה מהתקשוב'
+          and v_row.update_wisdom_reported = true
+        then 'PASS' else 'FAIL' end,
+        format('ops=%s ops_recip=%s comms=%s comms_recip=%s wisdom=%s',
+          v_row.update_reported_to_ops, v_row.update_reported_to_ops_recipient,
+          v_row.update_reported_to_comms, v_row.update_reported_to_comms_recipient,
+          v_row.update_wisdom_reported));
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: fully-answered update-specific reporting persists all three answers on incident_updates', 'FAIL', sqlerrm);
+  end;
+
+  -- Opening-time reported_to_ops/reported_to_ops_recipient are provably
+  -- untouched by the call above, despite it answering the new
+  -- update-specific ops question with a "yes" of its own.
+  insert into results (test, result, detail)
+  select 'update_incident: incidents.reported_to_ops/reported_to_ops_recipient (opening facts) remain unchanged after an update-specific "yes" answer',
+    case when i.reported_to_ops = 'yes' and i.reported_to_ops_recipient = 'ההשפעה המקורית בעת הפתיחה -- מוקד מבצעים'
+      then 'PASS' else 'FAIL' end,
+    format('reported_to_ops=%s recipient=%s', i.reported_to_ops, i.reported_to_ops_recipient)
+  from incidents i where i.id = '00000000-0000-0000-0000-00000000f736';
+
+  -- No reported_to_ops_change event is ever emitted by update_incident
+  -- anymore -- the concept this event described (update_incident mutating
+  -- the incident-level reported_to_ops pair) no longer exists.
+  insert into results (test, result, detail)
+  select 'update_incident: no reported_to_ops_change event is emitted',
+    case when not exists (
+      select 1 from incident_events where incident_id = '00000000-0000-0000-0000-00000000f736' and type = 'reported_to_ops_change'
+    ) then 'PASS' else 'FAIL' end, '';
+
+  -- Omitting all three update-specific reporting keys entirely (old-client
+  -- compatibility: base_update_input never sends them) stores NULL for all
+  -- five new columns, and does not raise.
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f737',
+      pg_temp.base_update_input(jsonb_build_object('eventTime', now() - interval '1 hour', 'expectedVersion', 1)));
+    select * into v_row from incident_updates where incident_id = '00000000-0000-0000-0000-00000000f737'
+      order by created_at desc limit 1;
+    insert into results (test, result, detail) values
+      ('update_incident: omitting all three update-specific reporting keys stores NULL for all five columns',
+        case when v_row.update_reported_to_ops is null and v_row.update_reported_to_ops_recipient is null
+          and v_row.update_reported_to_comms is null and v_row.update_reported_to_comms_recipient is null
+          and v_row.update_wisdom_reported is null
+        then 'PASS' else 'FAIL' end, '');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: omitting all three update-specific reporting keys stores NULL for all five columns', 'FAIL', sqlerrm);
+  end;
+
+  -- A legacy reportedToOps/reportedToOpsRecipient payload key (still sent by
+  -- base_update_input's own default, and here explicitly overridden to
+  -- "yes" with a recipient to simulate an old client bundle at its most
+  -- assertive) is tolerated but not read as an answer to the new
+  -- update-specific question, and does not touch the opening-time columns.
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f738', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', now() - interval '1 hour', 'expectedVersion', 1,
+        'reportedToOps', 'yes', 'reportedToOpsRecipient', 'ערך מלקוח ישן',
+        'updateReportedToOps', 'not_required', 'updateReportedToComms', 'no', 'updateWisdomReported', 'no')));
+    select * into v_row from incident_updates where incident_id = '00000000-0000-0000-0000-00000000f738'
+      order by created_at desc limit 1;
+    insert into results (test, result, detail) values
+      ('update_incident: a legacy reportedToOps/reportedToOpsRecipient key is tolerated but not read as update-specific reporting, and does not touch incidents.reported_to_ops',
+        case when v_incident.reported_to_ops = 'no' and v_incident.reported_to_ops_recipient is null
+          and v_row.update_reported_to_ops = 'not_required'
+        then 'PASS' else 'FAIL' end,
+        format('incident.reported_to_ops=%s incident.recipient=%s row.update_reported_to_ops=%s',
+          v_incident.reported_to_ops, v_incident.reported_to_ops_recipient, v_row.update_reported_to_ops));
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: a legacy reportedToOps/reportedToOpsRecipient key is tolerated but not read as update-specific reporting, and does not touch incidents.reported_to_ops',
+        'FAIL', sqlerrm);
+  end;
+
+  -- updateReportedToOps='yes' without a recipient is rejected with a
+  -- controlled validation error, not a raw CHECK-constraint SQLSTATE.
+  begin
+    perform update_incident('00000000-0000-0000-0000-00000000f710', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', now() - interval '1 hour', 'updateReportedToOps', 'yes')));
+    insert into results (test, result, detail) values
+      ('update_incident: updateReportedToOps=''yes'' without a recipient is rejected', 'FAIL', 'no exception raised');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: updateReportedToOps=''yes'' without a recipient is rejected',
+        case when sqlerrm like 'validation:%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+
+  -- updateReportedToComms='yes' without a recipient is likewise rejected
+  -- with a controlled validation error.
+  begin
+    perform update_incident('00000000-0000-0000-0000-00000000f722', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', now() - interval '1 hour', 'updateReportedToComms', 'yes')));
+    insert into results (test, result, detail) values
+      ('update_incident: updateReportedToComms=''yes'' without a recipient is rejected', 'FAIL', 'no exception raised');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: updateReportedToComms=''yes'' without a recipient is rejected',
+        case when sqlerrm like 'validation:%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
 
   -- =====================================================================
   -- PART D: create_incident -- next-update-ETA compatibility (0030)

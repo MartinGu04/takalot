@@ -1213,6 +1213,16 @@ export class LocalDemoRepository implements Repository {
       findings: input.findings.trim(),
       nextSteps: input.nextSteps.trim(),
       currentStatusText: input.currentStatusText.trim() || null,
+      // Update-specific reporting: fresh answers about THIS update only --
+      // never derived from or written back onto the incident's own
+      // opening-time reportedToOps/reportedToComms/wisdomReported facts.
+      updateReportedToOps: input.updateReportedToOps === '' ? null : input.updateReportedToOps,
+      updateReportedToOpsRecipient:
+        input.updateReportedToOps === 'yes' ? (input.updateReportedToOpsRecipient ?? '').trim() || null : null,
+      updateReportedToComms: input.updateReportedToComms === '' ? null : input.updateReportedToComms === 'yes',
+      updateReportedToCommsRecipient:
+        input.updateReportedToComms === 'yes' ? (input.updateReportedToCommsRecipient ?? '').trim() || null : null,
+      updateWisdomReported: input.updateWisdomReported === '' ? null : input.updateWisdomReported === 'yes',
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
@@ -1277,19 +1287,6 @@ export class LocalDemoRepository implements Repository {
         });
       }
     }
-    const newRecipient =
-      input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null;
-    if (input.reportedToOps !== incident.reportedToOps || newRecipient !== incident.reportedToOpsRecipient) {
-      this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
-        field: 'reported_to_ops_recipient',
-        oldValue: incident.reportedToOpsRecipient,
-        newValue: newRecipient,
-        note: `דווח למבצעים: ${reportedToOpsLabels[input.reportedToOps]}${newRecipient ? ` (${newRecipient})` : ''}`,
-        eventTime: input.eventTime,
-        operationId,
-      });
-    }
-
     incident.status = input.status;
     incident.severity = input.severity;
     // operational_impact is a creation-time opening fact only -- update_incident
@@ -1302,8 +1299,10 @@ export class LocalDemoRepository implements Repository {
     // next_update_due / no_deadline_reason are left untouched -- the new
     // update form never asks for either, so any existing (possibly legacy)
     // value simply carries forward unchanged.
-    incident.reportedToOps = input.reportedToOps;
-    incident.reportedToOpsRecipient = newRecipient;
+    // incidents.reportedToOps/reportedToOpsRecipient are opening-time facts,
+    // frozen after creation -- this flow no longer reads or mutates them at
+    // all (see update-specific reporting on the IncidentUpdate row itself,
+    // above, and migration 0031's removal of the equivalent RPC mutation).
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
@@ -1342,6 +1341,13 @@ export class LocalDemoRepository implements Repository {
       findings: input.findings.trim(),
       nextSteps: input.nextSteps.trim(),
       currentStatusText: input.currentStatusText.trim() || null,
+      // Technician updates carry no protected fields and no update-specific
+      // reporting -- this payload has no such keys at all.
+      updateReportedToOps: null,
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: null,
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: null,
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);

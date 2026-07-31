@@ -31,6 +31,9 @@ test('shift supervisor creates an incident, assigns a technician, adds an update
   await updateDialog.getByLabel('פעולות שבוצעו מאז העדכון הקודם').fill('בוצעה בדיקה ראשונית והתקלה אותרה');
   await updateDialog.getByLabel('סטטוס נוכחי').fill('הצוות הטכני באתר, בודק את התקלה.');
   await updateDialog.getByLabel('מצב הטיפול').selectOption({ value: 'in_progress' });
+  await updateDialog.getByLabel('דווח למבצעים?').selectOption({ label: 'לא נדרש' });
+  await updateDialog.getByLabel('האם דווח לתקשוב למבצעים?').selectOption({ label: 'לא' });
+  await updateDialog.getByLabel('האם עודכן ב-WISDOM?').selectOption({ label: 'לא' });
   await updateDialog.locator('form button[type="submit"]').click();
   await expect(page.getByText('העדכון נשמר')).toBeVisible();
 

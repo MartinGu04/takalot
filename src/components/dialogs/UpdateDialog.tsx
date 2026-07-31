@@ -1,7 +1,7 @@
 // Update dialog: full operational update (protected fields) or restricted
 // technician update, depending on the current user's role and capability.
 import { useState } from 'react';
-import type { Incident } from '../../domain/types';
+import type { Incident, ReportedToOps } from '../../domain/types';
 import { severityLabels, statusLabels, reportedToOpsLabels } from '../../domain/labels';
 import {
   updateIncidentSchema,
@@ -66,8 +66,17 @@ export function UpdateDialog({
   const [severity, setSeverity] = useState(incident.severity);
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
   const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
-  const [reportedToOps, setReportedToOps] = useState(incident.reportedToOps);
-  const [reportedToOpsRecipient, setReportedToOpsRecipient] = useState(incident.reportedToOpsRecipient ?? '');
+  // Update-specific reporting: three fresh questions about THIS update only
+  // -- deliberately never seeded from the incident's own opening-time
+  // reportedToOps/reportedToComms/wisdomReported facts, and always reset to
+  // an unanswered '' placeholder on open/close/reset, never a default like
+  // 'no'. See updateIncidentSchema (updateReportedToOps/updateReportedToComms/
+  // updateWisdomReported) for why '' is a distinct, required-to-resolve state.
+  const [updateReportedToOps, setUpdateReportedToOps] = useState<ReportedToOps | ''>('');
+  const [updateReportedToOpsRecipient, setUpdateReportedToOpsRecipient] = useState('');
+  const [updateReportedToComms, setUpdateReportedToComms] = useState<'yes' | 'no' | ''>('');
+  const [updateReportedToCommsRecipient, setUpdateReportedToCommsRecipient] = useState('');
+  const [updateWisdomReported, setUpdateWisdomReported] = useState<'yes' | 'no' | ''>('');
   const [changeReason, setChangeReason] = useState('');
   const [error, setError] = useState<string | undefined>();
 
@@ -81,8 +90,11 @@ export function UpdateDialog({
     setSeverity(incident.severity);
     setOwnerUserId(incident.ownerUserId ?? '');
     setOwnerExternalName(incident.ownerExternalName ?? '');
-    setReportedToOps(incident.reportedToOps);
-    setReportedToOpsRecipient(incident.reportedToOpsRecipient ?? '');
+    setUpdateReportedToOps('');
+    setUpdateReportedToOpsRecipient('');
+    setUpdateReportedToComms('');
+    setUpdateReportedToCommsRecipient('');
+    setUpdateWisdomReported('');
     setChangeReason('');
     setError(undefined);
   };
@@ -100,8 +112,11 @@ export function UpdateDialog({
       changeReason,
       ownerUserId: ownerUserId || null,
       ownerExternalName: ownerExternalName || null,
-      reportedToOps,
-      reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
+      updateReportedToOps,
+      updateReportedToOpsRecipient: updateReportedToOps === 'yes' ? updateReportedToOpsRecipient : null,
+      updateReportedToComms,
+      updateReportedToCommsRecipient: updateReportedToComms === 'yes' ? updateReportedToCommsRecipient : null,
+      updateWisdomReported,
     };
   }
   function buildTechInput() {
@@ -294,36 +309,85 @@ export function UpdateDialog({
               onChangeInternal={setOwnerUserId}
               onChangeExternal={setOwnerExternalName}
             />
-            <Field label="דווח למבצעים">
-              {(a) => (
-                <Select
-                  {...a}
-                  value={reportedToOps}
-                  onChange={(e) => {
-                    const next = e.target.value as Incident['reportedToOps'];
-                    setReportedToOps(next);
-                    if (next !== 'yes') setReportedToOpsRecipient('');
-                  }}
-                >
-                  {Object.entries(reportedToOpsLabels).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            {reportedToOps === 'yes' && (
-              <Field label="למי דווח?" required>
+            <div className="flex flex-col gap-3 border-t border-hairline pt-3">
+              <p className="text-xs text-muted">
+                דיווח בעדכון זה בלבד -- אינו נובע מפרטי הדיווח שנקבעו בעת פתיחת התקלה ואינו משנה אותם.
+              </p>
+              <Field label="דווח למבצעים?" required>
                 {(a) => (
-                  <Input
+                  <Select
                     {...a}
-                    value={reportedToOpsRecipient}
-                    onChange={(e) => setReportedToOpsRecipient(e.target.value)}
-                    placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
-                    maxLength={200}
-                  />
+                    value={updateReportedToOps}
+                    onChange={(e) => {
+                      const next = e.target.value as ReportedToOps | '';
+                      setUpdateReportedToOps(next);
+                      if (next !== 'yes') setUpdateReportedToOpsRecipient('');
+                    }}
+                  >
+                    <option value="">— בחירה —</option>
+                    {Object.entries(reportedToOpsLabels).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </Select>
                 )}
               </Field>
-            )}
+              {updateReportedToOps === 'yes' && (
+                <Field label="למי דווח? (מבצעים)" required>
+                  {(a) => (
+                    <Input
+                      {...a}
+                      value={updateReportedToOpsRecipient}
+                      onChange={(e) => setUpdateReportedToOpsRecipient(e.target.value)}
+                      placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
+                      maxLength={200}
+                    />
+                  )}
+                </Field>
+              )}
+              <Field label="האם דווח לתקשוב למבצעים?" required>
+                {(a) => (
+                  <Select
+                    {...a}
+                    value={updateReportedToComms}
+                    onChange={(e) => {
+                      const next = e.target.value as 'yes' | 'no' | '';
+                      setUpdateReportedToComms(next);
+                      if (next !== 'yes') setUpdateReportedToCommsRecipient('');
+                    }}
+                  >
+                    <option value="">— בחירה —</option>
+                    <option value="no">לא</option>
+                    <option value="yes">כן</option>
+                  </Select>
+                )}
+              </Field>
+              {updateReportedToComms === 'yes' && (
+                <Field label="למי דווח? (תקשוב למבצעים)" required>
+                  {(a) => (
+                    <Input
+                      {...a}
+                      value={updateReportedToCommsRecipient}
+                      onChange={(e) => setUpdateReportedToCommsRecipient(e.target.value)}
+                      placeholder="לדוגמה: תקשוב מוקד מבצעים / שם"
+                      maxLength={200}
+                    />
+                  )}
+                </Field>
+              )}
+              <Field label="האם עודכן ב-WISDOM?" required>
+                {(a) => (
+                  <Select
+                    {...a}
+                    value={updateWisdomReported}
+                    onChange={(e) => setUpdateWisdomReported(e.target.value as 'yes' | 'no' | '')}
+                  >
+                    <option value="">— בחירה —</option>
+                    <option value="no">לא</option>
+                    <option value="yes">כן</option>
+                  </Select>
+                )}
+              </Field>
+            </div>
             {(status !== incident.status || severity !== incident.severity) && (
               <Field label="נימוק לשינוי (מומלץ)">
                 {(a) => <Input {...a} value={changeReason} onChange={(e) => setChangeReason(e.target.value)} />}

@@ -172,7 +172,20 @@ export const updateIncidentSchema = z
     currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
     changeReason: z.string().max(500).optional().default(''),
     ...ownerFields,
-    ...reportedToOpsFields,
+    // Update-specific reporting -- three fresh questions about THIS update
+    // only, deliberately distinct payload keys from the incident-level
+    // reportedToOps/reportedToOpsRecipient (reportedToOpsFields, above):
+    // this update flow no longer reads or mutates those opening-time
+    // fields at all (see update_incident, migration 0031). Each answer
+    // starts as '' (not yet answered) in the UI and is required -- the
+    // union with the empty-string literal is what lets this schema reject
+    // an unanswered question with a clear message instead of silently
+    // treating "" as a legitimate enum member.
+    updateReportedToOps: z.union([reportedToOpsSchema, z.literal('')]),
+    updateReportedToOpsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable().optional(),
+    updateReportedToComms: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
+    updateReportedToCommsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable().optional(),
+    updateWisdomReported: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
   })
   .superRefine((data, ctx) => {
     if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
@@ -182,7 +195,39 @@ export const updateIncidentSchema = z
         message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
       });
     }
-    checkReportedToOpsRecipient(data, ctx);
+    if (data.updateReportedToOps === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToOps'],
+        message: 'יש לענות האם דווח למבצעים בעדכון זה',
+      });
+    } else if (data.updateReportedToOps === 'yes' && !(data.updateReportedToOpsRecipient ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToOpsRecipient'],
+        message: 'יש להזין למי דווח (מבצעים)',
+      });
+    }
+    if (data.updateReportedToComms === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToComms'],
+        message: 'יש לענות האם דווח לתקשוב למבצעים בעדכון זה',
+      });
+    } else if (data.updateReportedToComms === 'yes' && !(data.updateReportedToCommsRecipient ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToCommsRecipient'],
+        message: 'יש להזין למי דווח (תקשוב למבצעים)',
+      });
+    }
+    if (data.updateWisdomReported === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateWisdomReported'],
+        message: 'יש לענות האם עודכן ב-WISDOM בעדכון זה',
+      });
+    }
   });
 
 export type UpdateIncidentInput = z.infer<typeof updateIncidentSchema>;

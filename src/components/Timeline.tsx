@@ -153,6 +153,36 @@ export function Timeline({
                       <span className="whitespace-pre-wrap break-words">{update.nextSteps}</span>
                     </p>
                   )}
+                  {/* Update-specific reporting: fresh answers recorded for
+                      THIS update only, never the incident's own opening-time
+                      reporting facts. Each line renders only when an answer
+                      was actually recorded -- null (never asked / a legacy
+                      row predating this feature / an old-client payload that
+                      omitted the key) renders nothing, not a "לא" default. */}
+                  {update.updateReportedToOps != null && (
+                    <p className="mt-1">
+                      <span className="font-medium">דווח למבצעים בעדכון זה: </span>
+                      <span>{reportedToOpsLabels[update.updateReportedToOps]}</span>
+                      {update.updateReportedToOps === 'yes' && update.updateReportedToOpsRecipient && (
+                        <span> ({update.updateReportedToOpsRecipient})</span>
+                      )}
+                    </p>
+                  )}
+                  {update.updateReportedToComms != null && (
+                    <p className="mt-1">
+                      <span className="font-medium">דווח לתקשוב למבצעים בעדכון זה: </span>
+                      <span>{update.updateReportedToComms ? 'כן' : 'לא'}</span>
+                      {update.updateReportedToComms && update.updateReportedToCommsRecipient && (
+                        <span> ({update.updateReportedToCommsRecipient})</span>
+                      )}
+                    </p>
+                  )}
+                  {update.updateWisdomReported != null && (
+                    <p className="mt-1">
+                      <span className="font-medium">עודכן ב-WISDOM בעדכון זה: </span>
+                      <span>{update.updateWisdomReported ? 'כן' : 'לא'}</span>
+                    </p>
+                  )}
                 </div>
               )}
               {event.note && !update && (

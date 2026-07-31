@@ -193,6 +193,21 @@ export interface IncidentUpdate {
   // where the RPC's stage-1 accept-and-persist contract saw it omitted,
   // never had one.
   currentStatusText: string | null;
+  // Update-specific reporting: three fresh questions asked at THIS update
+  // only ("דווח למבצעים?" / "האם דווח לתקשוב למבצעים?" / "האם עודכן
+  // ב-WISDOM?"), never inherited from and never written back onto the
+  // incident's own opening-time reporting facts (Incident.reportedToOps/
+  // .reportedToComms/.wisdomReported). Nullable forever: historical rows
+  // predating this feature, and any update where the RPC's compatibility
+  // window saw the corresponding payload key omitted, never had an answer
+  // -- NULL means "not answered for this update," not "no."
+  updateReportedToOps: ReportedToOps | null;
+  /** Required and shown only when updateReportedToOps is 'yes'. */
+  updateReportedToOpsRecipient: string | null;
+  updateReportedToComms: boolean | null;
+  /** Required and shown only when updateReportedToComms is true. */
+  updateReportedToCommsRecipient: string | null;
+  updateWisdomReported: boolean | null;
   createdAt: string;
 }
 

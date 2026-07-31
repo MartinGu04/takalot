@@ -533,6 +533,11 @@ export class SupabaseRepository implements Repository {
       findings: r.findings,
       nextSteps: r.next_steps,
       currentStatusText: r.current_status_text,
+      updateReportedToOps: r.update_reported_to_ops,
+      updateReportedToOpsRecipient: r.update_reported_to_ops_recipient,
+      updateReportedToComms: r.update_reported_to_comms,
+      updateReportedToCommsRecipient: r.update_reported_to_comms_recipient,
+      updateWisdomReported: r.update_wisdom_reported,
       createdAt: r.created_at,
     }));
   }

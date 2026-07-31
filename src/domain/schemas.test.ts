@@ -46,7 +46,11 @@ function baseUpdateInput(overrides: Record<string, unknown> = {}) {
     changeReason: '',
     ownerUserId: 'u-tech-1',
     ownerExternalName: null,
-    reportedToOps: 'no',
+    updateReportedToOps: 'not_required',
+    updateReportedToOpsRecipient: null,
+    updateReportedToComms: 'no',
+    updateReportedToCommsRecipient: null,
+    updateWisdomReported: 'no',
     ...overrides,
   };
 }
@@ -117,6 +121,93 @@ describe('updateIncidentSchema / technicianUpdateSchema: currentStatusText ("ס�
       currentStatusText: 'הצוות באתר',
     });
     expect(result.success).toBe(true);
+  });
+});
+
+// Update-specific reporting (migration 0031): three fresh per-update
+// questions, deliberately distinct payload keys from the incident-level
+// reportedToOps/reportedToOpsRecipient (createIncidentSchema/
+// closeIncidentSchema still use those unchanged). Each one starts as ''
+// (not yet answered) in UpdateDialog and the schema must reject that
+// unanswered state explicitly, not silently accept it.
+describe('updateIncidentSchema: update-specific reporting requires an explicit answer', () => {
+  it('accepts a fully-answered payload (the base fixture)', () => {
+    expect(updateIncidentSchema.safeParse(baseUpdateInput()).success).toBe(true);
+  });
+
+  it('rejects an unanswered updateReportedToOps', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ updateReportedToOps: '' }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'updateReportedToOps')).toBe(true);
+    }
+  });
+
+  it('rejects an unanswered updateReportedToComms', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ updateReportedToComms: '' }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'updateReportedToComms')).toBe(true);
+    }
+  });
+
+  it('rejects an unanswered updateWisdomReported', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ updateWisdomReported: '' }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'updateWisdomReported')).toBe(true);
+    }
+  });
+
+  it('preserves yes/no/not_required for updateReportedToOps, and requires a recipient only when "yes"', () => {
+    expect(updateIncidentSchema.safeParse(baseUpdateInput({ updateReportedToOps: 'not_required' })).success).toBe(true);
+    expect(updateIncidentSchema.safeParse(baseUpdateInput({ updateReportedToOps: 'no' })).success).toBe(true);
+    const missingRecipient = updateIncidentSchema.safeParse(
+      baseUpdateInput({ updateReportedToOps: 'yes', updateReportedToOpsRecipient: '' }),
+    );
+    expect(missingRecipient.success).toBe(false);
+    const withRecipient = updateIncidentSchema.safeParse(
+      baseUpdateInput({ updateReportedToOps: 'yes', updateReportedToOpsRecipient: 'אחמ״ש מוקד מבצעים' }),
+    );
+    expect(withRecipient.success).toBe(true);
+  });
+
+  it('requires a recipient only when updateReportedToComms is "yes"', () => {
+    const missingRecipient = updateIncidentSchema.safeParse(
+      baseUpdateInput({ updateReportedToComms: 'yes', updateReportedToCommsRecipient: '' }),
+    );
+    expect(missingRecipient.success).toBe(false);
+    const withRecipient = updateIncidentSchema.safeParse(
+      baseUpdateInput({ updateReportedToComms: 'yes', updateReportedToCommsRecipient: 'תקשוב מוקד מבצעים' }),
+    );
+    expect(withRecipient.success).toBe(true);
+  });
+
+  it('updateWisdomReported has no dependent recipient/number field -- "yes" alone is sufficient', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ updateWisdomReported: 'yes' }));
+    expect(result.success).toBe(true);
+  });
+
+  it('a legacy reportedToOps/reportedToOpsRecipient payload key is not read as update-specific reporting -- it is silently stripped, not an error, and does not satisfy the new required questions on its own', () => {
+    const legacyOnly = updateIncidentSchema.safeParse({
+      ...baseUpdateInput({ updateReportedToOps: '' }),
+      reportedToOps: 'yes',
+      reportedToOpsRecipient: 'ערך מלקוח ישן',
+    });
+    // The legacy keys don't rescue the still-unanswered new question.
+    expect(legacyOnly.success).toBe(false);
+
+    const fullyAnswered = updateIncidentSchema.safeParse({
+      ...baseUpdateInput(),
+      reportedToOps: 'yes',
+      reportedToOpsRecipient: 'ערך מלקוח ישן',
+    });
+    expect(fullyAnswered.success).toBe(true);
+    if (fullyAnswered.success) {
+      // Unknown keys are stripped by zod's default object parsing -- they
+      // never reach the parsed output at all.
+      expect((fullyAnswered.data as Record<string, unknown>).reportedToOps).toBeUndefined();
+    }
   });
 });
 

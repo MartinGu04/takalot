@@ -458,91 +458,172 @@ describe('incomplete-readiness lifecycle', () => {
   });
 });
 
-describe('reporting recipient', () => {
+// Update-specific reporting (migration 0031): three fresh per-update
+// questions (updateReportedToOps/updateReportedToComms/updateWisdomReported),
+// deliberately distinct from and never mutating the incident's own
+// opening-time reportedToOps/reportedToOpsRecipient facts. Replaces the old
+// "reporting recipient" coverage, which asserted the now-removed behavior of
+// update_incident overwriting incidents.reportedToOps/.reportedToOpsRecipient
+// and emitting a reported_to_ops_change event on every full update.
+describe('update-specific reporting (migration 0031)', () => {
   let repo: LocalDemoRepository;
   beforeEach(() => {
     repo = newRepo({ now: FIXED_NOW });
   });
 
-  it('requires a recipient only when reportedToOps is "yes"', async () => {
-    const incident = await repo.getIncident(supervisor1, 'inc-2');
-    await expect(
-      repo.updateIncident(supervisor1, 'inc-2', {
-        expectedVersion: incident!.version,
-        eventTime: FIXED_NOW.toISOString(),
-        actionsTaken: 'עדכון',
-        findings: '',
-        nextSteps: '',
-        status: incident!.status,
-        severity: incident!.severity,
-        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
-        changeReason: '',
-        ownerUserId: incident!.ownerUserId,
-        ownerExternalName: incident!.ownerExternalName,
-        reportedToOps: 'yes',
-        reportedToOpsRecipient: '',
-      }),
-    ).rejects.toThrow(AppError);
-
-    const withRecipient = await repo.updateIncident(supervisor1, 'inc-2', {
-      expectedVersion: incident!.version,
+  function baseUpdateInput(
+    incident: { status: string; severity: string; ownerUserId: string | null; ownerExternalName: string | null; version: number },
+    overrides: Record<string, unknown> = {},
+  ) {
+    return {
+      expectedVersion: incident.version,
       eventTime: FIXED_NOW.toISOString(),
       actionsTaken: 'עדכון',
       findings: '',
       nextSteps: '',
-      status: incident!.status,
-      severity: incident!.severity,
+      status: incident.status,
+      severity: incident.severity,
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
-      ownerUserId: incident!.ownerUserId,
-      ownerExternalName: incident!.ownerExternalName,
-      reportedToOps: 'yes',
-      reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
-    });
-    expect(withRecipient.reportedToOpsRecipient).toBe('אחמ״ש מוקד מבצעים');
+      ownerUserId: incident.ownerUserId,
+      ownerExternalName: incident.ownerExternalName,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
+      ...overrides,
+    } as Parameters<LocalDemoRepository['updateIncident']>[2];
+  }
 
-    // Not required, and cleared, when reportedToOps is "no".
-    const cleared = await repo.updateIncident(supervisor1, 'inc-2', {
-      expectedVersion: withRecipient.version,
-      eventTime: FIXED_NOW.toISOString(),
-      actionsTaken: 'עדכון נוסף',
-      findings: '',
-      nextSteps: '',
-      status: incident!.status,
-      severity: incident!.severity,
-      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
-      changeReason: '',
-      ownerUserId: incident!.ownerUserId,
-      ownerExternalName: incident!.ownerExternalName,
-      reportedToOps: 'no',
-      reportedToOpsRecipient: 'ערך שאמור להימחק',
-    });
-    expect(cleared.reportedToOpsRecipient).toBeNull();
+  it('rejects an unanswered updateReportedToOps/updateReportedToComms/updateWisdomReported question', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident!, { updateReportedToOps: '' })),
+    ).rejects.toThrow(AppError);
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident!, { updateReportedToComms: '' })),
+    ).rejects.toThrow(AppError);
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-2', baseUpdateInput(incident!, { updateWisdomReported: '' })),
+    ).rejects.toThrow(AppError);
   });
 
-  it('records the recipient in a timeline event visible in incident history', async () => {
+  it('requires a recipient only when updateReportedToOps is "yes", and preserves the yes/no/not_required answer set', async () => {
     const incident = await repo.getIncident(supervisor1, 'inc-2');
-    await repo.updateIncident(supervisor1, 'inc-2', {
-      expectedVersion: incident!.version,
-      eventTime: FIXED_NOW.toISOString(),
-      actionsTaken: 'דווח למבצעים',
-      findings: '',
-      nextSteps: '',
-      status: incident!.status,
-      severity: incident!.severity,
-      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
-      changeReason: '',
-      ownerUserId: incident!.ownerUserId,
-      ownerExternalName: incident!.ownerExternalName,
-      reportedToOps: 'yes',
-      reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
-    });
+    await expect(
+      repo.updateIncident(
+        supervisor1,
+        'inc-2',
+        baseUpdateInput(incident!, { updateReportedToOps: 'yes', updateReportedToOpsRecipient: '' }),
+      ),
+    ).rejects.toThrow(AppError);
+
+    const withRecipient = await repo.updateIncident(
+      supervisor1,
+      'inc-2',
+      baseUpdateInput(incident!, { updateReportedToOps: 'yes', updateReportedToOpsRecipient: 'אחמ״ש מוקד מבצעים' }),
+    );
+    const updates = await repo.getIncidentUpdates(supervisor1, 'inc-2');
+    const latest = updates[updates.length - 1];
+    expect(latest.updateReportedToOps).toBe('yes');
+    expect(latest.updateReportedToOpsRecipient).toBe('אחמ״ש מוקד מבצעים');
+
+    // Not required, and left null, when the answer is "not_required".
+    await repo.updateIncident(
+      supervisor1,
+      'inc-2',
+      baseUpdateInput({ ...incident!, version: withRecipient.version }, { updateReportedToOps: 'not_required' }),
+    );
+    const updates2 = await repo.getIncidentUpdates(supervisor1, 'inc-2');
+    const latest2 = updates2[updates2.length - 1];
+    expect(latest2.updateReportedToOps).toBe('not_required');
+    expect(latest2.updateReportedToOpsRecipient).toBeNull();
+  });
+
+  it('requires a recipient only when updateReportedToComms is "yes"', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await expect(
+      repo.updateIncident(
+        supervisor1,
+        'inc-2',
+        baseUpdateInput(incident!, { updateReportedToComms: 'yes', updateReportedToCommsRecipient: '' }),
+      ),
+    ).rejects.toThrow(AppError);
+
+    await repo.updateIncident(
+      supervisor1,
+      'inc-2',
+      baseUpdateInput(incident!, { updateReportedToComms: 'yes', updateReportedToCommsRecipient: 'תקשוב מוקד מבצעים' }),
+    );
+    const updates = await repo.getIncidentUpdates(supervisor1, 'inc-2');
+    const latest = updates[updates.length - 1];
+    expect(latest.updateReportedToComms).toBe(true);
+    expect(latest.updateReportedToCommsRecipient).toBe('תקשוב מוקד מבצעים');
+  });
+
+  it('persists all three update-specific reporting answers on the update row, and leaves the incident-level opening facts untouched', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const before = {
+      reportedToOps: incident!.reportedToOps,
+      reportedToOpsRecipient: incident!.reportedToOpsRecipient,
+    };
+    await repo.updateIncident(
+      supervisor1,
+      'inc-2',
+      baseUpdateInput(incident!, {
+        updateReportedToOps: 'yes',
+        updateReportedToOpsRecipient: 'יוסי מהמוקד',
+        updateReportedToComms: 'yes',
+        updateReportedToCommsRecipient: 'דנה מהתקשוב',
+        updateWisdomReported: 'yes',
+      }),
+    );
+    const updates = await repo.getIncidentUpdates(supervisor1, 'inc-2');
+    const latest = updates[updates.length - 1];
+    expect(latest.updateReportedToOps).toBe('yes');
+    expect(latest.updateReportedToOpsRecipient).toBe('יוסי מהמוקד');
+    expect(latest.updateReportedToComms).toBe(true);
+    expect(latest.updateReportedToCommsRecipient).toBe('דנה מהתקשוב');
+    expect(latest.updateWisdomReported).toBe(true);
+
+    const after = await repo.getIncident(supervisor1, 'inc-2');
+    expect(after!.reportedToOps).toBe(before.reportedToOps);
+    expect(after!.reportedToOpsRecipient).toBe(before.reportedToOpsRecipient);
+  });
+
+  it('no longer emits a reported_to_ops_change event from a full update', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.updateIncident(
+      supervisor1,
+      'inc-2',
+      baseUpdateInput(incident!, { updateReportedToOps: 'yes', updateReportedToOpsRecipient: 'יוסי מהמוקד' }),
+    );
     const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
-    const recipientEvent = events.find((e) => e.type === 'reported_to_ops_change');
-    expect(recipientEvent).toBeDefined();
-    expect(recipientEvent!.newValue).toBe('אחמ״ש מוקד מבצעים');
-    expect(recipientEvent!.actorId).toBe(DEMO_USERS.supervisor1);
-    expect(recipientEvent!.serverTime).toBeTruthy();
+    expect(events.some((e) => e.type === 'reported_to_ops_change')).toBe(false);
+  });
+
+  it('tolerates a legacy reportedToOps/reportedToOpsRecipient payload key without treating it as update-specific reporting or touching the incident-level fields', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const before = {
+      reportedToOps: incident!.reportedToOps,
+      reportedToOpsRecipient: incident!.reportedToOpsRecipient,
+    };
+    const legacyPayload = {
+      ...baseUpdateInput(incident!),
+      reportedToOps: 'yes',
+      reportedToOpsRecipient: 'ערך מלקוח ישן',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2];
+    await repo.updateIncident(supervisor1, 'inc-2', legacyPayload);
+
+    const after = await repo.getIncident(supervisor1, 'inc-2');
+    expect(after!.reportedToOps).toBe(before.reportedToOps);
+    expect(after!.reportedToOpsRecipient).toBe(before.reportedToOpsRecipient);
+
+    const updates = await repo.getIncidentUpdates(supervisor1, 'inc-2');
+    const latest = updates[updates.length - 1];
+    // The legacy key must not be misread as an answer to the new question.
+    expect(latest.updateReportedToOps).toBe('not_required');
   });
 });
 
@@ -824,7 +905,11 @@ describe('technician update restrictions (backend enforced)', () => {
         changeReason: '',
         ownerUserId: DEMO_USERS.tech1,
         ownerExternalName: null,
-        reportedToOps: 'no',
+        updateReportedToOps: 'not_required',
+        updateReportedToOpsRecipient: null,
+        updateReportedToComms: 'no',
+        updateReportedToCommsRecipient: null,
+        updateWisdomReported: 'no',
       }),
     ).rejects.toThrow(AppError);
   });
@@ -853,8 +938,11 @@ describe('optimistic concurrency', () => {
       changeReason: '',
       ownerUserId: incident!.ownerUserId,
       ownerExternalName: incident!.ownerExternalName,
-      reportedToOps: incident!.reportedToOps,
-      reportedToOpsRecipient: incident!.reportedToOpsRecipient,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
     });
 
     // Second writer, still holding the stale version from before the first write, must be rejected.
@@ -871,8 +959,11 @@ describe('optimistic concurrency', () => {
         changeReason: '',
         ownerUserId: incident!.ownerUserId,
         ownerExternalName: incident!.ownerExternalName,
-        reportedToOps: incident!.reportedToOps,
-        reportedToOpsRecipient: incident!.reportedToOpsRecipient,
+        updateReportedToOps: 'not_required',
+        updateReportedToOpsRecipient: null,
+        updateReportedToComms: 'no',
+        updateReportedToCommsRecipient: null,
+        updateWisdomReported: 'no',
       }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
@@ -886,7 +977,7 @@ describe('optimistic concurrency', () => {
 // reach a state the real RPCs would reject.
 describe('update event-time integrity (mirrors migration 0020)', () => {
   function baseUpdateInput(
-    incident: { status: string; severity: string; ownerUserId: string | null; ownerExternalName: string | null; reportedToOps: string; reportedToOpsRecipient: string | null; version: number },
+    incident: { status: string; severity: string; ownerUserId: string | null; ownerExternalName: string | null; version: number },
     eventTime: string,
   ) {
     return {
@@ -901,8 +992,11 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
       changeReason: '',
       ownerUserId: incident.ownerUserId,
       ownerExternalName: incident.ownerExternalName,
-      reportedToOps: incident.reportedToOps,
-      reportedToOpsRecipient: incident.reportedToOpsRecipient,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
     } as Parameters<LocalDemoRepository['updateIncident']>[2];
   }
 
@@ -1898,17 +1992,21 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
       changeReason: '',
       ownerUserId: DEMO_USERS.tech1,
       ownerExternalName: null,
-      reportedToOps: 'no',
-      reportedToOpsRecipient: null,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
       ...overrides,
     };
   }
 
   it('updateIncident: every row a single call inserts (update + every changed field) shares one operationId', async () => {
     // operational_impact is no longer editable via update_incident (PR B),
-    // so it no longer contributes a row here -- four remaining protected
-    // fields (status, severity, owner, reportedToOps) plus the unconditional
-    // 'update' row itself: 5 rows total.
+    // and update-specific reporting (migration 0031) is stored directly on
+    // the incident_updates row rather than producing its own event -- so
+    // three remaining protected fields (status, severity, owner) plus the
+    // unconditional 'update' row itself: 4 rows total.
     await repo.updateIncident(
       supervisor1,
       'inc-1',
@@ -1916,16 +2014,16 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
         status: 'monitoring',
         severity: 'high',
         ownerUserId: DEMO_USERS.tech2,
-        reportedToOps: 'yes',
-        reportedToOpsRecipient: 'יוסי מהמוקד',
+        updateReportedToOps: 'yes',
+        updateReportedToOpsRecipient: 'יוסי מהמוקד',
       }),
     );
     const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
     const thisCall = events.filter((e) =>
-      ['update', 'status_change', 'severity_change', 'assignment_change', 'reported_to_ops_change'].includes(e.type)
+      ['update', 'status_change', 'severity_change', 'assignment_change'].includes(e.type)
       && e.eventTime === FIXED_NOW.toISOString(),
     );
-    expect(thisCall.length).toBe(5);
+    expect(thisCall.length).toBe(4);
     const operationIds = new Set(thisCall.map((e) => e.operationId));
     expect(operationIds.size).toBe(1);
     expect([...operationIds][0]).not.toBeNull();

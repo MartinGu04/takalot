@@ -46,7 +46,7 @@ test('closing with full readiness still closes the incident normally', async ({ 
   await expect(page.getByRole('link', { name: /2026-002/ })).toBeVisible();
 });
 
-test('reporting recipient is required only when reported-to-operations is "כן"', async ({ page }) => {
+test('update-specific reporting recipient is required only when the answer is "כן"', async ({ page }) => {
   await loginAs(page, DEMO_USERS.supervisor1);
   await page.goto('/incidents');
   await page.getByRole('link', { name: /2026-002/ }).click();
@@ -54,19 +54,25 @@ test('reporting recipient is required only when reported-to-operations is "כן"
   await page.getByRole('button', { name: 'עדכון תקלה' }).click();
   const dialog = page.getByRole('dialog', { name: 'עדכון תקלה' });
 
-  // Switch away from "כן" first: the recipient field must hide and not be required.
-  await dialog.getByLabel('דווח למבצעים').selectOption({ label: 'לא' });
-  await expect(dialog.getByLabel('למי דווח?')).toHaveCount(0);
+  // Starts unanswered -- no recipient field, no default answer.
+  await expect(dialog.getByLabel('דווח למבצעים?')).toHaveValue('');
+  await expect(dialog.getByLabel(/^למי דווח\? \(מבצעים\)/)).toHaveCount(0);
 
-  // Switching back to "כן" reveals the field again, empty, and required.
-  await dialog.getByLabel('דווח למבצעים').selectOption({ label: 'כן' });
-  await expect(dialog.getByLabel('למי דווח?')).toHaveValue('');
+  // Switching to "לא" (a real answer) still shows no recipient field.
+  await dialog.getByLabel('דווח למבצעים?').selectOption({ label: 'לא' });
+  await expect(dialog.getByLabel(/^למי דווח\? \(מבצעים\)/)).toHaveCount(0);
+
+  // Switching to "כן" reveals the field, empty, and required.
+  await dialog.getByLabel('דווח למבצעים?').selectOption({ label: 'כן' });
+  await expect(dialog.getByLabel(/^למי דווח\? \(מבצעים\)/)).toHaveValue('');
   await dialog.getByLabel('פעולות שבוצעו מאז העדכון הקודם').fill('דיווח למוקד המבצעים');
   await dialog.getByLabel('סטטוס נוכחי').fill('המצב הנוכחי לצורך בדיקה');
+  await dialog.getByLabel('האם דווח לתקשוב למבצעים?').selectOption({ label: 'לא' });
+  await dialog.getByLabel('האם עודכן ב-WISDOM?').selectOption({ label: 'לא' });
   await dialog.getByRole('button', { name: 'שמירת עדכון' }).click();
   await expect(dialog.getByRole('alert')).toBeVisible();
 
-  await dialog.getByLabel('למי דווח?').fill('אחמ״ש מוקד מבצעים החדש');
+  await dialog.getByLabel(/^למי דווח\? \(מבצעים\)/).fill('אחמ״ש מוקד מבצעים החדש');
   await dialog.getByRole('button', { name: 'שמירת עדכון' }).click();
   await expect(dialog).toHaveCount(0);
 
