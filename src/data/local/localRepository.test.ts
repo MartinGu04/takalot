@@ -60,8 +60,8 @@ describe('incident numbering atomicity and yearly reset', () => {
     const numbers = results.map((r) => r.number);
     expect(new Set(numbers).size).toBe(5); // all unique
     const suffixes = numbers.map((n) => Number(n.split('-')[1])).sort((a, b) => a - b);
-    // seed already allocated 8 numbers in 2026, so these five continue 9..13
-    expect(suffixes).toEqual([9, 10, 11, 12, 13]);
+    // seed already allocated 9 numbers in 2026, so these five continue 10..14
+    expect(suffixes).toEqual([10, 11, 12, 13, 14]);
   });
 
   it('resets the sequence to 001 for a new calendar year (Asia/Jerusalem)', async () => {
@@ -321,7 +321,6 @@ describe('closure requirements', () => {
       readiness: 'partial',
       followUpNotes: 'להתקין רכיב קבוע בהמשך',
       ownerUserId: DEMO_USERS.tech1,
-      ownerExternalName: null,
       reportedToOps: 'no',
     });
     expect(closed.followUpRequired).toBe(true);
@@ -371,7 +370,6 @@ describe('incomplete-readiness lifecycle', () => {
       readiness: 'partial',
       followUpNotes: 'להזמין רכיב קבוע',
       ownerUserId: DEMO_USERS.tech2,
-      ownerExternalName: null,
       reportedToOps: 'no',
     });
     expect(result.status).toBe('partial_readiness');
@@ -395,7 +393,6 @@ describe('incomplete-readiness lifecycle', () => {
       readiness: 'none',
       followUpNotes: 'להמשיך טיפול',
       ownerUserId: DEMO_USERS.tech1,
-      ownerExternalName: null,
       reportedToOps: 'no',
     });
     expect(result.status).toBe('partial_readiness');
@@ -440,7 +437,6 @@ describe('incomplete-readiness lifecycle', () => {
       readiness: 'partial',
       followUpNotes: 'להזמין רכיב קבוע',
       ownerUserId: DEMO_USERS.tech2,
-      ownerExternalName: null,
       reportedToOps: 'no',
     });
     expect(partial.status).toBe('partial_readiness');
@@ -472,7 +468,7 @@ describe('update-specific reporting (migration 0031)', () => {
   });
 
   function baseUpdateInput(
-    incident: { status: string; severity: string; ownerUserId: string | null; ownerExternalName: string | null; version: number },
+    incident: { status: string; severity: string; ownerUserId: string | null; version: number },
     overrides: Record<string, unknown> = {},
   ) {
     return {
@@ -486,7 +482,6 @@ describe('update-specific reporting (migration 0031)', () => {
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
       ownerUserId: incident.ownerUserId,
-      ownerExternalName: incident.ownerExternalName,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
       updateReportedToComms: 'no',
@@ -627,6 +622,298 @@ describe('update-specific reporting (migration 0031)', () => {
   });
 });
 
+// Additive external handling party (migration 0032 / PR C): preserve-on-
+// omit (key absent from the parsed input), update-on-supply, clear-on-
+// explicit-null across every lifecycle writer; the legacy owner_external_name
+// column survives byte-identical once a legacy external-only incident (inc-3
+// open, inc-9 closed) gains a mandatory internal owner; a legacy
+// ownerExternalName payload key is tolerated but never persisted.
+describe('external handling party (migration 0032)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('create_incident: persists the full external-handler trio alongside the mandatory internal owner', async () => {
+    const incident = await repo.createIncident(
+      supervisor1,
+      baseCreateInput({
+        externalHandlerName: 'ארגון שותף',
+        externalHandlerContactPerson: 'דנה',
+        externalHandlerContactDetails: '03-1234567',
+      } as CreateIncidentInput),
+    );
+    expect(incident.externalHandlerName).toBe('ארגון שותף');
+    expect(incident.externalHandlerContactPerson).toBe('דנה');
+    expect(incident.externalHandlerContactDetails).toBe('03-1234567');
+  });
+
+  it('update_incident: omitting the external-handler keys preserves the incident\'s existing values', async () => {
+    const incident = await repo.updateIncident(supervisor1, 'inc-4', {
+      expectedVersion: (await repo.getIncident(supervisor1, 'inc-4'))!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'בדיקה',
+      status: 'monitoring',
+      severity: 'low',
+      changeReason: '',
+      ownerUserId: DEMO_USERS.supervisor1,
+      updateReportedToOps: 'not_required',
+      updateReportedToComms: 'no',
+      updateWisdomReported: 'no',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+    // inc-4 was seeded with no external handler at all -- omitting the keys
+    // must leave it at null, not clear-by-omission.
+    expect(incident.externalHandlerName).toBeNull();
+    expect(incident.externalHandlerContactPerson).toBeNull();
+    expect(incident.externalHandlerContactDetails).toBeNull();
+  });
+
+  it('update_incident: supplying the trio sets it, and a later explicit-null call clears it', async () => {
+    const incident1 = await repo.getIncident(supervisor1, 'inc-1');
+    const set = await repo.updateIncident(supervisor1, 'inc-1', {
+      expectedVersion: incident1!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'בדיקה',
+      status: incident1!.status,
+      severity: incident1!.severity,
+      changeReason: '',
+      ownerUserId: incident1!.ownerUserId,
+      externalHandlerName: 'ארגון חדש',
+      externalHandlerContactPerson: 'משה',
+      updateReportedToOps: 'not_required',
+      updateReportedToComms: 'no',
+      updateWisdomReported: 'no',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+    expect(set.externalHandlerName).toBe('ארגון חדש');
+    expect(set.externalHandlerContactPerson).toBe('משה');
+
+    const cleared = await repo.updateIncident(supervisor1, 'inc-1', {
+      expectedVersion: set.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון נוסף',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'בדיקה',
+      status: set.status,
+      severity: set.severity,
+      changeReason: '',
+      ownerUserId: set.ownerUserId,
+      externalHandlerName: null,
+      externalHandlerContactPerson: null,
+      updateReportedToOps: 'not_required',
+      updateReportedToComms: 'no',
+      updateWisdomReported: 'no',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+    expect(cleared.externalHandlerName).toBeNull();
+    expect(cleared.externalHandlerContactPerson).toBeNull();
+  });
+
+  it('update_incident: a contact-only change (name unchanged) still emits a field=external_handler event with distinct old/new snapshots', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-1');
+    await repo.updateIncident(supervisor1, 'inc-1', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'בדיקה',
+      status: before!.status,
+      severity: before!.severity,
+      changeReason: '',
+      ownerUserId: before!.ownerUserId,
+      externalHandlerName: 'ארגון קבוע',
+      externalHandlerContactPerson: 'איש קשר א',
+      updateReportedToOps: 'not_required',
+      updateReportedToComms: 'no',
+      updateWisdomReported: 'no',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+    const afterFirst = await repo.getIncident(supervisor1, 'inc-1');
+    await repo.updateIncident(supervisor1, 'inc-1', {
+      expectedVersion: afterFirst!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון שני',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'בדיקה',
+      status: afterFirst!.status,
+      severity: afterFirst!.severity,
+      changeReason: '',
+      ownerUserId: afterFirst!.ownerUserId,
+      externalHandlerContactPerson: 'איש קשר ב', // name key omitted -> preserved
+      updateReportedToOps: 'not_required',
+      updateReportedToComms: 'no',
+      updateWisdomReported: 'no',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    const extEvents = events.filter((e) => e.field === 'external_handler');
+    expect(extEvents.length).toBe(2);
+    const latest = extEvents[extEvents.length - 1];
+    expect(latest.oldValue).not.toBe(latest.newValue);
+    expect(latest.oldValue).toMatch(/ארגון קבוע/);
+    expect(latest.oldValue).toMatch(/איש קשר א/);
+    expect(latest.newValue).toMatch(/ארגון קבוע/);
+    expect(latest.newValue).toMatch(/איש קשר ב/);
+  });
+
+  it('update_incident on a legacy external-only incident (inc-3): a valid internal owner is now required, and owner_external_name survives byte-identical', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-3');
+    expect(before!.ownerUserId).toBeNull();
+    const legacyExternalName = before!.ownerExternalName;
+    expect(legacyExternalName).not.toBeNull();
+
+    const updated = await repo.updateIncident(supervisor1, 'inc-3', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'בדיקה',
+      status: before!.status,
+      severity: before!.severity,
+      changeReason: '',
+      ownerUserId: DEMO_USERS.tech1,
+      updateReportedToOps: 'not_required',
+      updateReportedToComms: 'no',
+      updateWisdomReported: 'no',
+    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+    expect(updated.ownerUserId).toBe(DEMO_USERS.tech1);
+    // Frozen historical column -- untouched by this write, even though an
+    // internal owner has now been assigned.
+    expect(updated.ownerExternalName).toBe(legacyExternalName);
+  });
+
+  it('update_incident rejects a missing internal owner even on a legacy external-only incident', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-3');
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-3', {
+        expectedVersion: before!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        actionsTaken: 'עדכון',
+        findings: '',
+        nextSteps: '',
+        currentStatusText: 'בדיקה',
+        status: before!.status,
+        severity: before!.severity,
+        changeReason: '',
+        ownerUserId: null,
+        updateReportedToOps: 'not_required',
+        updateReportedToComms: 'no',
+        updateWisdomReported: 'no',
+      } as Parameters<LocalDemoRepository['updateIncident']>[2]),
+    ).rejects.toThrow(AppError);
+  });
+
+  it('assign_incident: repository-level guard rejects a contact-only merged result (name omitted, incident had none) -- the schema alone cannot catch this since it has no visibility into the existing incident', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-4'); // seeded with no external handler
+    expect(before!.externalHandlerName).toBeNull();
+    await expect(
+      repo.assignIncident(supervisor1, 'inc-4', {
+        expectedVersion: before!.version,
+        note: '',
+        ownerUserId: DEMO_USERS.tech2,
+        externalHandlerContactPerson: 'דנה', // name key omitted -> preserved as null
+      } as Parameters<LocalDemoRepository['assignIncident']>[2]),
+    ).rejects.toThrow(AppError);
+  });
+
+  it('assign_incident: preserve/update/clear semantics and a separate field=external_handler event', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-4');
+    const assigned = await repo.assignIncident(supervisor1, 'inc-4', {
+      expectedVersion: before!.version,
+      note: '',
+      ownerUserId: DEMO_USERS.tech2,
+      externalHandlerName: 'ארגון הקצאה',
+    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    expect(assigned.externalHandlerName).toBe('ארגון הקצאה');
+
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-4');
+    expect(events.filter((e) => e.field === 'owner').length).toBe(1);
+    expect(events.filter((e) => e.field === 'external_handler').length).toBe(1);
+
+    const preserved = await repo.assignIncident(supervisor1, 'inc-4', {
+      expectedVersion: assigned.version,
+      note: '',
+      ownerUserId: DEMO_USERS.tech1,
+    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    expect(preserved.externalHandlerName).toBe('ארגון הקצאה');
+  });
+
+  it('close_incident (full readiness): accepts the external-handler trio without touching owner columns', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-2');
+    const closed = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: before!.version,
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      followUpNotes: '',
+      externalHandlerName: 'ארגון סגירה',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(closed.status).toBe('closed');
+    expect(closed.externalHandlerName).toBe('ארגון סגירה');
+  });
+
+  it('close_incident (partial readiness): applies preserve/update/clear semantics alongside the (still-mandatory) internal owner', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-3');
+    const partial = await repo.closeIncident(supervisor1, 'inc-3', {
+      expectedVersion: before!.version,
+      rootCause: 'סיבה',
+      resolution: 'פתרון חלקי',
+      readiness: 'partial',
+      followUpNotes: 'להשלים טיפול',
+      ownerUserId: DEMO_USERS.tech1,
+      externalHandlerName: 'ארגון בסגירה חלקית',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(partial.status).toBe('partial_readiness');
+    expect(partial.ownerUserId).toBe(DEMO_USERS.tech1);
+    expect(partial.externalHandlerName).toBe('ארגון בסגירה חלקית');
+    // Frozen historical column -- untouched even though an internal owner
+    // was just assigned.
+    expect(partial.ownerExternalName).toBe(before!.ownerExternalName);
+  });
+
+  it('reopen_incident on a legacy CLOSED external-only incident (inc-9): requires an internal owner, owner_external_name survives byte-identical', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-9');
+    expect(before!.status).toBe('closed');
+    expect(before!.ownerUserId).toBeNull();
+    const legacyExternalName = before!.ownerExternalName;
+    expect(legacyExternalName).not.toBeNull();
+    // inc-9 was already backfilled (mirroring migration 0032's backfill) --
+    // externalHandlerName equals the legacy owner_external_name.
+    expect(before!.externalHandlerName).toBe(legacyExternalName);
+
+    const reopened = await repo.reopenIncident(manager, 'inc-9', {
+      expectedVersion: before!.version,
+      reason: 'התברר שהתקלה חוזרת',
+      ownerUserId: DEMO_USERS.tech2,
+    } as ReopenIncidentInput);
+    expect(reopened.status).toBe('reopened');
+    expect(reopened.ownerUserId).toBe(DEMO_USERS.tech2);
+    expect(reopened.ownerExternalName).toBe(legacyExternalName);
+    // Omitting the external-handler keys preserved the already-backfilled value.
+    expect(reopened.externalHandlerName).toBe(legacyExternalName);
+  });
+
+  it('reopen_incident rejects a missing internal owner', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-9');
+    await expect(
+      repo.reopenIncident(manager, 'inc-9', {
+        expectedVersion: before!.version,
+        reason: 'סיבה',
+        ownerUserId: null,
+      } as ReopenIncidentInput),
+    ).rejects.toThrow(AppError);
+  });
+});
+
 describe('reopening requirements', () => {
   let repo: LocalDemoRepository;
   beforeEach(() => {
@@ -640,7 +927,6 @@ describe('reopening requirements', () => {
         expectedVersion: incident!.version,
         reason: 'סיבה',
         ownerUserId: DEMO_USERS.tech1,
-        ownerExternalName: null,
       }),
     ).rejects.toThrow(AppError);
   });
@@ -652,7 +938,6 @@ describe('reopening requirements', () => {
         expectedVersion: incident!.version,
         reason: 'התופעה חזרה',
         ownerUserId: DEMO_USERS.tech1,
-        ownerExternalName: null,
       }),
     ).rejects.toThrow(AppError);
   });
@@ -664,7 +949,6 @@ describe('reopening requirements', () => {
       expectedVersion: incident!.version,
       reason: 'התופעה חזרה',
       ownerUserId: DEMO_USERS.tech1,
-      ownerExternalName: null,
     });
     expect(reopened.status).toBe('reopened');
   });
@@ -675,7 +959,6 @@ describe('reopening requirements', () => {
       expectedVersion: before!.version,
       reason: 'התגלה שהתקלה לא נפתרה במלואה',
       ownerUserId: DEMO_USERS.tech2,
-      ownerExternalName: null,
     } satisfies ReopenIncidentInput);
     expect(reopened.status).toBe('reopened');
     expect(reopened.ownerUserId).toBe(DEMO_USERS.tech2);
@@ -698,7 +981,6 @@ describe('reopening requirements', () => {
         expectedVersion: incident!.version,
         reason: '',
         ownerUserId: DEMO_USERS.tech1,
-        ownerExternalName: null,
       } as ReopenIncidentInput),
     ).rejects.toThrow(AppError);
   });
@@ -904,7 +1186,6 @@ describe('technician update restrictions (backend enforced)', () => {
         currentStatusText: 'שינוי לא מורשה',
         changeReason: '',
         ownerUserId: DEMO_USERS.tech1,
-        ownerExternalName: null,
         updateReportedToOps: 'not_required',
         updateReportedToOpsRecipient: null,
         updateReportedToComms: 'no',
@@ -937,7 +1218,6 @@ describe('optimistic concurrency', () => {
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
       ownerUserId: incident!.ownerUserId,
-      ownerExternalName: incident!.ownerExternalName,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
       updateReportedToComms: 'no',
@@ -958,7 +1238,6 @@ describe('optimistic concurrency', () => {
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         changeReason: '',
         ownerUserId: incident!.ownerUserId,
-        ownerExternalName: incident!.ownerExternalName,
         updateReportedToOps: 'not_required',
         updateReportedToOpsRecipient: null,
         updateReportedToComms: 'no',
@@ -977,7 +1256,7 @@ describe('optimistic concurrency', () => {
 // reach a state the real RPCs would reject.
 describe('update event-time integrity (mirrors migration 0020)', () => {
   function baseUpdateInput(
-    incident: { status: string; severity: string; ownerUserId: string | null; ownerExternalName: string | null; version: number },
+    incident: { status: string; severity: string; ownerUserId: string | null; version: number },
     eventTime: string,
   ) {
     return {
@@ -991,7 +1270,6 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
       severity: incident.severity,
       changeReason: '',
       ownerUserId: incident.ownerUserId,
-      ownerExternalName: incident.ownerExternalName,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
       updateReportedToComms: 'no',
@@ -1918,8 +2196,8 @@ describe('closed-incident count (countClosedIncidents)', () => {
   });
 
   it('counts exactly the seeded closed incidents', async () => {
-    // Seed has inc-5 and inc-6 closed, and nothing cancelled.
-    expect(await repo.countClosedIncidents(admin)).toBe(2);
+    // Seed has inc-5, inc-6, and inc-9 closed, and nothing cancelled.
+    expect(await repo.countClosedIncidents(admin)).toBe(3);
   });
 
   it('never counts a cancelled incident', async () => {
@@ -1929,11 +2207,11 @@ describe('closed-incident count (countClosedIncidents)', () => {
       eventTime: FIXED_NOW.toISOString(),
       cancellationReason: 'נפתחה בטעות',
     });
-    // The archive now holds three terminal incidents, but only two of them
+    // The archive now holds four terminal incidents, but only three of them
     // are closed.
     const terminal = await repo.listIncidents(admin, { terminalOnly: true });
-    expect(terminal.length).toBe(3);
-    expect(await repo.countClosedIncidents(admin)).toBe(2);
+    expect(terminal.length).toBe(4);
+    expect(await repo.countClosedIncidents(admin)).toBe(3);
   });
 
   it('follows closure and reopening', async () => {
@@ -1954,7 +2232,6 @@ describe('closed-incident count (countClosedIncidents)', () => {
       reason: 'התקלה חזרה',
       nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
       ownerUserId: DEMO_USERS.tech1,
-      ownerExternalName: null,
     } as ReopenIncidentInput);
     expect(await repo.countClosedIncidents(admin)).toBe(before);
   });
@@ -1964,7 +2241,7 @@ describe('closed-incident count (countClosedIncidents)', () => {
     // the total.
     const oneOnly = await repo.listIncidents(admin, { terminalOnly: true, severity: ['high'] });
     expect(oneOnly.length).toBeLessThan(2);
-    expect(await repo.countClosedIncidents(admin)).toBe(2);
+    expect(await repo.countClosedIncidents(admin)).toBe(3);
   });
 
   it('requires the view capability, exactly like every other incident read', async () => {
@@ -1991,7 +2268,6 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
       severity: 'critical',
       changeReason: '',
       ownerUserId: DEMO_USERS.tech1,
-      ownerExternalName: null,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
       updateReportedToComms: 'no',

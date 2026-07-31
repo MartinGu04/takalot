@@ -14,7 +14,7 @@ test('closing with partial readiness keeps the incident active, not closed', asy
   await dialog.getByLabel('הפתרון שבוצע').fill('הותקן פתרון זמני');
   await dialog.getByLabel('כשירות המערכת').selectOption({ label: 'חלקית' });
   await dialog.getByLabel('פעולות המשך').fill('להזמין רכיב קבוע');
-  await dialog.getByLabel('גורם מטפל פנימי').selectOption({ label: 'ליאור אדרי (דמו)' });
+  await dialog.getByLabel('בעל אחריות פנימי').selectOption({ label: 'ליאור אדרי (דמו)' });
   await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
 
   await expect(dialog.getByText('התקלה לא תיסגר')).toBeVisible();

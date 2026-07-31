@@ -658,7 +658,7 @@ async function openIncidentDetailByTextAsAdmin(text: RegExp) {
   await user.click(await screen.findByTestId('login-u-admin'));
   const card = await within(main()).findByText(text);
   await user.click(card.closest('a.incident-card') as HTMLElement);
-  await within(main()).findByText('גורם מטפל נוכחי'); // confirms the detail page loaded
+  await within(main()).findByText('בעל אחריות פנימי'); // confirms the detail page loaded
   return { user };
 }
 
@@ -684,5 +684,27 @@ describe('incident details: תקשוב למבצעים / WISDOM (migration 0021 p
     expect(within(commsRow1).getByText('לא')).toBeInTheDocument();
     const wisdomRow1 = within(main()).getByText('WISDOM').closest('div') as HTMLElement;
     expect(within(wisdomRow1).getByText('לא')).toBeInTheDocument();
+  });
+});
+
+// inc-3: legacy external-only fixture (owner_user_id null, owner_external_name
+// set, seed.ts). Migration 0032's additive external handling party model
+// requires the internal owner and the external handler to always render as
+// two separate facts, never collapsed into one -- even for a legacy row
+// predating the model.
+const INC3_TEXT = /מערכת גמא עובדת במצב גיבוי/;
+
+describe('incident details: internal owner and external handler render as two separate facts (migration 0032)', () => {
+  it('a legacy external-only incident shows "ללא בעל אחריות פנימי" for the internal owner, and the legacy name under a separate "גורם מטפל חיצוני" fact', async () => {
+    await openIncidentDetailByTextAsAdmin(INC3_TEXT);
+    const ownerRow = within(main()).getByText('בעל אחריות פנימי').closest('div') as HTMLElement;
+    expect(within(ownerRow).getByText('ללא בעל אחריות פנימי')).toBeInTheDocument();
+    const externalRow = within(main()).getByText('גורם מטפל חיצוני').closest('div') as HTMLElement;
+    expect(within(externalRow).getByText(/טכנאי מטעם ספק \(חברת דוגמה בע״מ\)/)).toBeInTheDocument();
+  });
+
+  it('an incident with a real internal owner and no external handler shows no "גורם מטפל חיצוני" fact at all', async () => {
+    await openIncidentDetailByTextAsAdmin(INC1_TEXT); // inc-1: internal owner, no external handler
+    expect(within(main()).queryByText('גורם מטפל חיצוני')).not.toBeInTheDocument();
   });
 });

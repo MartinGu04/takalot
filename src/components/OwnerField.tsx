@@ -1,52 +1,46 @@
-// Shared owner picker: active internal user OR named external handler.
+// Internal owner picker: every actively managed incident requires a valid,
+// active internal owner. External handling is a separate, additive concept
+// -- see ExternalPartyFields -- never a substitute shown in this control.
 import type { Profile } from '../domain/types';
-import { Field, Input, Select } from './ui';
+import { Field, Select } from './ui';
 
 export function OwnerField({
   profiles,
   ownerUserId,
-  ownerExternalName,
-  onChangeInternal,
-  onChangeExternal,
+  onChange,
   error,
+  legacyExternalName,
 }: {
   profiles: Profile[] | undefined;
   ownerUserId: string;
-  ownerExternalName: string;
-  onChangeInternal: (userId: string) => void;
-  onChangeExternal: (name: string) => void;
+  onChange: (userId: string) => void;
   error?: string;
+  /** Set when this incident's internal owner is still null and its legacy
+   *  owner_external_name (external-only, pre-dating the additive external
+   *  handling party model) is set -- shown as a read-only carry-over hint
+   *  so the operator sees what a chosen internal owner is joining, never a
+   *  silently dropped fact. */
+  legacyExternalName?: string | null;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <Field label="גורם מטפל פנימי" error={ownerUserId ? undefined : error}>
-        {(a) => (
-          <Select
-            {...a}
-            value={ownerUserId}
-            onChange={(e) => {
-              onChangeInternal(e.target.value);
-              if (e.target.value) onChangeExternal('');
-            }}
-          >
-            <option value="">— ללא —</option>
-            {profiles?.filter((p) => p.active).map((p) => (
-              <option key={p.id} value={p.id}>{p.fullName}</option>
-            ))}
-          </Select>
-        )}
-      </Field>
-      <Field label="או שם גורם חיצוני" error={!ownerUserId ? error : undefined} hint="למקרה שהמטפל אינו משתמש במערכת">
-        {(a) => (
-          <Input
-            {...a}
-            value={ownerExternalName}
-            disabled={!!ownerUserId}
-            onChange={(e) => onChangeExternal(e.target.value)}
-            placeholder="לדוגמה: טכנאי מטעם ספק"
-          />
-        )}
-      </Field>
-    </div>
+    <Field
+      label="בעל אחריות פנימי"
+      required
+      error={error}
+      hint={
+        legacyExternalName
+          ? `גורם מטפל חיצוני קודם: ${legacyExternalName} — יש לבחור בעל אחריות פנימי`
+          : undefined
+      }
+    >
+      {(a) => (
+        <Select {...a} value={ownerUserId} onChange={(e) => onChange(e.target.value)}>
+          <option value="">— בחר —</option>
+          {profiles?.filter((p) => p.active).map((p) => (
+            <option key={p.id} value={p.id}>{p.fullName}</option>
+          ))}
+        </Select>
+      )}
+    </Field>
   );
 }

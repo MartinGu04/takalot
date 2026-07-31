@@ -6,6 +6,7 @@ import {
   severityLabels,
   statusLabels,
 } from '../domain/labels';
+import { ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { formatDateTime, formatDuration } from '../lib/time';
 import { HebrewPdf } from './pdf';
 
@@ -20,11 +21,8 @@ export function buildIncidentPdf(
 ): HebrewPdf {
   const pdf = new HebrewPdf();
   const name = (id: string | null) => (id ? (profiles.find((p) => p.id === id)?.fullName ?? 'לא ידוע') : '');
-  const owner = incident.ownerUserId
-    ? name(incident.ownerUserId)
-    : incident.ownerExternalName
-      ? `${incident.ownerExternalName} (גורם חיצוני)`
-      : 'ללא';
+  const owner = ownerDisplay(incident, profiles);
+  const externalHandler = externalHandlerDisplay(incident);
 
   pdf.header(`תקלה ${incident.number}`, exportedByName);
 
@@ -41,7 +39,8 @@ export function buildIncidentPdf(
   pdf.field('חומרה', severityLabels[incident.severity]);
   pdf.field('סטטוס', statusLabels[incident.status]);
   pdf.field('השפעה מבצעית', incident.operationalImpact);
-  pdf.field('גורם מטפל נוכחי', owner);
+  pdf.field('בעל אחריות פנימי', owner);
+  if (externalHandler) pdf.field('גורם מטפל חיצוני', externalHandler);
   pdf.field(
     'דווח למבצעים',
     incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient

@@ -5,6 +5,7 @@ import { createIncidentSchema, type CreateIncidentInput } from '../domain/schema
 import { useLocations, useProfiles, useSystems, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { Button, Field, Input, Select, Textarea } from '../components/ui';
+import { ExternalPartyFields } from '../components/ExternalPartyFields';
 import { severityLabels, reportedToOpsLabels } from '../domain/labels';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
 import { loadDraft, clearDraft, useDraft, useClearDraftOnRouteLeave, useWarnOnUnload } from '../lib/useDraft';
@@ -21,6 +22,9 @@ type FormValues = {
   operationalImpact: string;
   actionsTaken: string;
   ownerUserId: string;
+  externalHandlerName: string;
+  externalHandlerContactPerson: string;
+  externalHandlerContactDetails: string;
   reportedToOps: CreateIncidentInput['reportedToOps'];
   reportedToOpsRecipient: string;
   reportedToComms: 'no' | 'yes';
@@ -39,6 +43,9 @@ function defaultValues(): FormValues {
     operationalImpact: '',
     actionsTaken: '',
     ownerUserId: '',
+    externalHandlerName: '',
+    externalHandlerContactPerson: '',
+    externalHandlerContactDetails: '',
     reportedToOps: 'no',
     reportedToOpsRecipient: '',
     reportedToComms: 'no',
@@ -80,6 +87,7 @@ export default function IncidentCreatePage() {
   }, [profiles, session.userId, values.ownerUserId, setValue]);
 
   const [ownerError, setOwnerError] = useState<string | undefined>();
+  const [extError, setExtError] = useState<string | undefined>();
   const [recipientError, setRecipientError] = useState<string | undefined>();
   const [commsRecipientError, setCommsRecipientError] = useState<string | undefined>();
   const [wisdomNumberError, setWisdomNumberError] = useState<string | undefined>();
@@ -98,6 +106,7 @@ export default function IncidentCreatePage() {
 
   const onSubmit = (form: FormValues) => {
     setOwnerError(undefined);
+    setExtError(undefined);
     setRecipientError(undefined);
     setCommsRecipientError(undefined);
     setWisdomNumberError(undefined);
@@ -117,6 +126,9 @@ export default function IncidentCreatePage() {
       status: 'in_progress',
       ownerUserId: form.ownerUserId || null,
       ownerExternalName: null,
+      externalHandlerName: form.externalHandlerName || null,
+      externalHandlerContactPerson: form.externalHandlerContactPerson || null,
+      externalHandlerContactDetails: form.externalHandlerContactDetails || null,
       reportedToOps: form.reportedToOps,
       reportedToOpsRecipient: form.reportedToOps === 'yes' ? form.reportedToOpsRecipient : null,
       reportedToComms: form.reportedToComms === 'yes',
@@ -128,6 +140,7 @@ export default function IncidentCreatePage() {
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         if (issue.path[0] === 'ownerUserId') setOwnerError(issue.message);
+        else if (issue.path[0] === 'externalHandlerName') setExtError(issue.message);
         else if (issue.path[0] === 'reportedToOpsRecipient') setRecipientError(issue.message);
         else if (issue.path[0] === 'reportedToCommsRecipient') setCommsRecipientError(issue.message);
         else if (issue.path[0] === 'wisdomIncidentNumber') setWisdomNumberError(issue.message);
@@ -260,6 +273,16 @@ export default function IncidentCreatePage() {
             </Select>
           )}
         </Field>
+
+        <ExternalPartyFields
+          name={values.externalHandlerName}
+          contactPerson={values.externalHandlerContactPerson}
+          contactDetails={values.externalHandlerContactDetails}
+          onChangeName={(v) => setValue('externalHandlerName', v)}
+          onChangeContactPerson={(v) => setValue('externalHandlerContactPerson', v)}
+          onChangeContactDetails={(v) => setValue('externalHandlerContactDetails', v)}
+          nameError={extError}
+        />
 
         <Field label="דווח למבצעים">
           {(a) => (

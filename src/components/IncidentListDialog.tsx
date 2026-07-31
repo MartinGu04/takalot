@@ -51,7 +51,6 @@ export function IncidentListDialog({
       ) : (
         <div className="-mx-1 flex max-h-[60dvh] flex-col gap-1 overflow-y-auto px-1">
           {incidents.map((incident) => {
-            const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
             return (
               <Link
                 key={incident.id}
@@ -74,9 +73,9 @@ export function IncidentListDialog({
                     </span>
                   </span>
                   <span>
-                    גורם מטפל:{' '}
+                    בעל אחריות פנימי:{' '}
                     <span className="font-semibold text-text-primary">
-                      {hasOwner ? ownerDisplay(incident, profiles) : 'אין'}
+                      {ownerDisplay(incident, profiles)}
                     </span>
                   </span>
                 </div>

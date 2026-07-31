@@ -4,6 +4,7 @@ import { reopenIncidentSchema, type ReopenIncidentInput } from '../../domain/sch
 import { useProfiles } from '../../data/hooks';
 import { Dialog, Field, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
+import { ExternalPartyFields } from '../ExternalPartyFields';
 
 export function ReopenDialog({
   open,
@@ -21,7 +22,11 @@ export function ReopenDialog({
   const { data: profiles } = useProfiles();
   const [reason, setReason] = useState('');
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
-  const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
+  const [extName, setExtName] = useState(incident.externalHandlerName ?? '');
+  const [extPerson, setExtPerson] = useState(incident.externalHandlerContactPerson ?? '');
+  const [extDetails, setExtDetails] = useState(incident.externalHandlerContactDetails ?? '');
+  const [ownerError, setOwnerError] = useState<string | undefined>();
+  const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
 
   const handleClose = () => {
@@ -35,12 +40,22 @@ export function ReopenDialog({
       expectedVersion: incident.version,
       reason,
       ownerUserId: ownerUserId || null,
-      ownerExternalName: ownerExternalName || null,
+      externalHandlerName: extName || null,
+      externalHandlerContactPerson: extPerson || null,
+      externalHandlerContactDetails: extDetails || null,
     });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message);
+      const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
+      const extIssue = parsed.error.issues.find((i) => i.path[0] === 'externalHandlerName');
+      const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName');
+      setOwnerError(ownerIssue?.message);
+      setExtError(extIssue?.message);
+      setError(otherIssue?.message);
       return;
     }
+    setOwnerError(undefined);
+    setExtError(undefined);
+    setError(undefined);
     onSubmit(parsed.data);
   };
 
@@ -53,9 +68,18 @@ export function ReopenDialog({
         <OwnerField
           profiles={profiles}
           ownerUserId={ownerUserId}
-          ownerExternalName={ownerExternalName}
-          onChangeInternal={setOwnerUserId}
-          onChangeExternal={setOwnerExternalName}
+          onChange={setOwnerUserId}
+          error={ownerError}
+          legacyExternalName={!incident.ownerUserId ? incident.ownerExternalName : null}
+        />
+        <ExternalPartyFields
+          name={extName}
+          contactPerson={extPerson}
+          contactDetails={extDetails}
+          onChangeName={setExtName}
+          onChangeContactPerson={setExtPerson}
+          onChangeContactDetails={setExtDetails}
+          nameError={extError}
         />
         {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">

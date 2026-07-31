@@ -122,12 +122,6 @@ export interface LocationRecord {
   createdAt: string;
 }
 
-/** Owner is either an active internal user or a named external handler. */
-export interface Owner {
-  userId: string | null;
-  externalName: string | null;
-}
-
 export interface Incident {
   id: string;
   number: string; // YYYY-NNN, database-generated, immutable
@@ -139,7 +133,20 @@ export interface Incident {
   status: IncidentStatus;
   operationalImpact: string;
   ownerUserId: string | null;
+  /** Legacy, frozen historical column: "external instead of an internal
+   *  owner" for incidents opened before the additive external handling
+   *  party model. No RPC writes or clears it anymore -- read-only. Never
+   *  rendered as a substitute for the internal owner; a legacy row with
+   *  this set and ownerUserId null shows as "ללא בעל אחריות פנימי" in
+   *  compact contexts, same as any other row with no internal owner. */
   ownerExternalName: string | null;
+  /** Additive external handling party -- always optional, never a
+   *  substitute for ownerUserId. Independent of the internal owner: an
+   *  incident can have both, neither, or just one. */
+  externalHandlerName: string | null;
+  /** Required and meaningful only alongside externalHandlerName. */
+  externalHandlerContactPerson: string | null;
+  externalHandlerContactDetails: string | null;
   discoveredAt: string; // user-entered discovery time
   createdAt: string; // authoritative server time
   createdBy: string;
