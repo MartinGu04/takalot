@@ -5,9 +5,10 @@ import { getRepository, isDemoMode } from '../data';
 import { APP_NAME, APP_TAGLINE } from '../domain/labels';
 import type { Profile } from '../domain/types';
 import { useQuery } from '@tanstack/react-query';
-import { Button, Spinner } from '../components/ui';
+import { Spinner } from '../components/ui';
 import { RoleBadge } from '../components/RoleBadge';
 import { AvariaAuthBrandPanel } from '../components/AvariaBrand';
+import { IconLock, IconShield } from '../components/icons';
 
 /** Reads an OAuth provider error forwarded back on the redirect URL
  *  (Supabase passes failures as error/error_description in the query or
@@ -84,20 +85,24 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-6 sm:px-6 sm:py-10">
-      <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-hairline bg-surface shadow-elevated lg:min-h-[38rem] lg:grid-cols-[minmax(0,1.08fr)_minmax(22rem,0.92fr)]">
+      <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated lg:min-h-[40rem] lg:grid-cols-[minmax(0,1.08fr)_minmax(22rem,0.92fr)]">
         <AvariaAuthBrandPanel titleTestId="brand-name" />
         <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-12">
           <div className="mx-auto w-full max-w-md">
-            <p className="text-xs font-bold tracking-[0.18em] text-brand-700 dark:text-brand-300">
-              {APP_NAME}
+            <span className="inline-flex items-center rounded-full border border-brand-400/30 bg-brand-500/10 px-3 py-1 text-xs font-semibold text-brand-200">
+              ברוכים הבאים
+            </span>
+            <h2 className="mt-4 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+              כניסה למערכת
+            </h2>
+            <p className="mt-2 text-sm text-white/60">
+              <span className="font-bold text-brand-300">{APP_NAME}</span> {APP_TAGLINE}
             </p>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-text-primary">כניסה למערכת</h2>
-            <p className="mt-2 text-sm text-muted">{APP_TAGLINE}</p>
 
             {sessionExpired && (
               <div
                 role="alert"
-                className="mt-5 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200"
+                className="mt-5 rounded-lg border border-orange-800/60 bg-orange-950/50 p-3 text-sm text-orange-200"
               >
                 פג תוקף ההתחברות. יש להתחבר מחדש כדי להמשיך. נתונים שלא נשמרו נשמרו כטיוטה מקומית ככל שניתן.
               </div>
@@ -105,7 +110,7 @@ export default function LoginPage() {
 
             {demo ? (
               <>
-                <div className="mt-5 flex items-center gap-1.5 text-xs font-medium text-muted">
+                <div className="mt-5 flex items-center gap-1.5 text-xs font-medium text-white/50">
                   <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-orange-500" />
                   מצב הדגמה — בחירת משתמש פיקטיבי לצורך התנסות בלבד
                 </div>
@@ -119,17 +124,17 @@ export default function LoginPage() {
                       <li key={p.id}>
                         <button
                           type="button"
-                          className="surface-interactive flex w-full items-center gap-3 px-4 py-3 text-right"
+                          className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-right transition-colors hover:bg-white/10"
                           onClick={() => handleDemoLogin(p.id)}
                           data-testid={`login-${p.id}`}
                         >
                           <span
                             aria-hidden
-                            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-active text-sm font-bold text-text-primary"
+                            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold text-white"
                           >
                             {p.fullName.charAt(0)}
                           </span>
-                          <span className="min-w-0 flex-1 font-medium text-text-primary">{p.fullName}</span>
+                          <span className="min-w-0 flex-1 font-medium text-white">{p.fullName}</span>
                           <RoleBadge role={p.role} />
                         </button>
                       </li>
@@ -138,9 +143,10 @@ export default function LoginPage() {
                 )}
               </>
             ) : (
-              <div className="mt-6 text-center">
-                <Button
-                  className="w-full justify-center gap-2.5"
+              <div className="mt-6">
+                <button
+                  type="button"
+                  className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] transition-colors hover:bg-gray-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100"
                   onClick={handleGoogleLogin}
                   disabled={redirecting}
                   data-testid="google-login-button"
@@ -153,15 +159,35 @@ export default function LoginPage() {
                       התחברות עם Google
                     </>
                   )}
-                </Button>
-                <p className="mt-4 text-xs text-muted">
-                  הגישה בהזמנה בלבד: התחברות Google מזהה אתכם, אך נדרש גם פרופיל משתמש פעיל שהוגדר על ידי
-                  מנהל המערכת.
-                </p>
+                </button>
+
+                <div className="mt-5 flex items-center gap-3 text-xs text-white/40">
+                  <span className="h-px flex-1 bg-white/10" />
+                  או
+                  <span className="h-px flex-1 bg-white/10" />
+                </div>
+
+                <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-white/10 bg-white/5 p-3">
+                  <span
+                    aria-hidden
+                    className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-brand-300"
+                  >
+                    <IconLock className="size-4" />
+                  </span>
+                  <p className="text-xs text-white/60">
+                    הגישה בהזמנה בלבד: התחברות Google מזהה אתכם, אך נדרש גם פרופיל משתמש פעיל שהוגדר על ידי
+                    מנהל המערכת.
+                  </p>
+                </div>
+
+                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-white/40">
+                  <IconShield className="size-3.5" aria-hidden />
+                  מאובטח ברמה גבוהה
+                </div>
               </div>
             )}
             {error && (
-              <p role="alert" className="mt-3 text-center text-sm text-red-700 dark:text-red-400">
+              <p role="alert" className="mt-3 text-center text-sm text-red-400">
                 {error}
               </p>
             )}

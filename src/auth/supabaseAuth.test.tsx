@@ -158,6 +158,37 @@ describe('supabase mode: signed out', () => {
     render(<App />);
     expect(await screen.findByTestId('google-login-button')).toBeInTheDocument();
   });
+
+  it('renders the full RTL brand hierarchy in order: welcome indicator, heading, AVARIA description, Google sign-in, authorized-users notice, security reassurance', async () => {
+    render(<App />);
+    const welcomePill = await screen.findByText('ברוכים הבאים');
+    const heading = screen.getByRole('heading', { name: 'כניסה למערכת' });
+    // The tagline also appears in the (separate) brand panel, so scope the
+    // lookup to the auth-form column that actually holds this hierarchy.
+    const description = within(heading.parentElement as HTMLElement).getByText(
+      'מערכת ניהול ומעקב תקלות',
+    );
+    const googleButton = screen.getByTestId('google-login-button');
+    const notice = screen.getByText(/הגישה בהזמנה בלבד/);
+    const security = screen.getByText('מאובטח ברמה גבוהה');
+
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(welcomePill.compareDocumentPosition(heading) & FOLLOWING).toBeTruthy();
+    expect(heading.compareDocumentPosition(description) & FOLLOWING).toBeTruthy();
+    expect(description.compareDocumentPosition(googleButton) & FOLLOWING).toBeTruthy();
+    expect(googleButton.compareDocumentPosition(notice) & FOLLOWING).toBeTruthy();
+    expect(notice.compareDocumentPosition(security) & FOLLOWING).toBeTruthy();
+  });
+
+  it('the approved full logo renders in the brand panel beside the Google sign-in action', async () => {
+    render(<App />);
+    const brandHeading = await screen.findByRole('heading', { name: 'AVARIA' });
+    expect(within(brandHeading).getByRole('img', { name: 'AVARIA' })).toHaveAttribute(
+      'src',
+      '/branding/avaria-logo-full.png',
+    );
+    expect(screen.getByTestId('google-login-button')).toBeInTheDocument();
+  });
 });
 
 describe('supabase mode: session restoration', () => {
