@@ -208,6 +208,31 @@ begin
       case when is_valid_transition('in_progress', 'in_progress') = true then 'PASS' else 'FAIL' end, '');
 
   -- =====================================================================
+  -- 1c. chapter4 PR B (0028) widened the catch-all target list to permit
+  --     waiting_information/waiting_validation; waiting_equipment stays
+  --     excluded (not one of the three "בהמתנה" reasons the update UI
+  --     offers), matching every other never-offered active status.
+  -- =====================================================================
+  insert into results (test, result, detail) values
+    ('is_valid_transition(in_progress, waiting_information) = true (0028 widening)',
+      case when is_valid_transition('in_progress', 'waiting_information') = true then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_valid_transition(in_progress, waiting_validation) = true (0028 widening)',
+      case when is_valid_transition('in_progress', 'waiting_validation') = true then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_valid_transition(waiting_external, waiting_information) = true (0028 widening)',
+      case when is_valid_transition('waiting_external', 'waiting_information') = true then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_valid_transition(waiting_information, in_progress) = true (return path, unaffected by 0028)',
+      case when is_valid_transition('waiting_information', 'in_progress') = true then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_valid_transition(in_progress, waiting_equipment) = false (not widened, stays excluded)',
+      case when is_valid_transition('in_progress', 'waiting_equipment') = false then 'PASS' else 'FAIL' end, '');
+  insert into results (test, result, detail) values
+    ('is_valid_transition(new, waiting_information) = false (new''s branch is its own explicit list, unaffected by the else-branch widening)',
+      case when is_valid_transition('new', 'waiting_information') = false then 'PASS' else 'FAIL' end, '');
+
+  -- =====================================================================
   -- 1b. is_incident_open must work when the CALLER's search_path is empty --
   --     this is the exact failure mode that broke admin_delete_user/
   --     prevent_deactivation_with_open_incidents/admin_set_user_active

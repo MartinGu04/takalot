@@ -10,7 +10,6 @@ export interface FilterState {
   ownerUserId?: string;
   systemId?: string;
   locationId?: string;
-  overdueOnly: boolean;
   createdFrom?: string;
   createdTo?: string;
 }
@@ -68,10 +67,6 @@ export function IncidentFilterBar({
     const label = locations?.find((l) => l.id === value.locationId)?.name ?? 'מיקום';
     chips.push({ key: 'location', label, onRemove: () => onChange({ ...value, locationId: undefined }) });
   }
-  if (value.overdueOnly) {
-    chips.push({ key: 'overdue', label: 'באיחור בלבד', onRemove: () => onChange({ ...value, overdueOnly: false }) });
-  }
-
   return (
     <div className="surface flex flex-col gap-3 p-3">
       <Input
@@ -139,14 +134,6 @@ export function IncidentFilterBar({
             <option key={l.id} value={l.id}>{l.name}{l.archived ? ' (בארכיון)' : ''}</option>
           ))}
         </Select>
-        <label className="flex items-center gap-2 rounded-lg border border-hairline-strong px-3 text-sm">
-          <input
-            type="checkbox"
-            checked={value.overdueOnly}
-            onChange={(e) => onChange({ ...value, overdueOnly: e.target.checked })}
-          />
-          באיחור בלבד
-        </label>
         {extra}
       </div>
       {chips.length > 0 && (
@@ -179,7 +166,6 @@ export function IncidentFilterBar({
                 search: value.search,
                 status: [],
                 severity: [],
-                overdueOnly: false,
               })
             }
           >

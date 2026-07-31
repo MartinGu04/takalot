@@ -2,9 +2,8 @@ import { useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { reopenIncidentSchema, type ReopenIncidentInput } from '../../domain/schemas';
 import { useProfiles } from '../../data/hooks';
-import { Dialog, Field, Input, Textarea, Button } from '../ui';
+import { Dialog, Field, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
-import { isoToLocalInput, localInputToIso } from '../../lib/time';
 
 export function ReopenDialog({
   open,
@@ -23,7 +22,6 @@ export function ReopenDialog({
   const [reason, setReason] = useState('');
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
   const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
-  const [nextUpdateDue, setNextUpdateDue] = useState(isoToLocalInput(new Date(Date.now() + 3600_000).toISOString()));
   const [error, setError] = useState<string | undefined>();
 
   const handleClose = () => {
@@ -36,7 +34,6 @@ export function ReopenDialog({
     const parsed = reopenIncidentSchema.safeParse({
       expectedVersion: incident.version,
       reason,
-      nextUpdateDue: localInputToIso(nextUpdateDue),
       ownerUserId: ownerUserId || null,
       ownerExternalName: ownerExternalName || null,
     });
@@ -60,9 +57,6 @@ export function ReopenDialog({
           onChangeInternal={setOwnerUserId}
           onChangeExternal={setOwnerExternalName}
         />
-        <Field label="צפי לעדכון הבא" required>
-          {(a) => <Input {...a} type="datetime-local" value={nextUpdateDue} onChange={(e) => setNextUpdateDue(e.target.value)} />}
-        </Field>
         {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="secondary" onClick={handleClose}>ביטול</Button>

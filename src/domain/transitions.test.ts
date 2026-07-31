@@ -57,10 +57,18 @@ describe('status transitions', () => {
   });
 
   describe('waiting_equipment / waiting_information / waiting_validation (Chapter 2)', () => {
-    it('are not reachable as a transition target from any status yet (backend gap, not a frontend omission)', () => {
+    it('waiting_information/waiting_validation are reachable targets (0028: מצב הטיפול\'s "בהמתנה" sub-reasons)', () => {
+      expect(canTransition('in_progress', 'waiting_information')).toBe(true);
+      expect(canTransition('monitoring', 'waiting_validation')).toBe(true);
+      expect(canTransition('waiting_external', 'waiting_information')).toBe(true);
+    });
+
+    it('waiting_equipment is NOT a reachable target -- not one of the three named "בהמתנה" reasons', () => {
       expect(canTransition('in_progress', 'waiting_equipment')).toBe(false);
+    });
+
+    it('new\'s own explicit target list is unaffected by the 0028 widening', () => {
       expect(canTransition('new', 'waiting_information')).toBe(false);
-      expect(canTransition('monitoring', 'waiting_validation')).toBe(false);
     });
 
     it('still allow outgoing transitions to every normal active target, matching any other non-terminal status', () => {

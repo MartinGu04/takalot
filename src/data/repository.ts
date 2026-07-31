@@ -62,7 +62,6 @@ export interface IncidentFilters {
   ownerUserId?: string;
   systemId?: string;
   locationId?: string;
-  overdueOnly?: boolean;
   reportedToOps?: ReportedToOps;
   createdFrom?: string; // ISO
   createdTo?: string; // ISO

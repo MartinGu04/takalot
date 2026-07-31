@@ -34,8 +34,8 @@ async function loginAs(userTestId: string) {
 }
 
 // Seeded incidents relevant to these assertions (see src/data/local/seed.ts):
-//   inc-1: critical, in_progress, overdue        -> needsAttention
-//   inc-2: high,     in_progress, not overdue    -> openRest, counted in criticalOrHigh
+//   inc-1: critical, in_progress        -> needsAttention
+//   inc-2: high,     in_progress        -> openRest, counted in criticalOrHigh
 //   inc-5: high,     closed 44h ago
 //   inc-6: medium,   closed 60h ago
 // Open count across the full seed is 6 (inc-1,2,3,4,7,8).
@@ -44,19 +44,18 @@ const INC2_TEXT = /עיכוב בקבלת נתונים בעמדת הבקרה/;
 const INC3_TEXT = /מערכת גמא עובדת במצב גיבוי/;
 
 describe('top metrics reflect the real seeded data', () => {
-  it('shows open / critical-or-high / overdue counts grounded in the seed, on three equally interactive KPI cards', async () => {
+  it('shows open / critical-or-high counts grounded in the seed, on two equally interactive KPI cards', async () => {
     await loginAs('login-u-admin');
     const open = within(main()).getByRole('button', { name: /^תקלות פתוחות: 6\./ });
     const criticalHigh = within(main()).getByRole('button', { name: /^קריטיות \/ גבוהות: 2\./ });
-    const overdue = within(main()).getByRole('button', { name: /^עדכונים באיחור: 1\./ });
 
-    // All three KPI cards are real <button> elements -- equally interactive,
-    // not just a single primary one.
-    for (const btn of [open, criticalHigh, overdue]) {
+    // Both KPI cards are real <button> elements -- equally interactive, not
+    // just a single primary one. The former third ("עדכונים באיחור") card
+    // was removed along with the next-update-ETA concept -- no replacement.
+    for (const btn of [open, criticalHigh]) {
       expect(btn.tagName).toBe('BUTTON');
     }
-    expect(overdue).toHaveClass('border-yellow-300', 'dark:border-yellow-700');
-    expect(overdue).not.toHaveClass('border-orange-200', 'dark:border-orange-800');
+    expect(screen.queryByRole('button', { name: /עדכונים באיחור/ })).not.toBeInTheDocument();
   });
 });
 
@@ -84,16 +83,6 @@ describe('KPI card popups: each opens the shared IncidentListDialog with the cor
     expect(within(dialog).getByText('גבוהה')).toBeInTheDocument();
   });
 
-  it('"עדכונים באיחור" opens a dialog limited to incidents currently overdue for an update (1, not all 6 open)', async () => {
-    const user = await loginAs('login-u-admin');
-    await user.click(within(main()).getByRole('button', { name: /^עדכונים באיחור: 1\./ }));
-    const dialog = await screen.findByRole('dialog', { name: 'עדכונים באיחור (1)' });
-    const numberLinks = within(dialog)
-      .getAllByRole('link')
-      .filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
-    expect(numberLinks.length).toBe(1);
-  });
-
   it('only one popup is open at a time, and closing returns to the plain dashboard', async () => {
     const user = await loginAs('login-u-admin');
     await user.click(within(main()).getByRole('button', { name: /^תקלות פתוחות: 6\./ }));
@@ -101,8 +90,8 @@ describe('KPI card popups: each opens the shared IncidentListDialog with the cor
     await user.click(screen.getByRole('button', { name: 'סגירת החלון' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    await user.click(within(main()).getByRole('button', { name: /^עדכונים באיחור: 1\./ }));
-    expect(await screen.findByRole('dialog', { name: 'עדכונים באיחור (1)' })).toBeInTheDocument();
+    await user.click(within(main()).getByRole('button', { name: /^קריטיות \/ גבוהות: 2\./ }));
+    expect(await screen.findByRole('dialog', { name: 'תקלות קריטיות / גבוהות (2)' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'תקלות פתוחות (6)' })).not.toBeInTheDocument();
   });
 });
@@ -187,12 +176,10 @@ describe('information architecture: urgent, open, recently-closed', () => {
 });
 
 describe('critical-severity visual marker', () => {
-  it('gives the critical+overdue incident the critical accent (red takes precedence), and a plain open incident none', async () => {
+  it('gives the critical incident the critical accent, and a plain open incident none', async () => {
     await loginAs('login-u-admin');
-    // inc-1 is both critical and overdue -- the critical (red) treatment must win.
     const criticalCard = within(main()).getByText(INC1_TEXT).closest('a.incident-card') as HTMLElement;
     expect(criticalCard.className).toMatch(/incident-card-accent-critical/);
-    expect(criticalCard.className).not.toMatch(/incident-card-accent-overdue/);
 
     const plainCard = within(main()).getByText(INC3_TEXT).closest('a.incident-card') as HTMLElement;
     expect(plainCard.className).not.toMatch(/incident-card-accent/);
@@ -200,7 +187,7 @@ describe('critical-severity visual marker', () => {
 });
 
 describe('incident card content and structure', () => {
-  it('shows main content (number, severity, description, next-update state) and metadata (status, handler, last-updated) for a card', async () => {
+  it('shows main content (number, severity, description) and metadata (status, handler, last-updated) for a card', async () => {
     await loginAs('login-u-admin');
     const card = within(main()).getByText(INC1_TEXT).closest('a.incident-card') as HTMLElement;
     const cardScope = within(card);

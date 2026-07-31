@@ -99,6 +99,8 @@ export const eventTypeLabels: Record<EventType, string> = {
 
 export const notificationTypeLabels: Record<NotificationType, string> = {
   incident_assigned: 'תקלה הוקצתה אליך',
+  // Historical only -- no new row of this type is ever written; kept for
+  // read compatibility with hosted databases (see NotificationType).
   update_overdue: 'עבר מועד העדכון',
   incident_reopened: 'תקלה נפתחה מחדש',
   handover_pending: 'העברת משמרת ממתינה לאישורך',
@@ -109,7 +111,12 @@ export const fieldLabels: Record<string, string> = {
   severity: 'חומרה',
   operational_impact: 'השפעה מבצעית',
   owner: 'גורם מטפל',
+  // next_update_due/no_deadline_reason: the next-update-ETA concept was
+  // removed from creation/update/reopen (no longer an active question the
+  // product asks), but these labels stay -- historical deadline_change
+  // timeline events from before the removal still render through them.
   next_update_due: 'צפי לעדכון הבא',
   reported_to_ops: 'דווח למבצעים',
   reported_to_ops_recipient: 'למי דווח',
+  current_status_text: 'סטטוס נוכחי',
 };

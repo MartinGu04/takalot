@@ -23,7 +23,7 @@ import { isOpen } from '../../domain/types';
 import { reportedToOpsLabels } from '../../domain/labels';
 import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
-import { isOverdue, sortByPriority } from '../../domain/overdue';
+import { sortByPriority } from '../../domain/overdue';
 import {
   assignIncidentSchema,
   cancelIncidentSchema,
@@ -923,8 +923,6 @@ export class LocalDemoRepository implements Repository {
     sort: IncidentSort = 'priority',
   ): Promise<Incident[]> {
     this.requireCap(session, 'view_all_incidents');
-    this.ensureOverdueNotifications();
-    const now = this.now();
     // Defensive copies: callers (React Query cache, test code) must not see
     // their previously-fetched objects mutate in place when a later write happens.
     let rows = this.db.incidents.map((i) => ({ ...i }));
@@ -936,7 +934,6 @@ export class LocalDemoRepository implements Repository {
     if (filters.ownerUserId) rows = rows.filter((i) => i.ownerUserId === filters.ownerUserId);
     if (filters.systemId) rows = rows.filter((i) => i.systemId === filters.systemId);
     if (filters.locationId) rows = rows.filter((i) => i.locationId === filters.locationId);
-    if (filters.overdueOnly) rows = rows.filter((i) => isOverdue(i, now));
     if (filters.reportedToOps) rows = rows.filter((i) => i.reportedToOps === filters.reportedToOps);
     if (filters.createdFrom) rows = rows.filter((i) => i.createdAt >= filters.createdFrom!);
     if (filters.createdTo) rows = rows.filter((i) => i.createdAt <= filters.createdTo!);
@@ -984,7 +981,7 @@ export class LocalDemoRepository implements Repository {
 
     switch (sort) {
       case 'priority':
-        return sortByPriority(rows, now);
+        return sortByPriority(rows);
       case 'newest':
         return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       case 'oldest':
@@ -1066,8 +1063,12 @@ export class LocalDemoRepository implements Repository {
       updatedAt: ts,
       updatedBy: actor.id,
       lastUpdateAt: ts,
-      nextUpdateDue: input.nextUpdateDue,
-      noDeadlineReason: input.nextUpdateDue ? null : (input.noDeadlineReason ?? '').trim() || null,
+      // The next-update-ETA concept is no longer an active question this
+      // form asks -- every new incident stores both as NULL. The columns
+      // themselves stay in the schema for historical incidents and for
+      // reopen_incident's own still-independent (and still optional) field.
+      nextUpdateDue: null,
+      noDeadlineReason: null,
       reportedToOps: input.reportedToOps,
       reportedToOpsRecipient:
         input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null,
@@ -1211,6 +1212,17 @@ export class LocalDemoRepository implements Repository {
       actionsTaken: input.actionsTaken.trim(),
       findings: input.findings.trim(),
       nextSteps: input.nextSteps.trim(),
+      currentStatusText: input.currentStatusText.trim() || null,
+      // Update-specific reporting: fresh answers about THIS update only --
+      // never derived from or written back onto the incident's own
+      // opening-time reportedToOps/reportedToComms/wisdomReported facts.
+      updateReportedToOps: input.updateReportedToOps === '' ? null : input.updateReportedToOps,
+      updateReportedToOpsRecipient:
+        input.updateReportedToOps === 'yes' ? (input.updateReportedToOpsRecipient ?? '').trim() || null : null,
+      updateReportedToComms: input.updateReportedToComms === '' ? null : input.updateReportedToComms === 'yes',
+      updateReportedToCommsRecipient:
+        input.updateReportedToComms === 'yes' ? (input.updateReportedToCommsRecipient ?? '').trim() || null : null,
+      updateWisdomReported: input.updateWisdomReported === '' ? null : input.updateWisdomReported === 'yes',
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
@@ -1224,7 +1236,7 @@ export class LocalDemoRepository implements Repository {
     // Protected-field diffs → dedicated events. Each shares the update's own
     // operationId and its user-selected eventTime -- mirroring update_incident
     // (migration 0026): only the 'update' row itself used to carry the actual
-    // event time, leaving these six silently stamped with "now" instead.
+    // event time, leaving these silently stamped with "now" instead.
     if (input.status !== incident.status) {
       this.addEvent(incidentId, 'status_change', actor.id, {
         field: 'status',
@@ -1248,15 +1260,6 @@ export class LocalDemoRepository implements Repository {
         incidentNumber: incident.number,
         before: JSON.stringify({ severity: incident.severity }),
         after: JSON.stringify({ severity: input.severity }),
-      });
-    }
-    if (input.operationalImpact.trim() !== incident.operationalImpact) {
-      this.addEvent(incidentId, 'impact_change', actor.id, {
-        field: 'operational_impact',
-        oldValue: incident.operationalImpact,
-        newValue: input.operationalImpact.trim(),
-        eventTime: input.eventTime,
-        operationId,
       });
     }
     const newOwnerLabel = this.ownerLabel(input.ownerUserId, input.ownerExternalName);
@@ -1284,42 +1287,22 @@ export class LocalDemoRepository implements Repository {
         });
       }
     }
-    if ((input.nextUpdateDue ?? null) !== incident.nextUpdateDue) {
-      this.addEvent(incidentId, 'deadline_change', actor.id, {
-        field: 'next_update_due',
-        oldValue: incident.nextUpdateDue,
-        newValue: input.nextUpdateDue,
-        note: input.nextUpdateDue ? null : `ללא צפי כרגע: ${(input.noDeadlineReason ?? '').trim()}`,
-        eventTime: input.eventTime,
-        operationId,
-      });
-    }
-    const newRecipient =
-      input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null;
-    if (input.reportedToOps !== incident.reportedToOps || newRecipient !== incident.reportedToOpsRecipient) {
-      this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
-        field: 'reported_to_ops_recipient',
-        oldValue: incident.reportedToOpsRecipient,
-        newValue: newRecipient,
-        note: `דווח למבצעים: ${reportedToOpsLabels[input.reportedToOps]}${newRecipient ? ` (${newRecipient})` : ''}`,
-        eventTime: input.eventTime,
-        operationId,
-      });
-    }
-
     incident.status = input.status;
     incident.severity = input.severity;
-    incident.operationalImpact = input.operationalImpact.trim();
+    // operational_impact is a creation-time opening fact only -- update_incident
+    // no longer revises it (historical values and impact_change events from
+    // before this PR remain readable, but no new ones are written).
     incident.ownerUserId = input.ownerUserId;
     incident.ownerExternalName = input.ownerUserId
       ? null
       : (input.ownerExternalName ?? '').trim() || null;
-    incident.nextUpdateDue = input.nextUpdateDue;
-    incident.noDeadlineReason = input.nextUpdateDue
-      ? null
-      : (input.noDeadlineReason ?? '').trim() || null;
-    incident.reportedToOps = input.reportedToOps;
-    incident.reportedToOpsRecipient = newRecipient;
+    // next_update_due / no_deadline_reason are left untouched -- the new
+    // update form never asks for either, so any existing (possibly legacy)
+    // value simply carries forward unchanged.
+    // incidents.reportedToOps/reportedToOpsRecipient are opening-time facts,
+    // frozen after creation -- this flow no longer reads or mutates them at
+    // all (see update-specific reporting on the IncidentUpdate row itself,
+    // above, and migration 0031's removal of the equivalent RPC mutation).
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
@@ -1357,6 +1340,14 @@ export class LocalDemoRepository implements Repository {
       actionsTaken: input.actionsTaken.trim(),
       findings: input.findings.trim(),
       nextSteps: input.nextSteps.trim(),
+      currentStatusText: input.currentStatusText.trim() || null,
+      // Technician updates carry no protected fields and no update-specific
+      // reporting -- this payload has no such keys at all.
+      updateReportedToOps: null,
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: null,
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: null,
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
@@ -1604,8 +1595,9 @@ export class LocalDemoRepository implements Repository {
     incident.ownerExternalName = input.ownerUserId
       ? null
       : (input.ownerExternalName ?? '').trim() || null;
-    incident.nextUpdateDue = input.nextUpdateDue;
-    incident.noDeadlineReason = null;
+    // next_update_due / no_deadline_reason are left untouched -- reopening
+    // no longer asks for a next-update expectation, so whatever
+    // close_incident last left them as simply carries forward.
     incident.reopenCount += 1;
     // Closure record stays in the timeline event; live fields reset so the
     // incident is fully open again.
@@ -1820,27 +1812,16 @@ export class LocalDemoRepository implements Repository {
 
   // --- notifications ---
 
-  private ensureOverdueNotifications(): void {
-    const now = this.now();
-    for (const inc of this.db.incidents) {
-      if (!isOpen(inc.status) || !inc.nextUpdateDue || !inc.ownerUserId) continue;
-      if (new Date(inc.nextUpdateDue).getTime() < now.getTime()) {
-        this.notify(
-          inc.ownerUserId,
-          'update_overdue',
-          `עבר מועד העדכון לתקלה ${inc.number}.`,
-          { incidentId: inc.id, dedupeKey: `overdue-${inc.id}-${inc.nextUpdateDue}` },
-        );
-      }
-    }
-    this.persist();
-  }
-
   async listNotifications(session: Session): Promise<AppNotification[]> {
     const actor = this.requireSession(session);
-    this.ensureOverdueNotifications();
     return this.db.notifications
       .filter((n) => n.userId === actor.id)
+      // 'update_overdue': the next-update-ETA concept was removed from the
+      // active product -- no new row of this type is ever written, but a
+      // historical row must not resurface in the active notification list
+      // or the unread badge (which derives its count from this same
+      // result). The row itself is preserved in storage, not deleted.
+      .filter((n) => n.type !== 'update_overdue')
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(({ dedupeKey: _dedupeKey, ...n }) => n);
   }

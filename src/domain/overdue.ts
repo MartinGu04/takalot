@@ -1,63 +1,30 @@
-// Overdue state is always calculated, never stored or manually selected.
+// Active-incident priority ordering. The next-update-ETA concept was
+// removed from the active product (creation/update/reopen no longer ask
+// for it, and no dashboard behavior is driven by it) -- severity is now
+// the sole ranking signal. No replacement SLA (e.g. "not updated in 24h")
+// is introduced here.
 import type { Incident } from './types';
-import { isOpen } from './types';
-
-export function isOverdue(incident: Incident, now: Date): boolean {
-  if (!isOpen(incident.status)) return false;
-  if (!incident.nextUpdateDue) return false;
-  return new Date(incident.nextUpdateDue).getTime() < now.getTime();
-}
-
-export function overdueMinutes(incident: Incident, now: Date): number {
-  if (!incident.nextUpdateDue) return 0;
-  return Math.floor((now.getTime() - new Date(incident.nextUpdateDue).getTime()) / 60000);
-}
-
-/** Human Hebrew phrasing, e.g. "העדכון באיחור של 18 דקות". */
-export function overdueText(incident: Incident, now: Date): string {
-  const minutes = overdueMinutes(incident, now);
-  if (minutes < 1) return 'העדכון באיחור';
-  if (minutes < 60) return `העדכון באיחור של ${minutes} דקות`;
-  const hours = Math.floor(minutes / 60);
-  const rem = minutes % 60;
-  if (hours < 24) {
-    return rem > 0
-      ? `העדכון באיחור של ${hours} שעות ו־${rem} דקות`
-      : `העדכון באיחור של ${hours} שעות`;
-  }
-  const days = Math.floor(hours / 24);
-  const remHours = hours % 24;
-  return remHours > 0
-    ? `העדכון באיחור של ${days} ימים ו־${remHours} שעות`
-    : `העדכון באיחור של ${days} ימים`;
-}
 
 /**
  * Default active-incident priority order:
- * 1. critical/high overdue
- * 2. other overdue (medium/low)
- * 3. remaining critical/high (not overdue)
- * 4. remaining active (medium/low, not overdue)
+ * 1. critical/high severity
+ * 2. everything else
  */
-export function priorityRank(incident: Incident, now: Date): number {
-  const overdue = isOverdue(incident, now);
+export function priorityRank(incident: Incident): number {
   const highSeverity = incident.severity === 'critical' || incident.severity === 'high';
-  if (overdue && highSeverity) return 0;
-  if (overdue) return 1;
-  if (highSeverity) return 2;
-  return 3;
+  return highSeverity ? 0 : 1;
 }
 
 /**
  * Sorts by the operational priority tier above; within a tier, newest
  * discovery time first (falling back to newest creation time to break an
  * exact tie). Opening/discovery time is only ever a tie-breaker inside an
- * already-established severity/overdue tier -- never the sole ordering rule.
+ * already-established severity tier -- never the sole ordering rule.
  */
-export function sortByPriority(incidents: Incident[], now: Date): Incident[] {
+export function sortByPriority(incidents: Incident[]): Incident[] {
   return [...incidents].sort((a, b) => {
-    const ra = priorityRank(a, now);
-    const rb = priorityRank(b, now);
+    const ra = priorityRank(a);
+    const rb = priorityRank(b);
     if (ra !== rb) return ra - rb;
     const da = new Date(a.discoveredAt).getTime();
     const db = new Date(b.discoveredAt).getTime();

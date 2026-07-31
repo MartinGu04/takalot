@@ -29,7 +29,6 @@ function filtersFromUrl(url: ReturnType<typeof useUrlState>): FilterState {
     ownerUserId: url.get('owner'),
     systemId: url.get('system'),
     locationId: url.get('location'),
-    overdueOnly: url.get('overdue') === '1',
   };
 }
 
@@ -99,7 +98,6 @@ export default function IncidentsPage() {
       owner: next.ownerUserId,
       system: next.systemId,
       location: next.locationId,
-      overdue: next.overdueOnly ? '1' : undefined,
       page: undefined,
     });
   };

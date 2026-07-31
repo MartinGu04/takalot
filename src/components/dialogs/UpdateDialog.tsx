@@ -1,7 +1,7 @@
 // Update dialog: full operational update (protected fields) or restricted
 // technician update, depending on the current user's role and capability.
 import { useState } from 'react';
-import type { Incident } from '../../domain/types';
+import type { Incident, ReportedToOps } from '../../domain/types';
 import { severityLabels, statusLabels, reportedToOpsLabels } from '../../domain/labels';
 import {
   updateIncidentSchema,
@@ -17,26 +17,25 @@ import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { isoToLocalInput, localInputToIso } from '../../lib/time';
 
-/** Statuses this dropdown must not offer as an update target.
- *  closed/reopened: reachable only through their own dedicated flows (long
- *  standing).
- *  cancelled: reachable only through its own dedicated flow, not yet
- *  exposed in any UI.
- *  waiting_equipment/waiting_information/waiting_validation: exist as enum
- *  values and are fully supported for reading/rendering/filtering, but the
- *  backend's is_valid_transition (migration 0017) does not yet allow
- *  transitioning into any of them from any status -- offering them here
- *  would present an option the backend always rejects. Temporary and
- *  pre-cutover: remove this exclusion once a backend PR extends
- *  is_valid_transition's target whitelist. */
-const NOT_YET_SELECTABLE_UPDATE_TARGETS = new Set([
-  'closed',
-  'reopened',
-  'cancelled',
-  'waiting_equipment',
-  'waiting_information',
-  'waiting_validation',
-]);
+/** מצב הטיפול -- the simplified three-state treatment model this dialog
+ *  offers for a full update. "בהמתנה" is a single UI category covering
+ *  three structured, backend-real sub-reasons (below); it has no enum
+ *  value of its own. */
+type TreatmentCategory = 'in_progress' | 'waiting' | 'monitoring' | 'other';
+
+const WAITING_REASONS: { value: Incident['status']; label: string }[] = [
+  { value: 'waiting_external', label: 'גורם חיצוני' },
+  { value: 'waiting_information', label: 'מידע או החלטה' },
+  { value: 'waiting_validation', label: 'בדיקה או אימות' },
+];
+const WAITING_STATUSES = new Set(WAITING_REASONS.map((r) => r.value));
+
+function treatmentCategory(status: Incident['status']): TreatmentCategory {
+  if (status === 'in_progress') return 'in_progress';
+  if (WAITING_STATUSES.has(status)) return 'waiting';
+  if (status === 'monitoring') return 'monitoring';
+  return 'other';
+}
 
 export function UpdateDialog({
   open,
@@ -62,18 +61,22 @@ export function UpdateDialog({
   const [actionsTaken, setActionsTaken] = useState('');
   const [findings, setFindings] = useState('');
   const [nextSteps, setNextSteps] = useState('');
+  const [currentStatusText, setCurrentStatusText] = useState('');
   const [status, setStatus] = useState(incident.status);
   const [severity, setSeverity] = useState(incident.severity);
-  const [operationalImpact, setOperationalImpact] = useState(incident.operationalImpact);
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
   const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
-  const [hasDeadline, setHasDeadline] = useState(!!incident.nextUpdateDue);
-  const [nextUpdateDue, setNextUpdateDue] = useState(
-    incident.nextUpdateDue ? isoToLocalInput(incident.nextUpdateDue) : isoToLocalInput(new Date(Date.now() + 4 * 3600_000).toISOString()),
-  );
-  const [noDeadlineReason, setNoDeadlineReason] = useState(incident.noDeadlineReason ?? '');
-  const [reportedToOps, setReportedToOps] = useState(incident.reportedToOps);
-  const [reportedToOpsRecipient, setReportedToOpsRecipient] = useState(incident.reportedToOpsRecipient ?? '');
+  // Update-specific reporting: three fresh questions about THIS update only
+  // -- deliberately never seeded from the incident's own opening-time
+  // reportedToOps/reportedToComms/wisdomReported facts, and always reset to
+  // an unanswered '' placeholder on open/close/reset, never a default like
+  // 'no'. See updateIncidentSchema (updateReportedToOps/updateReportedToComms/
+  // updateWisdomReported) for why '' is a distinct, required-to-resolve state.
+  const [updateReportedToOps, setUpdateReportedToOps] = useState<ReportedToOps | ''>('');
+  const [updateReportedToOpsRecipient, setUpdateReportedToOpsRecipient] = useState('');
+  const [updateReportedToComms, setUpdateReportedToComms] = useState<'yes' | 'no' | ''>('');
+  const [updateReportedToCommsRecipient, setUpdateReportedToCommsRecipient] = useState('');
+  const [updateWisdomReported, setUpdateWisdomReported] = useState<'yes' | 'no' | ''>('');
   const [changeReason, setChangeReason] = useState('');
   const [error, setError] = useState<string | undefined>();
 
@@ -82,16 +85,16 @@ export function UpdateDialog({
     setActionsTaken('');
     setFindings('');
     setNextSteps('');
+    setCurrentStatusText('');
     setStatus(incident.status);
     setSeverity(incident.severity);
-    setOperationalImpact(incident.operationalImpact);
     setOwnerUserId(incident.ownerUserId ?? '');
     setOwnerExternalName(incident.ownerExternalName ?? '');
-    setHasDeadline(!!incident.nextUpdateDue);
-    setNextUpdateDue(incident.nextUpdateDue ? isoToLocalInput(incident.nextUpdateDue) : isoToLocalInput(new Date(Date.now() + 4 * 3600_000).toISOString()));
-    setNoDeadlineReason(incident.noDeadlineReason ?? '');
-    setReportedToOps(incident.reportedToOps);
-    setReportedToOpsRecipient(incident.reportedToOpsRecipient ?? '');
+    setUpdateReportedToOps('');
+    setUpdateReportedToOpsRecipient('');
+    setUpdateReportedToComms('');
+    setUpdateReportedToCommsRecipient('');
+    setUpdateWisdomReported('');
     setChangeReason('');
     setError(undefined);
   };
@@ -103,16 +106,17 @@ export function UpdateDialog({
       actionsTaken,
       findings,
       nextSteps,
+      currentStatusText,
       status,
       severity,
-      operationalImpact,
       changeReason,
       ownerUserId: ownerUserId || null,
       ownerExternalName: ownerExternalName || null,
-      nextUpdateDue: hasDeadline ? localInputToIso(nextUpdateDue) : null,
-      noDeadlineReason: hasDeadline ? null : noDeadlineReason,
-      reportedToOps,
-      reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
+      updateReportedToOps,
+      updateReportedToOpsRecipient: updateReportedToOps === 'yes' ? updateReportedToOpsRecipient : null,
+      updateReportedToComms,
+      updateReportedToCommsRecipient: updateReportedToComms === 'yes' ? updateReportedToCommsRecipient : null,
+      updateWisdomReported,
     };
   }
   function buildTechInput() {
@@ -122,6 +126,7 @@ export function UpdateDialog({
       actionsTaken,
       findings,
       nextSteps,
+      currentStatusText,
     };
   }
 
@@ -173,6 +178,23 @@ export function UpdateDialog({
 
   if (!isFull && !isTechnician) return null;
 
+  const category = treatmentCategory(status);
+  // Reachability is always computed from the incident's OWN starting status
+  // (never from `status`, which may already have been changed by the user
+  // this session) -- these three checks mirror canTransition/is_valid_transition
+  // exactly, so the picker never offers a target the backend would reject.
+  const canInProgress = canTransition(incident.status, 'in_progress');
+  const canMonitoring = canTransition(incident.status, 'monitoring');
+  const reachableWaitingReasons = WAITING_REASONS.filter((r) => canTransition(incident.status, r.value));
+  const canWaiting = reachableWaitingReasons.length > 0;
+  // A hidden/legacy/internal status (anything outside this simplified
+  // three-category model, e.g. new/acknowledged/waiting_test/
+  // partial_readiness/resolved_pending_close/waiting_equipment/reopened) is
+  // never offered as a selector choice -- it's shown as separate read-only
+  // context instead, and the underlying status is left exactly as-is unless
+  // the user actively picks one of the reachable targets below.
+  const isLegacyCurrentStatus = treatmentCategory(incident.status) === 'other';
+
   return (
     <Dialog open={open} onClose={handleClose} title="עדכון תקלה" wide>
       <form
@@ -206,24 +228,56 @@ export function UpdateDialog({
         <Field label="פעולות המשך">
           {(a) => <Textarea {...a} value={nextSteps} onChange={(e) => setNextSteps(e.target.value)} maxLength={2000} />}
         </Field>
+        <Field label="סטטוס נוכחי" required hint="המצב המבצעי כרגע -- מה קורה עם התקלה ברגע זה.">
+          {(a) => (
+            <>
+              <Textarea
+                {...a}
+                value={currentStatusText}
+                onChange={(e) => setCurrentStatusText(e.target.value)}
+                maxLength={1000}
+                placeholder="לדוגמה: הצוות הטכני בדרך לאתר, ממתינים להערכת נזק."
+              />
+              <p className="text-left text-xs text-muted">{currentStatusText.length}/1000</p>
+            </>
+          )}
+        </Field>
 
         {isFull && (
           <>
+            {isLegacyCurrentStatus && (
+              <p className="text-sm text-muted">
+                סטטוס נוכחי: <strong>{statusLabels[incident.status]}</strong> (רישום קיים, אינו חלק ממודל מצב הטיפול המובנה)
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="סטטוס נוכחי" required>
+              <Field label="מצב הטיפול" required>
                 {(a) => (
-                  <Select {...a} value={status} onChange={(e) => setStatus(e.target.value as Incident['status'])}>
-                    {Object.entries(statusLabels)
-                      // The incident's OWN current status must always render
-                      // as an option (so a historical/externally-inserted
-                      // incident already in e.g. waiting_equipment still
-                      // shows a correctly selected dropdown) -- only a
-                      // DIFFERENT not-yet-selectable status is hidden as a
-                      // choice.
-                      .filter(([k]) => k === incident.status || !NOT_YET_SELECTABLE_UPDATE_TARGETS.has(k))
-                      .map(([k, v]) => (
-                        <option key={k} value={k}>{v}</option>
-                      ))}
+                  <Select
+                    {...a}
+                    value={category === 'other' ? '' : category}
+                    onChange={(e) => {
+                      const next = e.target.value as TreatmentCategory | '';
+                      if (next === 'waiting') {
+                        setStatus(
+                          reachableWaitingReasons.some((r) => r.value === status)
+                            ? status
+                            : reachableWaitingReasons[0].value,
+                        );
+                      } else if (next === 'in_progress' || next === 'monitoring') {
+                        setStatus(next);
+                      }
+                    }}
+                  >
+                    {/* Only shown while the current status hasn't been
+                        assigned to any of the three categories -- selecting
+                        (or leaving) this placeholder submits the incident's
+                        unchanged current status (a no-op update), never a
+                        coerced default. */}
+                    {category === 'other' && <option value="">— לבחירת מצב טיפול חדש —</option>}
+                    {canInProgress && <option value="in_progress">בטיפול</option>}
+                    {canWaiting && <option value="waiting">בהמתנה</option>}
+                    {canMonitoring && <option value="monitoring">במעקב</option>}
                   </Select>
                 )}
               </Field>
@@ -237,18 +291,17 @@ export function UpdateDialog({
                 )}
               </Field>
             </div>
-            <Field label="השפעה מבצעית" required>
-              {(a) => (
-                <Textarea
-                  {...a}
-                  rows={2}
-                  value={operationalImpact}
-                  onChange={(e) => setOperationalImpact(e.target.value)}
-                  maxLength={1000}
-                  placeholder="כיצד המצב הנוכחי משפיע על הפעילות, השירות או המשתמשים?"
-                />
-              )}
-            </Field>
+            {category === 'waiting' && (
+              <Field label="סיבת ההמתנה" required>
+                {(a) => (
+                  <Select {...a} value={status} onChange={(e) => setStatus(e.target.value as Incident['status'])}>
+                    {reachableWaitingReasons.map((r) => (
+                      <option key={r.value} value={r.value}>{r.label}</option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            )}
             <OwnerField
               profiles={profiles}
               ownerUserId={ownerUserId}
@@ -256,55 +309,85 @@ export function UpdateDialog({
               onChangeInternal={setOwnerUserId}
               onChangeExternal={setOwnerExternalName}
             />
-            <div className="rounded-xl border border-hairline p-3">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input type="checkbox" checked={hasDeadline} onChange={(e) => setHasDeadline(e.target.checked)} />
-                יש צפי לעדכון הבא
-              </label>
-              {hasDeadline ? (
-                <div className="mt-2">
-                  <Field label="צפי לעדכון הבא">
-                    {(a) => <Input {...a} type="datetime-local" value={nextUpdateDue} onChange={(e) => setNextUpdateDue(e.target.value)} />}
-                  </Field>
-                </div>
-              ) : (
-                <div className="mt-2">
-                  <Field label='נימוק ל"ללא צפי כרגע"' required>
-                    {(a) => <Input {...a} value={noDeadlineReason} onChange={(e) => setNoDeadlineReason(e.target.value)} />}
-                  </Field>
-                </div>
-              )}
-            </div>
-            <Field label="דווח למבצעים">
-              {(a) => (
-                <Select
-                  {...a}
-                  value={reportedToOps}
-                  onChange={(e) => {
-                    const next = e.target.value as Incident['reportedToOps'];
-                    setReportedToOps(next);
-                    if (next !== 'yes') setReportedToOpsRecipient('');
-                  }}
-                >
-                  {Object.entries(reportedToOpsLabels).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            {reportedToOps === 'yes' && (
-              <Field label="למי דווח?" required>
+            <div className="flex flex-col gap-3 border-t border-hairline pt-3">
+              <p className="text-xs text-muted">
+                דיווח בעדכון זה בלבד -- אינו נובע מפרטי הדיווח שנקבעו בעת פתיחת התקלה ואינו משנה אותם.
+              </p>
+              <Field label="דווח למבצעים?" required>
                 {(a) => (
-                  <Input
+                  <Select
                     {...a}
-                    value={reportedToOpsRecipient}
-                    onChange={(e) => setReportedToOpsRecipient(e.target.value)}
-                    placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
-                    maxLength={200}
-                  />
+                    value={updateReportedToOps}
+                    onChange={(e) => {
+                      const next = e.target.value as ReportedToOps | '';
+                      setUpdateReportedToOps(next);
+                      if (next !== 'yes') setUpdateReportedToOpsRecipient('');
+                    }}
+                  >
+                    <option value="">— בחירה —</option>
+                    {Object.entries(reportedToOpsLabels).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </Select>
                 )}
               </Field>
-            )}
+              {updateReportedToOps === 'yes' && (
+                <Field label="למי דווח? (מבצעים)" required>
+                  {(a) => (
+                    <Input
+                      {...a}
+                      value={updateReportedToOpsRecipient}
+                      onChange={(e) => setUpdateReportedToOpsRecipient(e.target.value)}
+                      placeholder="לדוגמה: אחמ״ש מוקד מבצעים / שם"
+                      maxLength={200}
+                    />
+                  )}
+                </Field>
+              )}
+              <Field label="האם דווח לתקשוב למבצעים?" required>
+                {(a) => (
+                  <Select
+                    {...a}
+                    value={updateReportedToComms}
+                    onChange={(e) => {
+                      const next = e.target.value as 'yes' | 'no' | '';
+                      setUpdateReportedToComms(next);
+                      if (next !== 'yes') setUpdateReportedToCommsRecipient('');
+                    }}
+                  >
+                    <option value="">— בחירה —</option>
+                    <option value="no">לא</option>
+                    <option value="yes">כן</option>
+                  </Select>
+                )}
+              </Field>
+              {updateReportedToComms === 'yes' && (
+                <Field label="למי דווח? (תקשוב למבצעים)" required>
+                  {(a) => (
+                    <Input
+                      {...a}
+                      value={updateReportedToCommsRecipient}
+                      onChange={(e) => setUpdateReportedToCommsRecipient(e.target.value)}
+                      placeholder="לדוגמה: תקשוב מוקד מבצעים / שם"
+                      maxLength={200}
+                    />
+                  )}
+                </Field>
+              )}
+              <Field label="האם עודכן ב-WISDOM?" required>
+                {(a) => (
+                  <Select
+                    {...a}
+                    value={updateWisdomReported}
+                    onChange={(e) => setUpdateWisdomReported(e.target.value as 'yes' | 'no' | '')}
+                  >
+                    <option value="">— בחירה —</option>
+                    <option value="no">לא</option>
+                    <option value="yes">כן</option>
+                  </Select>
+                )}
+              </Field>
+            </div>
             {(status !== incident.status || severity !== incident.severity) && (
               <Field label="נימוק לשינוי (מומלץ)">
                 {(a) => <Input {...a} value={changeReason} onChange={(e) => setChangeReason(e.target.value)} />}

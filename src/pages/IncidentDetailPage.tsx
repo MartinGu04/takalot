@@ -14,7 +14,7 @@ import {
 import { useAuth, useSession } from '../auth/AuthContext';
 import { isOpen } from '../domain/types';
 import { hasCapability, canTechnicianUpdate } from '../domain/permissions';
-import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, NextUpdateNote } from '../components/incident';
+import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay } from '../components/incident';
 import { Timeline } from '../components/Timeline';
 import { Button, EmptyState, ErrorState, Spinner, useToast } from '../components/ui';
 import { formatDateTime, formatDuration } from '../lib/time';
@@ -223,8 +223,6 @@ export default function IncidentDetailPage() {
     | { correction: { refId: string; label: string } }
   >(null);
 
-  const now = new Date();
-
   const refreshAll = () => {
     refetch();
     refetchEvents();
@@ -357,8 +355,6 @@ export default function IncidentDetailPage() {
           <StatusBadge status={incident.status} />
         </div>
       </div>
-
-      <NextUpdateNote incident={incident} now={now} />
 
       {incident.followUpRequired && !incident.followUpCompletedAt && (
         <div className="mt-3 rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">

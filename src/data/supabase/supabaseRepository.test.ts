@@ -309,3 +309,102 @@ describe('SupabaseRepository.getIncidentEvents: operation_id mapping', () => {
     expect(events[0].operationId).toBeNull();
   });
 });
+
+describe('SupabaseRepository.listNotifications: excludes historical update_overdue rows', () => {
+  function fakeNotificationsClient(rows: Record<string, unknown>[]) {
+    const neqCalls: [string, unknown][] = [];
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      neq: (col: string, val: unknown) => {
+        neqCalls.push([col, val]);
+        return builder;
+      },
+      order: async () => ({ data: rows, error: null }),
+    };
+    return { client: { from: () => builder }, neqCalls };
+  }
+
+  it('filters update_overdue at the query level (never fetched as an active row)', async () => {
+    const { client, neqCalls } = fakeNotificationsClient([
+      {
+        id: 'n1',
+        user_id: session.userId,
+        type: 'incident_assigned',
+        incident_id: 'i1',
+        handover_id: null,
+        text: 'תקלה הוקצתה אליך',
+        read: false,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const repo = new SupabaseRepository(client as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    const result = await repo.listNotifications(session);
+
+    expect(neqCalls).toContainEqual(['type', 'update_overdue']);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('incident_assigned');
+  });
+});
+
+// Update-specific reporting (migration 0031): getIncidentUpdates must map
+// the five new incident_updates columns through to IncidentUpdate exactly,
+// including a historical/legacy row where every one of them is null.
+describe('SupabaseRepository.getIncidentUpdates: update-specific reporting mapping', () => {
+  function repoWithUpdatesQuery(rows: Record<string, unknown>[]): SupabaseRepository {
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      order: () => Promise.resolve({ data: rows, error: null }),
+    };
+    const fakeClient = { from: () => builder };
+    return new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+  }
+
+  const baseRow = {
+    id: 'upd-1',
+    incident_id: 'inc-1',
+    author_id: 'u1',
+    event_time: '2026-01-01T00:00:00Z',
+    server_time: '2026-01-01T00:00:00Z',
+    actions_taken: 'נבדק',
+    findings: '',
+    next_steps: '',
+    current_status_text: null,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('maps all three reporting answers when fully answered', async () => {
+    const repo = repoWithUpdatesQuery([{
+      ...baseRow,
+      update_reported_to_ops: 'yes',
+      update_reported_to_ops_recipient: 'יוסי מהמוקד',
+      update_reported_to_comms: true,
+      update_reported_to_comms_recipient: 'דנה מהתקשוב',
+      update_wisdom_reported: true,
+    }]);
+    const updates = await repo.getIncidentUpdates(session, 'inc-1');
+    expect(updates[0].updateReportedToOps).toBe('yes');
+    expect(updates[0].updateReportedToOpsRecipient).toBe('יוסי מהמוקד');
+    expect(updates[0].updateReportedToComms).toBe(true);
+    expect(updates[0].updateReportedToCommsRecipient).toBe('דנה מהתקשוב');
+    expect(updates[0].updateWisdomReported).toBe(true);
+  });
+
+  it('maps a historical row (all five columns null) through without error', async () => {
+    const repo = repoWithUpdatesQuery([{
+      ...baseRow,
+      update_reported_to_ops: null,
+      update_reported_to_ops_recipient: null,
+      update_reported_to_comms: null,
+      update_reported_to_comms_recipient: null,
+      update_wisdom_reported: null,
+    }]);
+    const updates = await repo.getIncidentUpdates(session, 'inc-1');
+    expect(updates[0].updateReportedToOps).toBeNull();
+    expect(updates[0].updateReportedToOpsRecipient).toBeNull();
+    expect(updates[0].updateReportedToComms).toBeNull();
+    expect(updates[0].updateReportedToCommsRecipient).toBeNull();
+    expect(updates[0].updateWisdomReported).toBeNull();
+  });
+});

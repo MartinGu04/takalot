@@ -41,7 +41,7 @@ import type {
   Repository,
   Session,
 } from '../repository';
-import { isOverdue, sortByPriority } from '../../domain/overdue';
+import { sortByPriority } from '../../domain/overdue';
 
 // Maps a failed delete-user Edge Function invocation to an AppError. The
 // function's response body is JSON ({ error, message, retryable? }); a
@@ -458,11 +458,9 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await q.limit(500);
     wrap(error);
     let rows = (data ?? []).map(mapIncident);
-    const now = new Date();
-    if (filters.overdueOnly) rows = rows.filter((i) => isOverdue(i, now));
     switch (sort) {
       case 'priority':
-        return sortByPriority(rows, now);
+        return sortByPriority(rows);
       case 'newest':
         return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       case 'oldest':
@@ -534,6 +532,12 @@ export class SupabaseRepository implements Repository {
       actionsTaken: r.actions_taken,
       findings: r.findings,
       nextSteps: r.next_steps,
+      currentStatusText: r.current_status_text,
+      updateReportedToOps: r.update_reported_to_ops,
+      updateReportedToOpsRecipient: r.update_reported_to_ops_recipient,
+      updateReportedToComms: r.update_reported_to_comms,
+      updateReportedToCommsRecipient: r.update_reported_to_comms_recipient,
+      updateWisdomReported: r.update_wisdom_reported,
       createdAt: r.created_at,
     }));
   }
@@ -717,6 +721,12 @@ export class SupabaseRepository implements Repository {
       .from('notifications')
       .select('*')
       .eq('user_id', session.userId)
+      // 'update_overdue': the next-update-ETA concept was removed from the
+      // active product -- no new row of this type is ever written, but a
+      // hosted database may still contain historical rows. Excluded from
+      // the active list (and therefore the unread badge, which derives its
+      // count from this same result) without deleting the row itself.
+      .neq('type', 'update_overdue')
       .order('created_at', { ascending: false });
     wrap(error);
     return (data ?? []).map((r) => ({

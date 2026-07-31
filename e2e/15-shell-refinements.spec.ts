@@ -120,41 +120,42 @@ test.describe('notification popover stays inside the viewport', () => {
 });
 
 test.describe('dashboard KPI responsive layout', () => {
-  test('all three KPI cards stack at equal full width on mobile', async ({ page }) => {
+  // The former third card ("עדכונים באיחור") was removed along with the
+  // next-update-ETA concept -- no replacement KPI, no disabled placeholder.
+  // The remaining two cards were rebalanced to fill the row cleanly.
+  test('both KPI cards stack at equal full width on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });
     await loginAs(page, DEMO_USERS.supervisor1);
 
+    await expect(page.getByRole('button', { name: /עדכונים באיחור/ })).toHaveCount(0);
+
     const primary = page.getByRole('button', { name: 'תקלות פתוחות' });
     const critical = page.getByText('קריטיות / גבוהות').locator('..').locator('..');
-    const overdueStat = page.getByText('עדכונים באיחור', { exact: true }).locator('..').locator('..');
 
     const primaryBox = await primary.boundingBox();
     const criticalBox = await critical.boundingBox();
-    const overdueBox = await overdueStat.boundingBox();
-    expect(primaryBox && criticalBox && overdueBox).toBeTruthy();
-    if (primaryBox && criticalBox && overdueBox) {
-      // The approved mobile dashboard uses one full-width column for all
-      // three operational KPI cards.
+    expect(primaryBox && criticalBox).toBeTruthy();
+    if (primaryBox && criticalBox) {
+      // The approved mobile dashboard uses one full-width column for both
+      // remaining operational KPI cards.
       expect(primaryBox.width).toBeCloseTo(criticalBox.width, 0);
-      expect(criticalBox.width).toBeCloseTo(overdueBox.width, 0);
       expect(criticalBox.y).toBeGreaterThan(primaryBox.y);
-      expect(overdueBox.y).toBeGreaterThan(criticalBox.y);
     }
   });
 
-  test('desktop: the three metric cards have equal physical dimensions (width and height)', async ({ page }) => {
+  test('desktop: the two metric cards have equal physical dimensions (width and height), filling the row', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAs(page, DEMO_USERS.supervisor1);
 
     const primaryBox = await page.getByRole('button', { name: 'תקלות פתוחות' }).boundingBox();
     const criticalBox = await page.getByText('קריטיות / גבוהות').locator('..').locator('..').boundingBox();
-    const overdueBox = await page.getByText('עדכונים באיחור', { exact: true }).locator('..').locator('..').boundingBox();
-    expect(primaryBox && criticalBox && overdueBox).toBeTruthy();
-    if (primaryBox && criticalBox && overdueBox) {
+    expect(primaryBox && criticalBox).toBeTruthy();
+    if (primaryBox && criticalBox) {
       expect(primaryBox.width).toBeCloseTo(criticalBox.width, 0);
-      expect(criticalBox.width).toBeCloseTo(overdueBox.width, 0);
       expect(primaryBox.height).toBeCloseTo(criticalBox.height, 0);
-      expect(criticalBox.height).toBeCloseTo(overdueBox.height, 0);
+      // Two cards now fill what used to be a three-card row -- each is
+      // noticeably wider than the old third-of-row share.
+      expect(primaryBox.x).not.toBeCloseTo(criticalBox.x, 0);
     }
   });
 });

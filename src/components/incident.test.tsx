@@ -1,9 +1,9 @@
-// IncidentCard: focused unit tests for the critical-vs-overdue visual
-// distinction (independent of any specific seeded data).
+// IncidentCard: focused unit tests for the critical-severity visual
+// accent (independent of any specific seeded data).
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { IncidentCard, NextUpdateNote, StatusBadge } from './incident';
+import { IncidentCard, StatusBadge } from './incident';
 import { statusLabels } from '../domain/labels';
 import type { Incident, IncidentStatus } from '../domain/types';
 
@@ -62,32 +62,14 @@ function renderCard(incident: Incident) {
   return screen.getByRole('link').className;
 }
 
-describe('IncidentCard: critical vs overdue are visually distinct, never conflated', () => {
-  it('a critical, non-overdue incident gets the critical (red) accent, not the overdue one', () => {
+describe('IncidentCard: critical-severity accent', () => {
+  it('a critical incident gets the critical (red) accent', () => {
     const className = renderCard(makeIncident({ severity: 'critical' }));
     expect(className).toMatch(/incident-card-accent-critical/);
-    expect(className).not.toMatch(/incident-card-accent-overdue/);
   });
 
-  it('an overdue, non-critical incident gets the overdue (amber) accent, not the critical one', () => {
-    const className = renderCard(makeIncident({ severity: 'medium', nextUpdateDue: '2026-01-10T10:00:00.000Z' }));
-    expect(className).toMatch(/incident-card-accent-overdue/);
-    expect(className).not.toMatch(/incident-card-accent-critical/);
-  });
-
-  it('a critical AND overdue incident gets only the critical treatment (critical takes precedence)', () => {
-    const className = renderCard(makeIncident({ severity: 'critical', nextUpdateDue: '2026-01-10T10:00:00.000Z' }));
-    expect(className).toMatch(/incident-card-accent-critical/);
-    expect(className).not.toMatch(/incident-card-accent-overdue/);
-  });
-
-  it('a plain incident (neither critical nor overdue) gets no accent class at all', () => {
+  it('a non-critical incident gets no accent class at all', () => {
     const className = renderCard(makeIncident({ severity: 'high' }));
-    expect(className).not.toMatch(/incident-card-accent/);
-  });
-
-  it('high severity alone (not overdue) does not trigger any accent', () => {
-    const className = renderCard(makeIncident({ severity: 'high', nextUpdateDue: '2026-01-10T18:00:00.000Z' }));
     expect(className).not.toMatch(/incident-card-accent/);
   });
 });
@@ -106,39 +88,6 @@ describe('StatusBadge: Chapter 2 statuses render a label without throwing', () =
       expect(screen.getByText(statusLabels[status])).toBeInTheDocument();
     });
   }
-});
-
-function incidentWithoutDeadline(noDeadlineReason: string | null): Incident {
-  return {
-    status: 'in_progress',
-    nextUpdateDue: null,
-    noDeadlineReason,
-  } as Incident;
-}
-
-describe('NextUpdateNote without a deadline', () => {
-  it('does not repeat the generic label when legacy data stores it as the reason', () => {
-    render(
-      <NextUpdateNote
-        incident={incidentWithoutDeadline('  ללא צפי כרגע  ')}
-        now={new Date('2026-07-30T00:00:00.000Z')}
-      />,
-    );
-
-    expect(screen.getByText('ללא צפי כרגע', { exact: true })).toBeInTheDocument();
-    expect(screen.queryByText('ללא צפי כרגע — ללא צפי כרגע')).not.toBeInTheDocument();
-  });
-
-  it('keeps a genuine explanation after the generic label', () => {
-    render(
-      <NextUpdateNote
-        incident={incidentWithoutDeadline('  ממתין לבירור מול ספק  ')}
-        now={new Date('2026-07-30T00:00:00.000Z')}
-      />,
-    );
-
-    expect(screen.getByText('ללא צפי כרגע — ממתין לבירור מול ספק')).toBeInTheDocument();
-  });
 });
 
 // ---------------------------------------------------------------------------

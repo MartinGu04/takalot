@@ -13,13 +13,17 @@ test('technician sees an assigned incident, adds a permitted technical update, b
   await expect(page.getByRole('button', { name: 'סגירת תקלה' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'שינוי גורם מטפל' })).toHaveCount(0);
 
-  // Technical update is permitted and does not expose protected fields.
+  // Technical update is permitted and does not expose protected fields --
+  // the structured "מצב הטיפול" control and severity stay full-update-only.
+  // The new free-text "סטטוס נוכחי" field, however, is required for BOTH
+  // full and technician updates.
   await page.getByRole('button', { name: 'עדכון תקלה' }).click();
   const dialog = page.getByRole('dialog', { name: 'עדכון תקלה' });
-  await expect(dialog.getByLabel('סטטוס נוכחי')).toHaveCount(0);
+  await expect(dialog.getByLabel('מצב הטיפול')).toHaveCount(0);
   await expect(dialog.getByLabel('חומרה')).toHaveCount(0);
   await dialog.getByLabel('פעולות שבוצעו מאז העדכון הקודם').fill('בדיקה טכנית נוספת בוצעה על ידי הטכנאי');
   await dialog.getByLabel('ממצאים').fill('לא נמצאו ממצאים חדשים');
+  await dialog.getByLabel('סטטוס נוכחי').fill('הטכנאי באתר, ממשיך בבדיקה.');
   await dialog.locator('form button[type="submit"]').click();
 
   await expect(page.getByText('העדכון נשמר')).toBeVisible();

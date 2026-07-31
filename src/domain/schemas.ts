@@ -1,6 +1,5 @@
 // Zod schemas shared by forms (client) and the data layer (server-side style validation).
 import { z } from 'zod';
-import { meaningfulNoDeadlineReason } from './deadline';
 
 /** Reject empty or whitespace-only values. */
 const nonBlank = (max: number, label: string) =>
@@ -97,8 +96,6 @@ export const createIncidentSchema = z
     status: statusSchema.refine((s) => CREATABLE_STATUSES.has(s), {
       message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
     }),
-    nextUpdateDue: z.string().nullable(),
-    noDeadlineReason: z.string().max(500).nullable(),
     ...ownerFields,
     ...reportedToOpsFields,
     // Opening-time-only questions -- both plain booleans (unlike
@@ -137,13 +134,6 @@ export const createIncidentSchema = z
         message: 'לא ניתן לקבוע גורם חיצוני כבעל אחריות בעת פתיחת תקלה',
       });
     }
-    if (!data.nextUpdateDue && !meaningfulNoDeadlineReason(data.noDeadlineReason)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['nextUpdateDue'],
-        message: 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
-      });
-    }
     checkReportedToOpsRecipient(data, ctx);
     if (data.reportedToComms && !(data.reportedToCommsRecipient ?? '').trim()) {
       ctx.addIssue({
@@ -170,14 +160,32 @@ export const updateIncidentSchema = z
     actionsTaken: nonBlank(4000, 'פעולות שבוצעו'),
     findings: optionalText(4000, 'ממצאים'),
     nextSteps: optionalText(2000, 'פעולות המשך'),
+    // מצב הטיפול -- the structured treatment-state selector. Still the
+    // full IncidentStatus enum server-side (statusSchema), narrowed only by
+    // what the update UI actually offers (UpdateDialog's own target set).
     status: statusSchema,
     severity: severitySchema,
-    operationalImpact: nonBlank(1000, 'השפעה מבצעית'),
+    // סטטוס נוכחי -- the free-text situational description at the moment
+    // of this update. Required in the new update UI; replaces the purpose
+    // operationalImpact used to serve here (that field is now creation-only,
+    // see createIncidentSchema).
+    currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
     changeReason: z.string().max(500).optional().default(''),
-    nextUpdateDue: z.string().nullable(),
-    noDeadlineReason: z.string().max(500).nullable(),
     ...ownerFields,
-    ...reportedToOpsFields,
+    // Update-specific reporting -- three fresh questions about THIS update
+    // only, deliberately distinct payload keys from the incident-level
+    // reportedToOps/reportedToOpsRecipient (reportedToOpsFields, above):
+    // this update flow no longer reads or mutates those opening-time
+    // fields at all (see update_incident, migration 0031). Each answer
+    // starts as '' (not yet answered) in the UI and is required -- the
+    // union with the empty-string literal is what lets this schema reject
+    // an unanswered question with a clear message instead of silently
+    // treating "" as a legitimate enum member.
+    updateReportedToOps: z.union([reportedToOpsSchema, z.literal('')]),
+    updateReportedToOpsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable().optional(),
+    updateReportedToComms: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
+    updateReportedToCommsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable().optional(),
+    updateWisdomReported: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
   })
   .superRefine((data, ctx) => {
     if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
@@ -187,14 +195,39 @@ export const updateIncidentSchema = z
         message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
       });
     }
-    if (!data.nextUpdateDue && !meaningfulNoDeadlineReason(data.noDeadlineReason)) {
+    if (data.updateReportedToOps === '') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['nextUpdateDue'],
-        message: 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
+        path: ['updateReportedToOps'],
+        message: 'יש לענות האם דווח למבצעים בעדכון זה',
+      });
+    } else if (data.updateReportedToOps === 'yes' && !(data.updateReportedToOpsRecipient ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToOpsRecipient'],
+        message: 'יש להזין למי דווח (מבצעים)',
       });
     }
-    checkReportedToOpsRecipient(data, ctx);
+    if (data.updateReportedToComms === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToComms'],
+        message: 'יש לענות האם דווח לתקשוב למבצעים בעדכון זה',
+      });
+    } else if (data.updateReportedToComms === 'yes' && !(data.updateReportedToCommsRecipient ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateReportedToCommsRecipient'],
+        message: 'יש להזין למי דווח (תקשוב למבצעים)',
+      });
+    }
+    if (data.updateWisdomReported === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['updateWisdomReported'],
+        message: 'יש לענות האם עודכן ב-WISDOM בעדכון זה',
+      });
+    }
   });
 
 export type UpdateIncidentInput = z.infer<typeof updateIncidentSchema>;
@@ -206,6 +239,7 @@ export const technicianUpdateSchema = z.object({
   actionsTaken: nonBlank(4000, 'פעולות שבוצעו'),
   findings: optionalText(4000, 'ממצאים'),
   nextSteps: optionalText(2000, 'הצעות להמשך'),
+  currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
 });
 
 export type TechnicianUpdateInput = z.infer<typeof technicianUpdateSchema>;
@@ -246,7 +280,6 @@ export const reopenIncidentSchema = z
   .object({
     expectedVersion: z.number(),
     reason: nonBlank(2000, 'סיבת הפתיחה מחדש'),
-    nextUpdateDue: z.string().min(1, 'יש להזין צפי לעדכון הבא'),
     ...ownerFields,
   })
   .superRefine((data, ctx) => {
