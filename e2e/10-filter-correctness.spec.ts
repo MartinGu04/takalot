@@ -1,6 +1,6 @@
 // Regression coverage for: active-incidents filters silently failing to
 // apply (severity, owner, and — since they all shared the same broken
-// setFilters implementation — status/system/location/overdue too). Traces
+// setFilters implementation — status/system/location too). Traces
 // UI -> URL state -> query -> displayed results for each filter.
 import { test, expect } from '@playwright/test';
 import { loginAs, DEMO_USERS } from './helpers';
@@ -60,14 +60,4 @@ test('system filter changes the displayed results and the URL', async ({ page })
   await expect(page).toHaveURL(/system=/);
   await expect(page).toHaveURL(/severity=medium/);
   await expect(page.getByRole('link', { name: /2026-003/ })).toBeVisible();
-});
-
-test('overdue-only filter changes the displayed results and the URL', async ({ page }) => {
-  await loginAs(page, DEMO_USERS.supervisor1);
-  await page.goto('/incidents');
-  await page.getByRole('checkbox', { name: 'באיחור בלבד' }).check();
-
-  await expect(page).toHaveURL(/overdue=1/);
-  await expect(page.getByRole('link', { name: /2026-001/ })).toBeVisible(); // overdue
-  await expect(page.getByRole('link', { name: /2026-002/ })).toHaveCount(0); // not overdue
 });

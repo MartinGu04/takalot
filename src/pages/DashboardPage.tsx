@@ -8,7 +8,7 @@ import type { Incident } from '../domain/types';
 import { IncidentCard, StatusBadge } from '../components/incident';
 import { EmptyState, ErrorState, Spinner } from '../components/ui';
 import { hasCapability } from '../domain/permissions';
-import { IconAlertTriangle, IconClock, IconPulse } from '../components/icons';
+import { IconAlertTriangle, IconPulse } from '../components/icons';
 import { IncidentListDialog } from '../components/IncidentListDialog';
 import { formatDateTime, formatRelative } from '../lib/time';
 import type { SVGProps } from 'react';
@@ -16,19 +16,17 @@ import type { SVGProps } from 'react';
 /** The archive, pre-filtered to the closed outcome only (never cancelled). */
 export const CLOSED_ARCHIVE_HREF = '/archive?outcome=closed';
 
-function summarySentence(open: Incident[], overdue: Incident[]): string {
+function summarySentence(open: Incident[]): string {
   if (open.length === 0) return 'כרגע אין תקלות פתוחות.';
   const critical = open.filter((i) => i.severity === 'critical').length;
   const parts: string[] = [];
   parts.push(open.length === 1 ? 'כרגע פתוחה תקלה אחת' : `כרגע פתוחות ${open.length} תקלות`);
   if (critical === 1) parts.push('אחת קריטית');
   else if (critical > 1) parts.push(`${critical} קריטיות`);
-  if (overdue.length === 1) parts.push('תקלה אחת ממתינה לעדכון באיחור');
-  else if (overdue.length > 1) parts.push(`${overdue.length} תקלות ממתינות לעדכון באיחור`);
   return parts.join('. ') + '.';
 }
 
-type KpiTone = 'brand' | 'red' | 'orange';
+type KpiTone = 'brand' | 'red';
 
 const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value: string }> = {
   brand: {
@@ -41,31 +39,24 @@ const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value:
     iconColor: 'text-red-600 dark:text-red-400',
     value: 'text-red-700 dark:text-red-400',
   },
-  orange: {
-    iconBg: 'bg-orange-50 dark:bg-orange-950/60',
-    iconColor: 'text-orange-600 dark:text-orange-400',
-    value: 'text-orange-700 dark:text-orange-400',
-  },
 };
 
 /** A permanent, subtle 1px border per KPI card identity -- brand/purple for
- *  open, red for critical/high, yellow for overdue. Unlike the icon/value
- *  color above (which dims to neutral once its count is zero, so an empty
- *  dashboard never looks alarming), this border is a calm category marker,
- *  not an urgency signal, so it stays constant regardless of count. Same
- *  restrained shade already used by Badge -- no new color introduced, no
- *  glow, no gradient. */
+ *  open, red for critical/high. Unlike the icon/value color above (which
+ *  dims to neutral once its count is zero, so an empty dashboard never looks
+ *  alarming), this border is a calm category marker, not an urgency signal,
+ *  so it stays constant regardless of count. Same restrained shade already
+ *  used by Badge -- no new color introduced, no glow, no gradient. */
 const kpiBorderStyles: Record<KpiTone, string> = {
   brand: 'border-brand-200 dark:border-brand-800',
   red: 'border-red-200 dark:border-red-800',
-  orange: 'border-yellow-300 dark:border-yellow-700',
 };
 
 /**
- * A single KPI card shape shared by all three top-of-page metrics -- equal
+ * A single KPI card shape shared by both top-of-page metrics -- equal
  * dimensions, equally interactive (opens the matching IncidentListDialog),
- * restrained color (a tone only reads as red/orange once its count is
- * actually above zero; at zero every card reads as calm/neutral so an empty
+ * restrained color (a tone only reads as red once its count is actually
+ * above zero; at zero every card reads as calm/neutral so an empty
  * dashboard never looks alarming). The label and context line are never
  * truncated -- these are operational facts, not decoration, and must stay
  * fully readable at every supported width.
@@ -180,10 +171,10 @@ export default function DashboardPage() {
   const { data: profiles } = useProfiles();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
-  const [activePopup, setActivePopup] = useState<'open' | 'criticalOrHigh' | 'overdue' | null>(null);
+  const [activePopup, setActivePopup] = useState<'open' | 'criticalOrHigh' | null>(null);
   const now = new Date();
 
-  const derived = useMemo(() => summarizeDashboard(incidents ?? [], now), [incidents, now.getTime()]);
+  const derived = useMemo(() => summarizeDashboard(incidents ?? []), [incidents]);
 
   if (isLoading) return <Spinner label="טוען את התמונה העדכנית…" />;
   if (isError)
@@ -207,10 +198,10 @@ export default function DashboardPage() {
     <div>
       <h1 className="page-title">מצב נוכחי</h1>
       <p className="mt-1 text-secondary" data-testid="summary-sentence">
-        {summarySentence(derived.open, derived.overdue)}
+        {summarySentence(derived.open)}
       </p>
 
-      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
         <KpiCard
           icon={IconPulse}
           label="תקלות פתוחות"
@@ -225,14 +216,6 @@ export default function DashboardPage() {
           context="בחומרה קריטית או גבוהה"
           tone="red"
           onClick={() => setActivePopup('criticalOrHigh')}
-        />
-        <KpiCard
-          icon={IconClock}
-          label="עדכונים באיחור"
-          value={derived.overdue.length}
-          context="ממתינות לעדכון מעבר לזמן היעד"
-          tone="orange"
-          onClick={() => setActivePopup('overdue')}
         />
       </div>
 
@@ -326,18 +309,6 @@ export default function DashboardPage() {
         emptyMessage="אין כרגע תקלות פתוחות בחומרה קריטית או גבוהה."
         viewAllHref="/incidents?severity=critical,high"
         viewAllLabel="לכל התקלות הקריטיות / גבוהות"
-      />
-      <IncidentListDialog
-        open={activePopup === 'overdue'}
-        onClose={() => setActivePopup(null)}
-        titleBase="עדכונים באיחור"
-        incidents={derived.overdue}
-        profiles={profiles}
-        systemName={systemName}
-        locationName={locationName}
-        emptyMessage="אין כרגע תקלות עם עדכון באיחור."
-        viewAllHref="/incidents?overdue=1"
-        viewAllLabel="לכל התקלות באיחור"
       />
     </div>
   );

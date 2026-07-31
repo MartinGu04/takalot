@@ -188,6 +188,11 @@ export interface IncidentUpdate {
   actionsTaken: string;
   findings: string;
   nextSteps: string;
+  // The situational "סטטוס נוכחי" free text at the moment of this update.
+  // Nullable forever: historical rows predating this field, and any update
+  // where the RPC's stage-1 accept-and-persist contract saw it omitted,
+  // never had one.
+  currentStatusText: string | null;
   createdAt: string;
 }
 
@@ -254,7 +259,6 @@ export interface HandoverAddendum {
 
 export type NotificationType =
   | 'incident_assigned'
-  | 'update_overdue'
   | 'incident_reopened'
   | 'handover_pending';
 

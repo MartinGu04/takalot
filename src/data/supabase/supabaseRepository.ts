@@ -41,7 +41,7 @@ import type {
   Repository,
   Session,
 } from '../repository';
-import { isOverdue, sortByPriority } from '../../domain/overdue';
+import { sortByPriority } from '../../domain/overdue';
 
 // Maps a failed delete-user Edge Function invocation to an AppError. The
 // function's response body is JSON ({ error, message, retryable? }); a
@@ -458,11 +458,9 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await q.limit(500);
     wrap(error);
     let rows = (data ?? []).map(mapIncident);
-    const now = new Date();
-    if (filters.overdueOnly) rows = rows.filter((i) => isOverdue(i, now));
     switch (sort) {
       case 'priority':
-        return sortByPriority(rows, now);
+        return sortByPriority(rows);
       case 'newest':
         return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       case 'oldest':
@@ -534,6 +532,7 @@ export class SupabaseRepository implements Repository {
       actionsTaken: r.actions_taken,
       findings: r.findings,
       nextSteps: r.next_steps,
+      currentStatusText: r.current_status_text,
       createdAt: r.created_at,
     }));
   }

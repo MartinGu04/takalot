@@ -246,14 +246,24 @@ declare
   v_row_count int;
 begin
   -- =====================================================================
-  -- 1. update_incident: all six protected fields changed in one call ->
-  --    exactly 7 rows (1 'update' + 6 conditional) sharing ONE operation_id,
-  --    and ALL 7 carrying the submitted (backdated) eventTime.
+  -- 1. update_incident: all five remaining protected fields changed in one
+  --    call -> exactly 6 rows (1 'update' + 5 conditional) sharing ONE
+  --    operation_id, and ALL 6 carrying the submitted (backdated) eventTime.
+  --    operational_impact is no longer a protected field of update_incident
+  --    (PR B: editing it moved out of the update flow entirely, the
+  --    'impact_change' event no longer fires), so the field count here
+  --    dropped from 6 to 5 and the row count from 7 to 6. A stray
+  --    'operationalImpact' key is still passed below to prove it is
+  --    silently ignored rather than rejected. nextUpdateDue/noDeadlineReason
+  --    are also passed explicitly (legacy-shaped call) to prove they are
+  --    still honored during the compatibility window (PR B dropped them
+  --    from the active UI, not from what the RPC accepts).
   -- =====================================================================
   v_incident := update_incident('00000000-0000-0000-0000-00000000fa10', jsonb_build_object(
     'expectedVersion', 1,
     'eventTime', (now() - interval '3 days')::text,
     'actionsTaken', 'בוצעה בדיקה', 'findings', '', 'nextSteps', '',
+    'currentStatusText', 'ממתינים לאישור סופי',
     'status', 'monitoring', 'severity', 'high',
     'operationalImpact', 'impact v2',
     'ownerUserId', '00000000-0000-0000-0000-0000000000b1', 'ownerExternalName', null,
@@ -264,16 +274,30 @@ begin
   select count(*), count(distinct operation_id) into v_op_count, v_distinct_ops
   from incident_events where incident_id = '00000000-0000-0000-0000-00000000fa10';
   insert into results (test, result, detail) values
-    ('update_incident (6 field changes): exactly 7 rows share exactly 1 operation_id',
-      case when v_op_count = 7 and v_distinct_ops = 1 then 'PASS' else 'FAIL' end,
+    ('update_incident (5 field changes): exactly 6 rows share exactly 1 operation_id',
+      case when v_op_count = 6 and v_distinct_ops = 1 then 'PASS' else 'FAIL' end,
       'rows=' || v_op_count || ' distinct_ops=' || v_distinct_ops);
 
   select count(*) into v_row_count from incident_events
   where incident_id = '00000000-0000-0000-0000-00000000fa10'
     and event_time <> (now() - interval '3 days');
   insert into results (test, result, detail) values
-    ('update_incident: all 7 rows (not just the update row) carry the submitted backdated eventTime',
+    ('update_incident: all 6 rows (not just the update row) carry the submitted backdated eventTime',
       case when v_row_count = 0 then 'PASS' else 'FAIL' end, 'mismatched_rows=' || v_row_count);
+
+  insert into results (test, result, detail)
+  select 'update_incident: stray operationalImpact key is ignored, no impact_change event emitted',
+    case when not exists (
+      select 1 from incident_events
+      where incident_id = '00000000-0000-0000-0000-00000000fa10' and type = 'impact_change'
+    ) then 'PASS' else 'FAIL' end, '';
+
+  insert into results (test, result, detail)
+  select 'update_incident: currentStatusText is persisted on the incident_updates row',
+    case when exists (
+      select 1 from incident_updates
+      where incident_id = '00000000-0000-0000-0000-00000000fa10' and current_status_text = 'ממתינים לאישור סופי'
+    ) then 'PASS' else 'FAIL' end, '';
 
   select operation_id into v_op_update1 from incident_events
   where incident_id = '00000000-0000-0000-0000-00000000fa10' and type = 'update';

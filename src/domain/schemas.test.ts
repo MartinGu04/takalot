@@ -4,7 +4,13 @@
 // Hebrew message format). update/close schemas keep their own, unrelated
 // limits and are asserted here as an explicit control.
 import { describe, expect, it } from 'vitest';
-import { createIncidentSchema, updateIncidentSchema, technicianUpdateSchema, type CreateIncidentInput } from './schemas';
+import {
+  createIncidentSchema,
+  updateIncidentSchema,
+  technicianUpdateSchema,
+  reopenIncidentSchema,
+  type CreateIncidentInput,
+} from './schemas';
 
 function baseInput(overrides: Partial<CreateIncidentInput> = {}) {
   return {
@@ -18,8 +24,6 @@ function baseInput(overrides: Partial<CreateIncidentInput> = {}) {
     status: 'new' as const,
     ownerUserId: 'u-tech-1',
     ownerExternalName: null,
-    nextUpdateDue: new Date(Date.now() + 4 * 3600_000).toISOString(),
-    noDeadlineReason: null,
     reportedToOps: 'no' as const,
     reportedToComms: false,
     reportedToCommsRecipient: null,
@@ -36,12 +40,10 @@ function baseUpdateInput(overrides: Record<string, unknown> = {}) {
     actionsTaken: 'נבדק',
     findings: '',
     nextSteps: '',
+    currentStatusText: 'המצב הנוכחי לצורך בדיקה',
     status: 'in_progress',
     severity: 'medium',
-    operationalImpact: 'השפעה',
     changeReason: '',
-    nextUpdateDue: new Date(Date.now() + 3600_000).toISOString(),
-    noDeadlineReason: null,
     ownerUserId: 'u-tech-1',
     ownerExternalName: null,
     reportedToOps: 'no',
@@ -49,37 +51,71 @@ function baseUpdateInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe('no-deadline reasons are genuine explanations', () => {
-  it.each([
-    ['create', createIncidentSchema, baseInput],
-    ['update', updateIncidentSchema, baseUpdateInput],
-  ])('rejects the generic display label as the %s reason', (_name, schema, input) => {
-    const result = schema.safeParse(
-      input({
-        nextUpdateDue: null,
-        noDeadlineReason: '  ללא צפי כרגע  ',
-      }),
-    );
+describe('createIncidentSchema / updateIncidentSchema: the next-update-ETA concept was removed', () => {
+  it('createIncidentSchema no longer has nextUpdateDue/noDeadlineReason keys -- a payload without them is valid', () => {
+    const result = createIncidentSchema.safeParse(baseInput());
+    expect(result.success).toBe(true);
+  });
+
+  it('updateIncidentSchema no longer has nextUpdateDue/noDeadlineReason keys -- a payload without them is valid', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput());
+    expect(result.success).toBe(true);
+  });
+
+  it('reopenIncidentSchema no longer requires nextUpdateDue', () => {
+    const result = reopenIncidentSchema.safeParse({
+      expectedVersion: 1,
+      reason: 'נפתחה מחדש לצורך בדיקה',
+      ownerUserId: 'u-tech-1',
+      ownerExternalName: null,
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('updateIncidentSchema / technicianUpdateSchema: currentStatusText ("סטטוס נוכחי") is required', () => {
+  it('updateIncidentSchema rejects a missing currentStatusText', () => {
+    const { currentStatusText: _drop, ...rest } = baseUpdateInput();
+    const result = updateIncidentSchema.safeParse(rest);
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(
-        result.error.issues.some(
-          (issue) => issue.path[0] === 'nextUpdateDue' && issue.message === 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
-        ),
-      ).toBe(true);
+      expect(result.error.issues.some((i) => i.path[0] === 'currentStatusText')).toBe(true);
     }
   });
 
-  it.each([
-    ['create', createIncidentSchema, baseInput],
-    ['update', updateIncidentSchema, baseUpdateInput],
-  ])('accepts a genuine %s explanation', (_name, schema, input) => {
-    const result = schema.safeParse(
-      input({
-        nextUpdateDue: null,
-        noDeadlineReason: 'ממתין לבירור מול ספק',
-      }),
-    );
+  it('updateIncidentSchema rejects a blank/whitespace-only currentStatusText', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ currentStatusText: '   ' }));
+    expect(result.success).toBe(false);
+  });
+
+  it('updateIncidentSchema accepts a real currentStatusText', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ currentStatusText: 'ממתינים לרכיב חלופי' }));
+    expect(result.success).toBe(true);
+  });
+
+  it('technicianUpdateSchema rejects a missing currentStatusText', () => {
+    const result = technicianUpdateSchema.safeParse({
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      actionsTaken: 'נבדק',
+      findings: '',
+      nextSteps: '',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'currentStatusText')).toBe(true);
+    }
+  });
+
+  it('technicianUpdateSchema accepts a real currentStatusText', () => {
+    const result = technicianUpdateSchema.safeParse({
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      actionsTaken: 'נבדק',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'הצוות באתר',
+    });
     expect(result.success).toBe(true);
   });
 });
@@ -110,25 +146,15 @@ describe('createIncidentSchema: 400-character limits', () => {
     }
   });
 
-  it('CONTROL: updateIncidentSchema keeps its own unrelated, unchanged 1000-character operationalImpact limit', () => {
-    const tooLongForCreate = 'ג'.repeat(600); // over create's 400, under update's own 1000
-    const result = updateIncidentSchema.safeParse({
-      expectedVersion: 1,
-      eventTime: new Date().toISOString(),
-      actionsTaken: 'נבדק',
-      findings: '',
-      nextSteps: '',
-      status: 'in_progress',
-      severity: 'medium',
-      operationalImpact: tooLongForCreate,
-      changeReason: '',
-      nextUpdateDue: new Date(Date.now() + 3600_000).toISOString(),
-      noDeadlineReason: null,
-      ownerUserId: 'u-tech-1',
-      ownerExternalName: null,
-      reportedToOps: 'no',
-    });
+  it('CONTROL: updateIncidentSchema has its own unrelated 1000-character currentStatusText limit, not create\'s 400', () => {
+    const overCreatesLimit = 'ג'.repeat(600); // over create's operationalImpact 400, under update's currentStatusText 1000
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ currentStatusText: overCreatesLimit }));
     expect(result.success).toBe(true);
+  });
+
+  it('updateIncidentSchema rejects currentStatusText at 1001 characters', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ currentStatusText: 'ג'.repeat(1001) }));
+    expect(result.success).toBe(false);
   });
 });
 
@@ -150,22 +176,7 @@ describe('createIncidentSchema: 600-character limit on פעולות שבוצעו
 
   it('CONTROL: updateIncidentSchema and technicianUpdateSchema keep their own unrelated, unchanged 4000-character actionsTaken limit', () => {
     const tooLongForCreate = 'ד'.repeat(1000); // over create's 600, under update's own 4000
-    const updateResult = updateIncidentSchema.safeParse({
-      expectedVersion: 1,
-      eventTime: new Date().toISOString(),
-      actionsTaken: tooLongForCreate,
-      findings: '',
-      nextSteps: '',
-      status: 'in_progress',
-      severity: 'medium',
-      operationalImpact: 'השפעה',
-      changeReason: '',
-      nextUpdateDue: new Date(Date.now() + 3600_000).toISOString(),
-      noDeadlineReason: null,
-      ownerUserId: 'u-tech-1',
-      ownerExternalName: null,
-      reportedToOps: 'no',
-    });
+    const updateResult = updateIncidentSchema.safeParse(baseUpdateInput({ actionsTaken: tooLongForCreate }));
     expect(updateResult.success).toBe(true);
 
     const technicianResult = technicianUpdateSchema.safeParse({
@@ -174,6 +185,7 @@ describe('createIncidentSchema: 600-character limit on פעולות שבוצעו
       actionsTaken: tooLongForCreate,
       findings: '',
       nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
     });
     expect(technicianResult.success).toBe(true);
   });

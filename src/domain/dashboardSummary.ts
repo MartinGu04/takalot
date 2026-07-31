@@ -4,15 +4,15 @@
 // unit-testable without rendering the app.
 import type { Incident } from './types';
 import { isOpen } from './types';
-import { isOverdue, sortByPriority } from './overdue';
+import { sortByPriority } from './overdue';
 
 export interface DashboardSummary {
   open: Incident[];
-  overdue: Incident[];
   criticalOrHigh: Incident[];
-  /** "דורש טיפול עכשיו" -- open AND (critical severity OR overdue). High
-   *  severity alone does not qualify (that's the separate criticalOrHigh
-   *  stat). Priority-sorted. */
+  /** "דורש טיפול עכשיו" -- open AND critical severity. Priority-sorted.
+   *  The next-update-ETA concept (formerly a second qualifying condition
+   *  here, "overdue") was removed from the active product -- severity is
+   *  now the sole qualifying signal. */
   needsAttention: Incident[];
   /** "תקלות פתוחות" -- every other open incident, priority-sorted. Excludes
    *  anything already in `needsAttention` so no incident renders as a full
@@ -30,25 +30,18 @@ export function terminalAt(incident: Incident): string | null {
   return incident.status === 'cancelled' ? incident.cancelledAt : incident.closedAt;
 }
 
-export function summarizeDashboard(incidents: Incident[], now: Date, recentTerminalLimit = 5): DashboardSummary {
+export function summarizeDashboard(incidents: Incident[], recentTerminalLimit = 5): DashboardSummary {
   const open = incidents.filter((i) => isOpen(i.status));
-  const overdue = open.filter((i) => isOverdue(i, now));
   const criticalOrHigh = open.filter((i) => i.severity === 'critical' || i.severity === 'high');
 
-  const needsAttention = sortByPriority(
-    open.filter((i) => i.severity === 'critical' || isOverdue(i, now)),
-    now,
-  );
+  const needsAttention = sortByPriority(open.filter((i) => i.severity === 'critical'));
   const needsAttentionIds = new Set(needsAttention.map((i) => i.id));
-  const openRest = sortByPriority(
-    open.filter((i) => !needsAttentionIds.has(i.id)),
-    now,
-  );
+  const openRest = sortByPriority(open.filter((i) => !needsAttentionIds.has(i.id)));
 
   const recentTerminal = incidents
     .filter((i) => !isOpen(i.status))
     .sort((a, b) => (terminalAt(b) ?? '').localeCompare(terminalAt(a) ?? ''))
     .slice(0, recentTerminalLimit);
 
-  return { open, overdue, criticalOrHigh, needsAttention, openRest, recentTerminal };
+  return { open, criticalOrHigh, needsAttention, openRest, recentTerminal };
 }

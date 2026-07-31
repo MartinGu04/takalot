@@ -1,6 +1,5 @@
 // Zod schemas shared by forms (client) and the data layer (server-side style validation).
 import { z } from 'zod';
-import { meaningfulNoDeadlineReason } from './deadline';
 
 /** Reject empty or whitespace-only values. */
 const nonBlank = (max: number, label: string) =>
@@ -97,8 +96,6 @@ export const createIncidentSchema = z
     status: statusSchema.refine((s) => CREATABLE_STATUSES.has(s), {
       message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
     }),
-    nextUpdateDue: z.string().nullable(),
-    noDeadlineReason: z.string().max(500).nullable(),
     ...ownerFields,
     ...reportedToOpsFields,
     // Opening-time-only questions -- both plain booleans (unlike
@@ -137,13 +134,6 @@ export const createIncidentSchema = z
         message: 'לא ניתן לקבוע גורם חיצוני כבעל אחריות בעת פתיחת תקלה',
       });
     }
-    if (!data.nextUpdateDue && !meaningfulNoDeadlineReason(data.noDeadlineReason)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['nextUpdateDue'],
-        message: 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
-      });
-    }
     checkReportedToOpsRecipient(data, ctx);
     if (data.reportedToComms && !(data.reportedToCommsRecipient ?? '').trim()) {
       ctx.addIssue({
@@ -170,12 +160,17 @@ export const updateIncidentSchema = z
     actionsTaken: nonBlank(4000, 'פעולות שבוצעו'),
     findings: optionalText(4000, 'ממצאים'),
     nextSteps: optionalText(2000, 'פעולות המשך'),
+    // מצב הטיפול -- the structured treatment-state selector. Still the
+    // full IncidentStatus enum server-side (statusSchema), narrowed only by
+    // what the update UI actually offers (UpdateDialog's own target set).
     status: statusSchema,
     severity: severitySchema,
-    operationalImpact: nonBlank(1000, 'השפעה מבצעית'),
+    // סטטוס נוכחי -- the free-text situational description at the moment
+    // of this update. Required in the new update UI; replaces the purpose
+    // operationalImpact used to serve here (that field is now creation-only,
+    // see createIncidentSchema).
+    currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
     changeReason: z.string().max(500).optional().default(''),
-    nextUpdateDue: z.string().nullable(),
-    noDeadlineReason: z.string().max(500).nullable(),
     ...ownerFields,
     ...reportedToOpsFields,
   })
@@ -185,13 +180,6 @@ export const updateIncidentSchema = z
         code: z.ZodIssueCode.custom,
         path: ['ownerUserId'],
         message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
-      });
-    }
-    if (!data.nextUpdateDue && !meaningfulNoDeadlineReason(data.noDeadlineReason)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['nextUpdateDue'],
-        message: 'יש להזין נימוק ממשי ל"ללא צפי כרגע"',
       });
     }
     checkReportedToOpsRecipient(data, ctx);
@@ -206,6 +194,7 @@ export const technicianUpdateSchema = z.object({
   actionsTaken: nonBlank(4000, 'פעולות שבוצעו'),
   findings: optionalText(4000, 'ממצאים'),
   nextSteps: optionalText(2000, 'הצעות להמשך'),
+  currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
 });
 
 export type TechnicianUpdateInput = z.infer<typeof technicianUpdateSchema>;
@@ -246,7 +235,6 @@ export const reopenIncidentSchema = z
   .object({
     expectedVersion: z.number(),
     reason: nonBlank(2000, 'סיבת הפתיחה מחדש'),
-    nextUpdateDue: z.string().min(1, 'יש להזין צפי לעדכון הבא'),
     ...ownerFields,
   })
   .superRefine((data, ctx) => {

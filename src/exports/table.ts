@@ -8,7 +8,6 @@ import {
   statusLabels,
 } from '../domain/labels';
 import { formatDateTime, formatDuration } from '../lib/time';
-import { isOverdue, overdueText } from '../domain/overdue';
 
 export interface ExportContext {
   profiles: Profile[];
@@ -28,8 +27,6 @@ export const INCIDENT_EXPORT_HEADERS = [
   'השפעה מבצעית',
   'גורם מטפל',
   'עדכון אחרון',
-  'צפי לעדכון הבא',
-  'איחור בעדכון',
   'דווח למבצעים',
   'זמן סגירה',
   'משך התקלה',
@@ -59,8 +56,6 @@ export function incidentToExportRow(incident: Incident, ctx: ExportContext): str
     incident.operationalImpact,
     owner,
     formatDateTime(incident.lastUpdateAt),
-    incident.nextUpdateDue ? formatDateTime(incident.nextUpdateDue) : (incident.noDeadlineReason ?? ''),
-    isOverdue(incident, ctx.now) ? overdueText(incident, ctx.now) : '',
     reportedToOpsLabels[incident.reportedToOps],
     incident.closedAt ? formatDateTime(incident.closedAt) : '',
     incident.closedAt ? formatDuration(incident.discoveredAt, incident.closedAt) : '',

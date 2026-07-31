@@ -2,9 +2,7 @@
 import { Link } from 'react-router-dom';
 import type { Incident, IncidentStatus, Profile, Severity } from '../domain/types';
 import { severityLabels, statusLabels, readinessLabels } from '../domain/labels';
-import { isOverdue, overdueText } from '../domain/overdue';
-import { formatDateTime, formatRelative } from '../lib/time';
-import { meaningfulNoDeadlineReason, NO_DEADLINE_LABEL } from '../domain/deadline';
+import { formatRelative } from '../lib/time';
 import { Badge } from './ui';
 import { IconChevronLeft } from './icons';
 
@@ -46,31 +44,6 @@ export function ownerDisplay(incident: Incident, profiles: Profile[] | undefined
   return incident.ownerExternalName ? `${incident.ownerExternalName} (חיצוני)` : 'ללא גורם מטפל';
 }
 
-/** Next-update line: deadline, overdue phrase, or explicit "no deadline". */
-export function NextUpdateNote({ incident, now }: { incident: Incident; now: Date }) {
-  if (incident.status === 'closed') return null;
-  if (!incident.nextUpdateDue) {
-    const reason = meaningfulNoDeadlineReason(incident.noDeadlineReason);
-    return (
-      <span className="text-sm text-muted">
-        {NO_DEADLINE_LABEL}{reason ? ` — ${reason}` : ''}
-      </span>
-    );
-  }
-  if (isOverdue(incident, now)) {
-    return (
-      <span className="text-sm font-semibold text-red-700 dark:text-red-400">
-        {overdueText(incident, now)}
-      </span>
-    );
-  }
-  return (
-    <span className="text-sm text-secondary">
-      עדכון הבא: {formatRelative(incident.nextUpdateDue, now)} ({formatDateTime(incident.nextUpdateDue)})
-    </span>
-  );
-}
-
 export function IncidentCard({
   incident,
   profiles,
@@ -84,11 +57,8 @@ export function IncidentCard({
   locationName: string;
   now: Date;
 }) {
-  const overdue = isOverdue(incident, now);
   const critical = incident.severity === 'critical';
-  // Critical severity takes precedence over overdue -- an incident that is
-  // both never gets a mixed or double treatment, just the critical (red) one.
-  const accentClass = critical ? 'incident-card-accent-critical' : overdue ? 'incident-card-accent-overdue' : '';
+  const accentClass = critical ? 'incident-card-accent-critical' : '';
   const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
   return (
     <Link
@@ -135,9 +105,6 @@ export function IncidentCard({
           <p dir="auto" className="mt-1.5 line-clamp-2 break-words text-start text-sm text-secondary">
             {incident.operationalImpact}
           </p>
-          <div className="mt-2">
-            <NextUpdateNote incident={incident} now={now} />
-          </div>
           {incident.followUpRequired && !incident.followUpCompletedAt && (
             <p className="mt-2 text-sm font-medium text-orange-700 dark:text-orange-400">
               נדרשות פעולות המשך — כשירות לא מלאה

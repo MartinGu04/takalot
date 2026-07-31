@@ -21,10 +21,6 @@ type FormValues = {
   operationalImpact: string;
   actionsTaken: string;
   ownerUserId: string;
-  status: CreateIncidentInput['status'];
-  hasDeadline: boolean;
-  nextUpdateDue: string; // datetime-local
-  noDeadlineReason: string;
   reportedToOps: CreateIncidentInput['reportedToOps'];
   reportedToOpsRecipient: string;
   reportedToComms: 'no' | 'yes';
@@ -43,10 +39,6 @@ function defaultValues(): FormValues {
     operationalImpact: '',
     actionsTaken: '',
     ownerUserId: '',
-    status: 'new',
-    hasDeadline: true,
-    nextUpdateDue: isoToLocalInput(new Date(Date.now() + 4 * 3600_000).toISOString()),
-    noDeadlineReason: '',
     reportedToOps: 'no',
     reportedToOpsRecipient: '',
     reportedToComms: 'no',
@@ -88,7 +80,6 @@ export default function IncidentCreatePage() {
   }, [profiles, session.userId, values.ownerUserId, setValue]);
 
   const [ownerError, setOwnerError] = useState<string | undefined>();
-  const [deadlineError, setDeadlineError] = useState<string | undefined>();
   const [recipientError, setRecipientError] = useState<string | undefined>();
   const [commsRecipientError, setCommsRecipientError] = useState<string | undefined>();
   const [wisdomNumberError, setWisdomNumberError] = useState<string | undefined>();
@@ -107,7 +98,6 @@ export default function IncidentCreatePage() {
 
   const onSubmit = (form: FormValues) => {
     setOwnerError(undefined);
-    setDeadlineError(undefined);
     setRecipientError(undefined);
     setCommsRecipientError(undefined);
     setWisdomNumberError(undefined);
@@ -120,11 +110,13 @@ export default function IncidentCreatePage() {
       severity: form.severity,
       operationalImpact: form.operationalImpact,
       actionsTaken: form.actionsTaken,
-      status: form.status,
+      // Every newly created incident enters directly as "בטיפול" -- the
+      // status picker was removed from this form. create_incident's own
+      // allowlist still technically accepts 'new'/'acknowledged' for
+      // backend/historical compatibility; this form simply never sends them.
+      status: 'in_progress',
       ownerUserId: form.ownerUserId || null,
       ownerExternalName: null,
-      nextUpdateDue: form.hasDeadline ? localInputToIso(form.nextUpdateDue) : null,
-      noDeadlineReason: form.hasDeadline ? null : form.noDeadlineReason,
       reportedToOps: form.reportedToOps,
       reportedToOpsRecipient: form.reportedToOps === 'yes' ? form.reportedToOpsRecipient : null,
       reportedToComms: form.reportedToComms === 'yes',
@@ -136,7 +128,6 @@ export default function IncidentCreatePage() {
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         if (issue.path[0] === 'ownerUserId') setOwnerError(issue.message);
-        else if (issue.path[0] === 'nextUpdateDue') setDeadlineError(issue.message);
         else if (issue.path[0] === 'reportedToOpsRecipient') setRecipientError(issue.message);
         else if (issue.path[0] === 'reportedToCommsRecipient') setCommsRecipientError(issue.message);
         else if (issue.path[0] === 'wisdomIncidentNumber') setWisdomNumberError(issue.message);
@@ -207,26 +198,15 @@ export default function IncidentCreatePage() {
           )}
         </Field>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="חומרה" required>
-            {(a) => (
-              <Select {...a} {...register('severity')}>
-                {Object.entries(severityLabels).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <Field label="סטטוס נוכחי" required>
-            {(a) => (
-              <Select {...a} {...register('status')}>
-                <option value="new">חדשה</option>
-                <option value="acknowledged">התקבלה</option>
-                <option value="in_progress">בטיפול</option>
-              </Select>
-            )}
-          </Field>
-        </div>
+        <Field label="חומרה" required>
+          {(a) => (
+            <Select {...a} {...register('severity')}>
+              {Object.entries(severityLabels).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
 
         <Field label="השפעה מבצעית" required error={formState.errors.operationalImpact?.message}>
           {(a) => (
@@ -280,26 +260,6 @@ export default function IncidentCreatePage() {
             </Select>
           )}
         </Field>
-
-        <div className="surface p-3">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" {...register('hasDeadline')} defaultChecked />
-            יש צפי לעדכון הבא
-          </label>
-          {values.hasDeadline ? (
-            <div className="mt-2">
-              <Field label="צפי לעדכון הבא" error={deadlineError}>
-                {(a) => <Input {...a} type="datetime-local" {...register('nextUpdateDue')} />}
-              </Field>
-            </div>
-          ) : (
-            <div className="mt-2">
-              <Field label='נימוק ל"ללא צפי כרגע"' required error={deadlineError}>
-                {(a) => <Input {...a} {...register('noDeadlineReason')} placeholder="לדוגמה: ממתין לבירור מול ספק" />}
-              </Field>
-            </div>
-          )}
-        </div>
 
         <Field label="דווח למבצעים">
           {(a) => (

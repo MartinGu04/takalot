@@ -158,16 +158,22 @@ describe('IncidentCreatePage: form behavior', () => {
     expect(await screen.findByText('יש להזין תיאור')).toBeInTheDocument();
   });
 
-  it('requires an actual explanation when "ללא צפי כרגע" is selected', async () => {
+  it('has no status picker and no next-update-ETA fields -- both concepts were removed from this form', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    expect(screen.queryByLabelText(/^סטטוס נוכחי/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'יש צפי לעדכון הבא' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^צפי לעדכון הבא/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/נימוק ל"ללא צפי כרגע"/)).not.toBeInTheDocument();
+  });
+
+  it('creates every new incident directly as בטיפול (in_progress), with no status choice exposed', async () => {
     const user = await loginAs('login-u-admin');
     await goToCreatePage(user);
     await fillMinimalValidForm(user);
-    await user.click(screen.getByRole('checkbox', { name: 'יש צפי לעדכון הבא' }));
-    await user.type(screen.getByLabelText(/^נימוק ל"ללא צפי כרגע"/), 'ללא צפי כרגע');
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
-
-    expect(await screen.findByText('יש להזין נימוק ממשי ל"ללא צפי כרגע"')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'פתיחת תקלה' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).not.toHaveTextContent('פתיחת תקלה'));
+    expect(within(main()).getAllByText('בטיפול').length).toBeGreaterThan(0);
   });
 
   it('disables the submit button while submitting, preventing a duplicate call', async () => {

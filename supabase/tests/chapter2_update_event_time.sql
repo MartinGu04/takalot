@@ -14,6 +14,18 @@
 -- concurrency, EXECUTE grants, server_time being independently
 -- database-generated) still behaves exactly as before.
 --
+-- PART C/D/E (added for 0030): the next-update-ETA concept was removed from
+-- the active product (creation, full update, reopen). update_incident and
+-- reopen_incident now treat nextUpdateDue/noDeadlineReason as OPTIONAL
+-- legacy-compatibility keys: when a key is present in p_input (an old
+-- client still sending it during the compatibility window) its value is
+-- honored exactly as before; when the key is absent (the new frontend's
+-- contract) the incident's own current value carries forward unchanged --
+-- never silently cleared. create_incident needs no such logic: a new
+-- incident has no prior value to preserve, so omitting both keys simply
+-- stores NULL/NULL, which is legal now that incident_deadline_or_reason
+-- (0001) has been dropped.
+--
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
 begin;
@@ -23,16 +35,67 @@ insert into auth.users (id, email, email_confirmed_at) values
   ('00000000-0000-0000-0000-0000000000e1', 'supervisor@test', now()),
   ('00000000-0000-0000-0000-0000000000e2', 'owner-tech@test', now()),
   ('00000000-0000-0000-0000-0000000000e3', 'viewer@test', now()),
-  ('00000000-0000-0000-0000-0000000000e4', 'other-tech@test', now());
+  ('00000000-0000-0000-0000-0000000000e4', 'other-tech@test', now()),
+  ('00000000-0000-0000-0000-0000000000e5', 'admin@test', now());
 
 insert into profiles (id, full_name, role, active) values
   ('00000000-0000-0000-0000-0000000000e1', 'Supervisor', 'shift_supervisor', true),
   ('00000000-0000-0000-0000-0000000000e2', 'Owner Technician', 'technician', true),
   ('00000000-0000-0000-0000-0000000000e3', 'Viewer', 'viewer', true),
-  ('00000000-0000-0000-0000-0000000000e4', 'Other Technician', 'technician', true);
+  ('00000000-0000-0000-0000-0000000000e4', 'Other Technician', 'technician', true),
+  ('00000000-0000-0000-0000-0000000000e5', 'Admin', 'system_admin', true);
 
 insert into systems (id, name, display_order) values ('00000000-0000-0000-0000-00000000f701', 'Sys', 1);
 insert into locations (id, name, display_order) values ('00000000-0000-0000-0000-00000000f702', 'Loc', 1);
+
+-- f730: open, has an existing non-null next_update_due -- proves
+-- update_incident omitting the key preserves it.
+-- f731: open, next_update_due already NULL with a pre-set no_deadline_reason
+-- -- proves the reason side is preserved the same way.
+-- f732: open, fresh -- proves a legacy call supplying both keys explicitly
+-- is still honored.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+                       operational_impact, owner_user_id, discovered_at, created_by, updated_by,
+                       next_update_due, no_deadline_reason, version)
+values
+  ('00000000-0000-0000-0000-00000000f730', 'T-730', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   now() + interval '3 hours', null, 1),
+  ('00000000-0000-0000-0000-00000000f731', 'T-731', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   null, 'ממתין לאישור מוקדם יותר', 1),
+  ('00000000-0000-0000-0000-00000000f732', 'T-732', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   null, null, 1);
+
+-- f740: CLOSED, with a pre-set next_update_due/no_deadline_reason pair (as
+-- close_incident would typically leave them) -- proves reopen_incident
+-- omitting the keys preserves them.
+-- f741: CLOSED, fresh -- proves a legacy reopen call explicitly supplying
+-- nextUpdateDue is still honored.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+                       operational_impact, owner_user_id, discovered_at, created_by, updated_by,
+                       closed_at, closed_by, root_cause, resolution, readiness_at_close,
+                       next_update_due, no_deadline_reason, version)
+values
+  ('00000000-0000-0000-0000-00000000f740', 'T-740', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'closed', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '3 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   now() - interval '1 hour', '00000000-0000-0000-0000-0000000000e1',
+   'root', 'fix', 'full', null, 'התקלה נסגרה', 1),
+  ('00000000-0000-0000-0000-00000000f741', 'T-741', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'closed', 'i',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '3 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   now() - interval '1 hour', '00000000-0000-0000-0000-0000000000e1',
+   'root', 'fix', 'full', null, 'התקלה נסגרה', 1);
 
 -- Reject-only fixtures (version never advances -- expectedVersion=1 is
 -- reusable across every rejected attempt against them).
@@ -125,10 +188,22 @@ create or replace function pg_temp.base_tech_input(extra jsonb) returns jsonb la
 $$;
 grant execute on function pg_temp.base_tech_input(jsonb) to authenticated;
 
+-- Base valid reopen_incident input. Deliberately has NO nextUpdateDue/
+-- noDeadlineReason key by default -- that's exactly the new frontend's
+-- contract (0030); `extra` can add either back to simulate a legacy caller.
+create or replace function pg_temp.base_reopen_input(extra jsonb) returns jsonb language sql as $$
+  select jsonb_build_object(
+    'expectedVersion', 1, 'reason', 'התברר שהתקלה חוזרת',
+    'ownerUserId', '00000000-0000-0000-0000-0000000000e2', 'ownerExternalName', null
+  ) || extra;
+$$;
+grant execute on function pg_temp.base_reopen_input(jsonb) to authenticated;
+
 do $$
 declare
   v_incident incidents;
   v_row record;
+  v_incident2 incidents;
 begin
   -- =====================================================================
   -- PART A: update_incident
@@ -444,6 +519,137 @@ begin
   exception when others then
     insert into results (test, result, detail) values
       ('technician_update_incident: eventTime exactly equal to discovered_at is accepted', 'FAIL', sqlerrm);
+  end;
+
+  -- =====================================================================
+  -- PART C: update_incident -- next-update-ETA compatibility (0030)
+  -- =====================================================================
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000e1');
+
+  -- Omitting nextUpdateDue (and noDeadlineReason, never sent by
+  -- base_update_input in the first place) on an incident with an existing
+  -- non-null next_update_due preserves it byte-identical (the fixture set
+  -- it to exactly now()+3h, and this whole suite runs in one transaction
+  -- where now() is frozen, so the comparison below is exact, not
+  -- approximate), and no deadline_change event fires (nothing changed).
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f730',
+      (pg_temp.base_update_input(jsonb_build_object('eventTime', now() - interval '1 hour')) - 'nextUpdateDue'));
+    insert into results (test, result, detail) values
+      ('update_incident: omitting nextUpdateDue preserves the incident''s existing next_update_due exactly',
+        case when v_incident.next_update_due = now() + interval '3 hours' then 'PASS' else 'FAIL' end,
+        'stored=' || v_incident.next_update_due);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: omitting nextUpdateDue preserves the incident''s existing next_update_due exactly', 'FAIL', sqlerrm);
+  end;
+  insert into results (test, result, detail)
+  select 'update_incident: omitting nextUpdateDue -> no deadline_change event fires',
+    case when not exists (
+      select 1 from incident_events where incident_id = '00000000-0000-0000-0000-00000000f730' and type = 'deadline_change'
+    ) then 'PASS' else 'FAIL' end, '';
+
+  -- Same, but the incident's existing value is NULL/reason-only -- proves
+  -- the reason side is preserved too, independently of the date side.
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f731',
+      ((pg_temp.base_update_input(jsonb_build_object('eventTime', now() - interval '1 hour')) - 'nextUpdateDue')
+        || jsonb_build_object('nextUpdateDue', null)));
+    insert into results (test, result, detail) values
+      ('update_incident: omitting nextUpdateDue on a reason-only incident leaves both columns untouched',
+        case when v_incident.next_update_due is null
+          and v_incident.no_deadline_reason = 'ממתין לאישור מוקדם יותר' then 'PASS' else 'FAIL' end,
+        'due=' || v_incident.next_update_due || ' reason=' || v_incident.no_deadline_reason);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: omitting nextUpdateDue on a reason-only incident leaves both columns untouched', 'FAIL', sqlerrm);
+  end;
+
+  -- A legacy caller that still explicitly supplies both keys is honored
+  -- exactly as supplied -- no meaningfulness check is applied to whatever
+  -- string is given (that validation was evaluated and cancelled).
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f732', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', now() - interval '1 hour', 'nextUpdateDue', null, 'noDeadlineReason', 'ללא')));
+    insert into results (test, result, detail) values
+      ('update_incident: legacy caller explicitly supplying noDeadlineReason="ללא" is honored verbatim, no validation applied',
+        case when v_incident.no_deadline_reason = 'ללא' then 'PASS' else 'FAIL' end, v_incident.no_deadline_reason);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: legacy caller explicitly supplying noDeadlineReason="ללא" is honored verbatim, no validation applied', 'FAIL', sqlerrm);
+  end;
+
+  -- Omitting BOTH keys with no prior constraint no longer raises -- proves
+  -- the incident_deadline_or_reason constraint (0001) is actually gone.
+  -- (f732 was already updated once above, hence expectedVersion from the
+  -- previous call's result rather than base_update_input's default of 1.)
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f732',
+      (pg_temp.base_update_input(jsonb_build_object('eventTime', now(), 'expectedVersion', v_incident.version)) - 'nextUpdateDue'));
+    insert into results (test, result, detail) values
+      ('update_incident: omitting both deadline keys on an already-both-NULL incident succeeds (constraint dropped)',
+        'PASS', '');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: omitting both deadline keys on an already-both-NULL incident succeeds (constraint dropped)',
+        'FAIL', sqlerrm);
+  end;
+
+  -- =====================================================================
+  -- PART D: create_incident -- next-update-ETA compatibility (0030)
+  -- =====================================================================
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000e1');
+  begin
+    v_incident := create_incident(jsonb_build_object(
+      'systemId', '00000000-0000-0000-0000-00000000f701', 'locationId', '00000000-0000-0000-0000-00000000f702',
+      'description', 'd', 'severity', 'medium', 'operationalImpact', 'i', 'actionsTaken', 'a',
+      'status', 'in_progress', 'ownerUserId', '00000000-0000-0000-0000-0000000000e2',
+      'discoveredAt', now(), 'reportedToOps', 'not_required'
+      -- nextUpdateDue / noDeadlineReason deliberately omitted entirely.
+    ));
+    insert into results (test, result, detail) values
+      ('create_incident: omitting both deadline keys succeeds and stores NULL/NULL',
+        case when v_incident.next_update_due is null and v_incident.no_deadline_reason is null
+          then 'PASS' else 'FAIL' end,
+        'due=' || v_incident.next_update_due || ' reason=' || v_incident.no_deadline_reason);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('create_incident: omitting both deadline keys succeeds and stores NULL/NULL', 'FAIL', sqlerrm);
+  end;
+
+  -- =====================================================================
+  -- PART E: reopen_incident -- next-update-ETA compatibility (0030)
+  -- =====================================================================
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000e5'); -- system_admin
+
+  -- Omitting nextUpdateDue on a closed incident with a pre-set legacy pair
+  -- preserves both columns exactly through the reopen.
+  begin
+    v_incident := reopen_incident('00000000-0000-0000-0000-00000000f740', pg_temp.base_reopen_input('{}'::jsonb));
+    insert into results (test, result, detail) values
+      ('reopen_incident: omitting nextUpdateDue preserves the incident''s existing next_update_due/no_deadline_reason',
+        case when v_incident.next_update_due is null and v_incident.no_deadline_reason = 'התקלה נסגרה'
+          then 'PASS' else 'FAIL' end,
+        'due=' || v_incident.next_update_due || ' reason=' || v_incident.no_deadline_reason);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('reopen_incident: omitting nextUpdateDue preserves the incident''s existing next_update_due/no_deadline_reason', 'FAIL', sqlerrm);
+  end;
+  insert into results (test, result, detail) values
+    ('reopen_incident: succeeds without a nextUpdateDue key at all (no longer a required field)',
+      case when v_incident.status = 'reopened' then 'PASS' else 'FAIL' end, 'status=' || v_incident.status);
+
+  -- A legacy caller that still explicitly supplies nextUpdateDue is honored.
+  begin
+    v_incident2 := reopen_incident('00000000-0000-0000-0000-00000000f741', pg_temp.base_reopen_input(
+      jsonb_build_object('nextUpdateDue', now() + interval '2 hours')));
+    insert into results (test, result, detail) values
+      ('reopen_incident: legacy caller explicitly supplying nextUpdateDue is honored',
+        case when v_incident2.next_update_due is not null then 'PASS' else 'FAIL' end,
+        'due=' || v_incident2.next_update_due);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('reopen_incident: legacy caller explicitly supplying nextUpdateDue is honored', 'FAIL', sqlerrm);
   end;
 
   -- =====================================================================

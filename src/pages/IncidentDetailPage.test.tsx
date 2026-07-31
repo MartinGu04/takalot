@@ -1,12 +1,12 @@
-// UpdateDialog's status-target dropdown: exercised through the real app
-// with the demo repository (real seeded incidents, real rules) -- not a UI
-// mock. Chapter 2 frontend compatibility: cancelled/waiting_equipment/
-// waiting_information/waiting_validation must be fully readable/renderable,
-// but must NOT appear as a selectable update target yet -- closed/reopened
-// for the long-standing dedicated-flow reason, cancelled for the same reason
-// once its own dedicated flow ships, and the three waiting_* statuses
-// because the backend's is_valid_transition (migration 0017) does not yet
-// allow transitioning into any of them from any status.
+// UpdateDialog's "מצב הטיפול" treatment-state control: exercised through the
+// real app with the demo repository (real seeded incidents, real rules) --
+// not a UI mock. The simplified model offers exactly three categories
+// (בטיפול / בהמתנה / במעקב), with בהמתנה expanding into three structured,
+// backend-reachable reasons (0028 widened is_valid_transition for two of
+// them). closed/reopened/cancelled stay reachable only through their own
+// dedicated flows; every legacy status (new/acknowledged/waiting_test/
+// partial_readiness/resolved_pending_close) and waiting_equipment (not one
+// of the three named reasons) are excluded from this control entirely.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -39,8 +39,17 @@ async function openUpdateDialogAsAdmin() {
   const card = await within(main()).findByText(INC1_TEXT);
   await user.click(card.closest('a.incident-card') as HTMLElement);
   await user.click(await within(main()).findByRole('button', { name: 'עדכון תקלה' }));
-  const statusSelect = await screen.findByRole('combobox', { name: /סטטוס נוכחי/ });
+  const statusSelect = await screen.findByRole('combobox', { name: /מצב הטיפול/ });
   return { user, statusSelect };
+}
+
+// The new required "סטטוס נוכחי" free-text field, filled by default in
+// every test below unless a test is specifically exercising its absence --
+// updateIncidentSchema rejects a blank value, so omitting this would make
+// every "successful submission" test below fail client-side validation for
+// an unrelated reason.
+async function fillCurrentStatusText(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement, text = 'המצב הנוכחי לצורך בדיקה') {
+  await user.type(within(dialog).getByLabelText(/^סטטוס נוכחי/), text);
 }
 
 // Chapter 2 incident-update vertical slice: actual event time (מועד העדכון
@@ -48,7 +57,7 @@ async function openUpdateDialogAsAdmin() {
 // path -- exercised through the real app + real demo repository, mirroring
 // the cancellation tests' approach below.
 describe('UpdateDialog: actual event time (מועד העדכון בפועל)', () => {
-  it('shows the renamed label, its helper text, and the two approved placeholders', async () => {
+  it('shows the renamed label, its helper text, and the approved placeholders', async () => {
     await openUpdateDialogAsAdmin();
     const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
     expect(within(dialog).getByLabelText(/^מועד העדכון בפועל/)).toBeInTheDocument();
@@ -58,9 +67,16 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
     expect(
       within(dialog).getByPlaceholderText('אילו בדיקות, פעולות או ניסיונות פתרון בוצעו מאז העדכון הקודם?'),
     ).toBeInTheDocument();
+    // operational-impact editing was removed from the update flow entirely
+    // (it stays a creation-time opening fact) -- its placeholder no longer
+    // appears here. The new required "סטטוס נוכחי" field replaces its
+    // situational purpose in this form.
     expect(
-      within(dialog).getByPlaceholderText('כיצד המצב הנוכחי משפיע על הפעילות, השירות או המשתמשים?'),
+      within(dialog).getByPlaceholderText('לדוגמה: הצוות הטכני בדרך לאתר, ממתינים להערכת נזק.'),
     ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByPlaceholderText('כיצד המצב הנוכחי משפיע על הפעילות, השירות או המשתמשים?'),
+    ).not.toBeInTheDocument();
   });
 
   it('defaults the actual event-time field to now', async () => {
@@ -102,15 +118,13 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
     expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
   });
 
-  it('requires an actual explanation when an update removes the next-update deadline', async () => {
+  it('requires the new "סטטוס נוכחי" field before a full update can be submitted', async () => {
     const { user } = await openUpdateDialogAsAdmin();
     const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
-    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון ללא צפי');
-    await user.click(within(dialog).getByRole('checkbox', { name: 'יש צפי לעדכון הבא' }));
-    await user.type(within(dialog).getByLabelText(/^נימוק ל"ללא צפי כרגע"/), 'ללא צפי כרגע');
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון ללא סטטוס נוכחי');
     await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
 
-    expect(await within(dialog).findByText('יש להזין נימוק ממשי ל"ללא צפי כרגע"')).toBeInTheDocument();
+    expect(await within(dialog).findByText('סטטוס נוכחי: שדה חובה')).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'עדכון תקלה' })).toBeInTheDocument();
   });
 
@@ -118,6 +132,7 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
     const { user } = await openUpdateDialogAsAdmin();
     const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
     await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'בוצעה בדיקה נוספת');
+    await fillCurrentStatusText(user, dialog);
     await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
 
     expect(await screen.findByText('העדכון נשמר.')).toBeInTheDocument();
@@ -147,6 +162,7 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
     const { user } = await openUpdateDialogAsAdmin();
     const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
     await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'בדיקה');
+    await fillCurrentStatusText(user, dialog);
     await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
 
     const pendingButton = await within(dialog).findByRole('button', { name: 'שומר…' });
@@ -171,6 +187,7 @@ describe('UpdateDialog: actual event time (מועד העדכון בפועל)', (
     const { user } = await openUpdateDialogAsAdmin();
     const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
     await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'תוכן שהוזן ולא אבד');
+    await fillCurrentStatusText(user, dialog);
     await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
 
     expect(await screen.findByText('התקלה עודכנה על ידי משתמש אחר. יש לרענן את הדף לפני שמירה.')).toBeInTheDocument();
@@ -194,6 +211,7 @@ describe('UpdateDialog resets only after a confirmed successful submission', () 
     await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'פעולות של העדכון הזה');
     await user.type(within(dialog).getByLabelText(/^ממצאים/), 'ממצאים של העדכון הזה');
     await user.type(within(dialog).getByLabelText(/^פעולות המשך/), 'המשך של העדכון הזה');
+    await fillCurrentStatusText(user, dialog, 'סטטוס נוכחי של העדכון הזה');
     await user.selectOptions(within(dialog).getByLabelText(/^דווח למבצעים/), 'yes');
     await user.type(within(dialog).getByLabelText(/^למי דווח\?/), 'יוסי מהמוקד');
     await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
@@ -208,11 +226,12 @@ describe('UpdateDialog resets only after a confirmed successful submission', () 
     expect(within(reopened).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/)).toHaveValue('');
     expect(within(reopened).getByLabelText(/^ממצאים/)).toHaveValue('');
     expect(within(reopened).getByLabelText(/^פעולות המשך/)).toHaveValue('');
+    expect(within(reopened).getByLabelText(/^סטטוס נוכחי/)).toHaveValue('');
     expect(within(reopened).queryByRole('alert')).not.toBeInTheDocument();
 
     // Structured state is the incident's CURRENT state, freshly seeded --
     // monitoring, not the in_progress this page first rendered with.
-    expect(within(reopened).getByRole('combobox', { name: /סטטוס נוכחי/ })).toHaveValue('monitoring');
+    expect(within(reopened).getByRole('combobox', { name: /מצב הטיפול/ })).toHaveValue('monitoring');
 
     // The event time is re-defaulted to "now" rather than kept from the
     // previous submission.
@@ -232,57 +251,68 @@ describe('UpdateDialog resets only after a confirmed successful submission', () 
       await user.selectOptions(statusSelect, 'monitoring');
       await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'תוכן שלא נשמר');
       await user.type(within(dialog).getByLabelText(/^ממצאים/), 'ממצאים שלא נשמרו');
+      await fillCurrentStatusText(user, dialog, 'סטטוס נוכחי שלא נשמר');
       await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
 
       expect(await screen.findByText('אירעה שגיאה. הנתונים שהוזנו לא נשמרו — ניתן לנסות שוב.')).toBeInTheDocument();
       const stillOpen = screen.getByRole('dialog', { name: 'עדכון תקלה' });
       expect(within(stillOpen).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/)).toHaveValue('תוכן שלא נשמר');
       expect(within(stillOpen).getByLabelText(/^ממצאים/)).toHaveValue('ממצאים שלא נשמרו');
-      expect(within(stillOpen).getByRole('combobox', { name: /סטטוס נוכחי/ })).toHaveValue('monitoring');
+      expect(within(stillOpen).getByLabelText(/^סטטוס נוכחי/)).toHaveValue('סטטוס נוכחי שלא נשמר');
+      expect(within(stillOpen).getByRole('combobox', { name: /מצב הטיפול/ })).toHaveValue('monitoring');
     } finally {
       spy.mockRestore();
     }
   });
 });
 
-describe('UpdateDialog status dropdown: pre-cutover target exclusion', () => {
-  it('does not offer cancelled or the three not-yet-reachable waiting_* statuses as a new selection', async () => {
+describe('UpdateDialog מצב הטיפול control: simplified three-state treatment model', () => {
+  it('offers exactly בטיפול / בהמתנה / במעקב for an incident already in one of those three states (inc-1 is in_progress)', async () => {
     const { statusSelect } = await openUpdateDialogAsAdmin();
     const optionValues = within(statusSelect)
       .getAllByRole('option')
       .map((o) => (o as HTMLOptionElement).value);
-    expect(optionValues).not.toContain('cancelled');
-    expect(optionValues).not.toContain('waiting_equipment');
-    expect(optionValues).not.toContain('waiting_information');
-    expect(optionValues).not.toContain('waiting_validation');
-  });
-
-  it('still excludes closed and reopened (long-standing dedicated-flow rule, unchanged)', async () => {
-    const { statusSelect } = await openUpdateDialogAsAdmin();
-    const optionValues = within(statusSelect)
-      .getAllByRole('option')
-      .map((o) => (o as HTMLOptionElement).value);
-    expect(optionValues).not.toContain('closed');
-    expect(optionValues).not.toContain('reopened');
-  });
-
-  it('still offers every currently-reachable active status as a target', async () => {
-    const { statusSelect } = await openUpdateDialogAsAdmin();
-    const optionValues = within(statusSelect)
-      .getAllByRole('option')
-      .map((o) => (o as HTMLOptionElement).value);
-    for (const s of [
-      'new',
-      'acknowledged',
-      'in_progress',
-      'waiting_external',
-      'waiting_test',
-      'monitoring',
-      'partial_readiness',
-      'resolved_pending_close',
-    ]) {
-      expect(optionValues).toContain(s);
+    expect(optionValues).toEqual(['in_progress', 'waiting', 'monitoring']);
+    // Nothing terminal, legacy, or not-yet-reachable is ever an option here --
+    // closed/reopened/cancelled (dedicated flows) and every legacy status
+    // (new/acknowledged/waiting_test/partial_readiness/resolved_pending_close)
+    // simply never appear in this simplified control.
+    for (const s of ['closed', 'reopened', 'cancelled', 'new', 'acknowledged', 'waiting_test', 'partial_readiness', 'resolved_pending_close', 'waiting_equipment']) {
+      expect(optionValues).not.toContain(s);
     }
+  });
+
+  it('selecting בהמתנה reveals a required סיבת ההמתנה select with the three structured, backend-reachable reasons', async () => {
+    const { user, statusSelect } = await openUpdateDialogAsAdmin();
+    expect(screen.queryByRole('combobox', { name: /^סיבת ההמתנה/ })).not.toBeInTheDocument();
+    await user.selectOptions(statusSelect, 'waiting');
+    const reasonSelect = await screen.findByRole('combobox', { name: /^סיבת ההמתנה/ });
+    const reasonValues = within(reasonSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value);
+    // waiting_equipment is deliberately excluded -- not one of the three
+    // named reasons this model offers, even though 0028 leaves it a valid
+    // stored/displayable status.
+    expect(reasonValues).toEqual(['waiting_external', 'waiting_information', 'waiting_validation']);
+  });
+
+  it('choosing a waiting reason sets the underlying status to that exact enum value (now backend-reachable per 0028)', async () => {
+    const { user, statusSelect } = await openUpdateDialogAsAdmin();
+    await user.selectOptions(statusSelect, 'waiting');
+    const reasonSelect = await screen.findByRole('combobox', { name: /^סיבת ההמתנה/ });
+    await user.selectOptions(reasonSelect, 'waiting_information');
+    expect(reasonSelect).toHaveValue('waiting_information');
+
+    await user.selectOptions(reasonSelect, 'waiting_validation');
+    expect(reasonSelect).toHaveValue('waiting_validation');
+  });
+
+  it('switching back to בטיפול or במעקב hides the סיבת ההמתנה select again', async () => {
+    const { user, statusSelect } = await openUpdateDialogAsAdmin();
+    await user.selectOptions(statusSelect, 'waiting');
+    await screen.findByRole('combobox', { name: /^סיבת ההמתנה/ });
+    await user.selectOptions(statusSelect, 'monitoring');
+    expect(screen.queryByRole('combobox', { name: /^סיבת ההמתנה/ })).not.toBeInTheDocument();
   });
 });
 

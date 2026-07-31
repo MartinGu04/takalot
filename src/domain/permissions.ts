@@ -184,6 +184,5 @@ export const PROTECTED_FIELDS = [
   'operational_impact',
   'owner',
   'status',
-  'next_update_due',
   'closure',
 ] as const;

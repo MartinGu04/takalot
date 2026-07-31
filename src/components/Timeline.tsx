@@ -131,7 +131,13 @@ export function Timeline({
               )}
               {update && (
                 <div className="mt-1.5 rounded-lg bg-surface-active p-2.5 text-sm">
-                  <p>
+                  {update.currentStatusText && (
+                    <p>
+                      <span className="font-medium">{fieldLabels.current_status_text}: </span>
+                      <span className="whitespace-pre-wrap break-words">{update.currentStatusText}</span>
+                    </p>
+                  )}
+                  <p className={update.currentStatusText ? 'mt-1' : ''}>
                     <span className="font-medium">פעולות שבוצעו: </span>
                     <span className="whitespace-pre-wrap break-words">{update.actionsTaken}</span>
                   </p>

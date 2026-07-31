@@ -62,6 +62,7 @@ test('reporting recipient is required only when reported-to-operations is "כן"
   await dialog.getByLabel('דווח למבצעים').selectOption({ label: 'כן' });
   await expect(dialog.getByLabel('למי דווח?')).toHaveValue('');
   await dialog.getByLabel('פעולות שבוצעו מאז העדכון הקודם').fill('דיווח למוקד המבצעים');
+  await dialog.getByLabel('סטטוס נוכחי').fill('המצב הנוכחי לצורך בדיקה');
   await dialog.getByRole('button', { name: 'שמירת עדכון' }).click();
   await expect(dialog.getByRole('alert')).toBeVisible();
 

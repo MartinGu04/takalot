@@ -6,6 +6,15 @@ import { statusLabels } from './labels';
 const ACTIVE_TARGETS: IncidentStatus[] = [
   'in_progress',
   'waiting_external',
+  // waiting_information/waiting_validation: added by migration 0028, which
+  // widened the backend's is_valid_transition catch-all target list to
+  // permit transitioning INTO either of them from any non-terminal status
+  // (matching the "מצב הטיפול" treatment-state model's two "בהמתנה"
+  // sub-reasons). waiting_equipment is deliberately NOT added here: it is
+  // not one of the model's three named reasons, so it stays a valid
+  // stored/displayable status but not a reachable update target.
+  'waiting_information',
+  'waiting_validation',
   'waiting_test',
   'monitoring',
   'partial_readiness',
@@ -17,6 +26,8 @@ export const allowedTransitions: Record<IncidentStatus, IncidentStatus[]> = {
   acknowledged: ACTIVE_TARGETS,
   in_progress: ACTIVE_TARGETS.filter((s) => s !== 'in_progress'),
   waiting_external: ACTIVE_TARGETS.filter((s) => s !== 'waiting_external'),
+  waiting_information: ACTIVE_TARGETS.filter((s) => s !== 'waiting_information'),
+  waiting_validation: ACTIVE_TARGETS.filter((s) => s !== 'waiting_validation'),
   waiting_test: ACTIVE_TARGETS.filter((s) => s !== 'waiting_test'),
   monitoring: ACTIVE_TARGETS.filter((s) => s !== 'monitoring'),
   partial_readiness: ACTIVE_TARGETS.filter((s) => s !== 'partial_readiness'),
@@ -28,18 +39,12 @@ export const allowedTransitions: Record<IncidentStatus, IncidentStatus[]> = {
   // 'cancelled' is terminal and reachable only through its own dedicated
   // flow (not yet exposed in any UI) -- no outgoing transitions.
   cancelled: [],
-  // waiting_equipment/waiting_information/waiting_validation are NOT added
-  // to ACTIVE_TARGETS: the backend's is_valid_transition (migration 0017)
-  // was never updated to allow transitioning INTO any of these three as a
-  // target from any status, so offering them here would let the UI present
-  // an option the backend always rejects. Outgoing transitions FROM one of
-  // these statuses (should one ever exist in historical or externally
-  // inserted data) already work correctly via the backend's unchanged
-  // fallback branch, so they get the same target list as any other
-  // non-terminal status.
+  // waiting_equipment is NOT a reachable target anywhere above (see the
+  // ACTIVE_TARGETS comment), but outgoing transitions FROM it (should one
+  // ever exist in historical or externally inserted data) already work
+  // correctly via the backend's unchanged fallback branch, so it gets the
+  // same target list as any other non-terminal status.
   waiting_equipment: ACTIVE_TARGETS,
-  waiting_information: ACTIVE_TARGETS,
-  waiting_validation: ACTIVE_TARGETS,
 };
 
 export function canTransition(from: IncidentStatus, to: IncidentStatus): boolean {

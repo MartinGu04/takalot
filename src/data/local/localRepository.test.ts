@@ -41,8 +41,6 @@ function baseCreateInput(overrides: Partial<CreateIncidentInput> = {}): CreateIn
     status: 'new',
     ownerUserId: DEMO_USERS.tech1,
     ownerExternalName: null,
-    nextUpdateDue: new Date(FIXED_NOW.getTime() + 4 * 3600_000).toISOString(),
-    noDeadlineReason: null,
     reportedToOps: 'no',
     reportedToComms: false,
     reportedToCommsRecipient: null,
@@ -477,12 +475,10 @@ describe('reporting recipient', () => {
         nextSteps: '',
         status: incident!.status,
         severity: incident!.severity,
-        operationalImpact: incident!.operationalImpact,
+        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         changeReason: '',
         ownerUserId: incident!.ownerUserId,
         ownerExternalName: incident!.ownerExternalName,
-        nextUpdateDue: incident!.nextUpdateDue,
-        noDeadlineReason: incident!.noDeadlineReason,
         reportedToOps: 'yes',
         reportedToOpsRecipient: '',
       }),
@@ -496,12 +492,10 @@ describe('reporting recipient', () => {
       nextSteps: '',
       status: incident!.status,
       severity: incident!.severity,
-      operationalImpact: incident!.operationalImpact,
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
       ownerUserId: incident!.ownerUserId,
       ownerExternalName: incident!.ownerExternalName,
-      nextUpdateDue: incident!.nextUpdateDue,
-      noDeadlineReason: incident!.noDeadlineReason,
       reportedToOps: 'yes',
       reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
     });
@@ -516,12 +510,10 @@ describe('reporting recipient', () => {
       nextSteps: '',
       status: incident!.status,
       severity: incident!.severity,
-      operationalImpact: incident!.operationalImpact,
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
       ownerUserId: incident!.ownerUserId,
       ownerExternalName: incident!.ownerExternalName,
-      nextUpdateDue: incident!.nextUpdateDue,
-      noDeadlineReason: incident!.noDeadlineReason,
       reportedToOps: 'no',
       reportedToOpsRecipient: 'ערך שאמור להימחק',
     });
@@ -538,12 +530,10 @@ describe('reporting recipient', () => {
       nextSteps: '',
       status: incident!.status,
       severity: incident!.severity,
-      operationalImpact: incident!.operationalImpact,
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
       ownerUserId: incident!.ownerUserId,
       ownerExternalName: incident!.ownerExternalName,
-      nextUpdateDue: incident!.nextUpdateDue,
-      noDeadlineReason: incident!.noDeadlineReason,
       reportedToOps: 'yes',
       reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
     });
@@ -568,7 +558,6 @@ describe('reopening requirements', () => {
       repo.reopenIncident(manager, 'inc-1', {
         expectedVersion: incident!.version,
         reason: 'סיבה',
-        nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
         ownerUserId: DEMO_USERS.tech1,
         ownerExternalName: null,
       }),
@@ -581,7 +570,6 @@ describe('reopening requirements', () => {
       repo.reopenIncident(supervisor1, 'inc-5', {
         expectedVersion: incident!.version,
         reason: 'התופעה חזרה',
-        nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
         ownerUserId: DEMO_USERS.tech1,
         ownerExternalName: null,
       }),
@@ -594,19 +582,17 @@ describe('reopening requirements', () => {
     const reopened = await repo.reopenIncident(supervisor1, 'inc-5', {
       expectedVersion: incident!.version,
       reason: 'התופעה חזרה',
-      nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
       ownerUserId: DEMO_USERS.tech1,
       ownerExternalName: null,
     });
     expect(reopened.status).toBe('reopened');
   });
 
-  it('allows professional_manager to reopen and requires reason + owner + next-update deadline', async () => {
-    const incident = await repo.getIncident(manager, 'inc-5');
+  it('allows professional_manager to reopen and requires reason + owner (no next-update deadline -- that concept was removed)', async () => {
+    const before = await repo.getIncident(manager, 'inc-5');
     const reopened = await repo.reopenIncident(manager, 'inc-5', {
-      expectedVersion: incident!.version,
+      expectedVersion: before!.version,
       reason: 'התגלה שהתקלה לא נפתרה במלואה',
-      nextUpdateDue: new Date(FIXED_NOW.getTime() + 2 * 3600_000).toISOString(),
       ownerUserId: DEMO_USERS.tech2,
       ownerExternalName: null,
     } satisfies ReopenIncidentInput);
@@ -614,7 +600,11 @@ describe('reopening requirements', () => {
     expect(reopened.ownerUserId).toBe(DEMO_USERS.tech2);
     expect(reopened.reopenCount).toBe(1);
     expect(reopened.closedAt).toBeNull();
-    expect(reopened.nextUpdateDue).not.toBeNull();
+    // next_update_due/no_deadline_reason are no longer asked for on reopen --
+    // whatever the incident had before (here, closed's own values) carries
+    // forward untouched.
+    expect(reopened.nextUpdateDue).toBe(before!.nextUpdateDue);
+    expect(reopened.noDeadlineReason).toBe(before!.noDeadlineReason);
 
     const events = await repo.getIncidentEvents(manager, 'inc-5');
     expect(events.some((e) => e.type === 'reopened')).toBe(true);
@@ -626,7 +616,6 @@ describe('reopening requirements', () => {
       repo.reopenIncident(manager, 'inc-6', {
         expectedVersion: incident!.version,
         reason: '',
-        nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
         ownerUserId: DEMO_USERS.tech1,
         ownerExternalName: null,
       } as ReopenIncidentInput),
@@ -801,6 +790,7 @@ describe('technician update restrictions (backend enforced)', () => {
       actionsTaken: 'המשך בדיקה טכנית',
       findings: 'לא נמצא חדש',
       nextSteps: 'המשך מעקב',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
     });
     expect(updated.version).toBe(incident!.version + 1);
   });
@@ -814,6 +804,7 @@ describe('technician update restrictions (backend enforced)', () => {
         actionsTaken: 'ניסיון גישה לתקלה של אחר',
         findings: '',
         nextSteps: '',
+        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       }),
     ).rejects.toThrow(AppError);
   });
@@ -829,12 +820,10 @@ describe('technician update restrictions (backend enforced)', () => {
         nextSteps: '',
         status: 'monitoring',
         severity: 'low',
-        operationalImpact: 'שינוי לא מורשה',
+        currentStatusText: 'שינוי לא מורשה',
         changeReason: '',
         ownerUserId: DEMO_USERS.tech1,
         ownerExternalName: null,
-        nextUpdateDue: null,
-        noDeadlineReason: 'x',
         reportedToOps: 'no',
       }),
     ).rejects.toThrow(AppError);
@@ -860,12 +849,10 @@ describe('optimistic concurrency', () => {
       nextSteps: '',
       status: incident!.status,
       severity: incident!.severity,
-      operationalImpact: incident!.operationalImpact,
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
       ownerUserId: incident!.ownerUserId,
       ownerExternalName: incident!.ownerExternalName,
-      nextUpdateDue: incident!.nextUpdateDue,
-      noDeadlineReason: incident!.noDeadlineReason,
       reportedToOps: incident!.reportedToOps,
       reportedToOpsRecipient: incident!.reportedToOpsRecipient,
     });
@@ -880,12 +867,10 @@ describe('optimistic concurrency', () => {
         nextSteps: '',
         status: incident!.status,
         severity: incident!.severity,
-        operationalImpact: incident!.operationalImpact,
+        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         changeReason: '',
         ownerUserId: incident!.ownerUserId,
         ownerExternalName: incident!.ownerExternalName,
-        nextUpdateDue: incident!.nextUpdateDue,
-        noDeadlineReason: incident!.noDeadlineReason,
         reportedToOps: incident!.reportedToOps,
         reportedToOpsRecipient: incident!.reportedToOpsRecipient,
       }),
@@ -901,7 +886,7 @@ describe('optimistic concurrency', () => {
 // reach a state the real RPCs would reject.
 describe('update event-time integrity (mirrors migration 0020)', () => {
   function baseUpdateInput(
-    incident: { status: string; severity: string; operationalImpact: string; ownerUserId: string | null; ownerExternalName: string | null; nextUpdateDue: string | null; noDeadlineReason: string | null; reportedToOps: string; reportedToOpsRecipient: string | null; version: number },
+    incident: { status: string; severity: string; ownerUserId: string | null; ownerExternalName: string | null; reportedToOps: string; reportedToOpsRecipient: string | null; version: number },
     eventTime: string,
   ) {
     return {
@@ -910,14 +895,12 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
       actionsTaken: 'עדכון לצורך בדיקה',
       findings: '',
       nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       status: incident.status,
       severity: incident.severity,
-      operationalImpact: incident.operationalImpact,
       changeReason: '',
       ownerUserId: incident.ownerUserId,
       ownerExternalName: incident.ownerExternalName,
-      nextUpdateDue: incident.nextUpdateDue,
-      noDeadlineReason: incident.noDeadlineReason,
       reportedToOps: incident.reportedToOps,
       reportedToOpsRecipient: incident.reportedToOpsRecipient,
     } as Parameters<LocalDemoRepository['updateIncident']>[2];
@@ -976,6 +959,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         actionsTaken: 'בדיקה',
         findings: '',
         nextSteps: '',
+        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(
@@ -985,6 +969,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         actionsTaken: 'בדיקה',
         findings: '',
         nextSteps: '',
+        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(
@@ -994,6 +979,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         actionsTaken: 'בדיקה',
         findings: '',
         nextSteps: '',
+        currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
   });
@@ -1095,14 +1081,6 @@ describe('filter behavior', () => {
     const critical = await repo.listIncidents(supervisor1, { severity: ['critical'] });
     expect(critical.every((i) => i.severity === 'critical')).toBe(true);
     expect(critical.some((i) => i.id === 'inc-1')).toBe(true);
-  });
-
-  it('filters by overdue-only', async () => {
-    const repo = newRepo({ now: FIXED_NOW });
-    const overdue = await repo.listIncidents(supervisor1, { overdueOnly: true });
-    expect(overdue.length).toBeGreaterThan(0);
-    expect(overdue.some((i) => i.id === 'inc-1')).toBe(true);
-    expect(overdue.some((i) => i.id === 'inc-2')).toBe(false);
   });
 
   it('terminalOnly (the archive scope) includes both closed and cancelled incidents, excludes open ones', async () => {
@@ -1914,14 +1892,12 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
       actionsTaken: 'בוצעה בדיקה',
       findings: '',
       nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       status: 'in_progress',
       severity: 'critical',
-      operationalImpact: 'אין יכולת הפעלה מלאה של מערכת אלפא. נדרש מעקף ידני.',
       changeReason: '',
       ownerUserId: DEMO_USERS.tech1,
       ownerExternalName: null,
-      nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
-      noDeadlineReason: null,
       reportedToOps: 'no',
       reportedToOpsRecipient: null,
       ...overrides,
@@ -1929,25 +1905,27 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
   }
 
   it('updateIncident: every row a single call inserts (update + every changed field) shares one operationId', async () => {
+    // operational_impact is no longer editable via update_incident (PR B),
+    // so it no longer contributes a row here -- four remaining protected
+    // fields (status, severity, owner, reportedToOps) plus the unconditional
+    // 'update' row itself: 5 rows total.
     await repo.updateIncident(
       supervisor1,
       'inc-1',
       baseUpdateInput({
         status: 'monitoring',
         severity: 'high',
-        operationalImpact: 'השפעה חדשה',
         ownerUserId: DEMO_USERS.tech2,
-        nextUpdateDue: new Date(FIXED_NOW.getTime() + 7200_000).toISOString(),
         reportedToOps: 'yes',
         reportedToOpsRecipient: 'יוסי מהמוקד',
       }),
     );
     const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
     const thisCall = events.filter((e) =>
-      ['update', 'status_change', 'severity_change', 'impact_change', 'assignment_change', 'deadline_change', 'reported_to_ops_change'].includes(e.type)
+      ['update', 'status_change', 'severity_change', 'assignment_change', 'reported_to_ops_change'].includes(e.type)
       && e.eventTime === FIXED_NOW.toISOString(),
     );
-    expect(thisCall.length).toBe(7);
+    expect(thisCall.length).toBe(5);
     const operationIds = new Set(thisCall.map((e) => e.operationId));
     expect(operationIds.size).toBe(1);
     expect([...operationIds][0]).not.toBeNull();
