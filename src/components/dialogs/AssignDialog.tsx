@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { assignIncidentSchema, type AssignIncidentInput } from '../../domain/schemas';
 import { useProfiles } from '../../data/hooks';
@@ -28,6 +28,29 @@ export function AssignDialog({
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+
+  // Unlike UpdateDialog (conditionally mounted, so it remounts fresh on
+  // every open), this dialog stays mounted across opens/closes -- its
+  // `useState` initializers above only ran once, at first mount. Without
+  // this, owner/external-handler fields would keep showing whatever
+  // `incident` looked like back then, even after another flow (e.g.
+  // UpdateDialog) changes them. Hydrating on the closed->open transition
+  // (not on every `incident` change) is what avoids clobbering an
+  // in-progress edit while this dialog is already open.
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setOwnerUserId(incident.ownerUserId ?? '');
+      setExtName(incident.externalHandlerName ?? '');
+      setExtPerson(incident.externalHandlerContactPerson ?? '');
+      setExtDetails(incident.externalHandlerContactDetails ?? '');
+      setNote('');
+      setOwnerError(undefined);
+      setExtError(undefined);
+      setError(undefined);
+    }
+    wasOpenRef.current = open;
+  }, [open, incident]);
 
   const handleClose = () => {
     setOwnerUserId(incident.ownerUserId ?? '');

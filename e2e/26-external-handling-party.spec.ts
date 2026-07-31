@@ -105,6 +105,40 @@ test.describe('closure: ExternalPartyFields appears at every readiness level', (
   });
 });
 
+test.describe('regression: AssignDialog reflects the latest external contact after UpdateDialog changes it', () => {
+  test('update external contact person -> open AssignDialog -> the latest contact is shown, not the stale value from initial mount', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.supervisor1);
+    await page.goto('/incidents');
+    await page.getByRole('link', { name: /2026-002/ }).click();
+
+    // Open AssignDialog once first, locking in its local state at first mount.
+    await page.getByRole('button', { name: 'שינוי גורם מטפל' }).click();
+    const assignDialog = page.getByRole('dialog', { name: 'שינוי גורם מטפל' });
+    await expect(assignDialog.getByLabel('איש קשר')).toHaveValue('');
+    await assignDialog.getByRole('button', { name: 'ביטול' }).click();
+    await expect(assignDialog).toBeHidden();
+
+    // Change the external contact person via UpdateDialog while AssignDialog
+    // stays mounted-but-closed in the background.
+    await page.getByRole('button', { name: 'עדכון תקלה' }).click();
+    const updateDialog = page.getByRole('dialog', { name: 'עדכון תקלה' });
+    await updateDialog.getByLabel('פעולות שבוצעו מאז העדכון הקודם').fill('עדכון איש קשר חיצוני לבדיקת רגרסיה');
+    await updateDialog.getByLabel('סטטוס נוכחי').fill('בדיקת רגרסיה');
+    await updateDialog.getByLabel('דווח למבצעים?').selectOption({ label: 'לא נדרש' });
+    await updateDialog.getByLabel('האם דווח לתקשוב למבצעים?').selectOption({ label: 'לא' });
+    await updateDialog.getByLabel('האם עודכן ב-WISDOM?').selectOption({ label: 'לא' });
+    await updateDialog.getByLabel('גורם מטפל חיצוני').fill('ספק לבדיקת רגרסיה');
+    await updateDialog.getByLabel('איש קשר').fill('איש קשר חדש לבדיקה');
+    await updateDialog.getByRole('button', { name: 'שמירת עדכון' }).click();
+    await expect(updateDialog).toBeHidden();
+
+    // Reopening AssignDialog must reflect the just-updated contact person,
+    // not the stale empty value captured at its first mount.
+    await page.getByRole('button', { name: 'שינוי גורם מטפל' }).click();
+    await expect(assignDialog.getByLabel('איש קשר')).toHaveValue('איש קשר חדש לבדיקה');
+  });
+});
+
 test.describe('legacy compatibility: an external-only incident predating the model', () => {
   test('inc-3 (legacy external-only) shows a read-only carry-over hint and requires selecting an internal owner before it can be updated', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);

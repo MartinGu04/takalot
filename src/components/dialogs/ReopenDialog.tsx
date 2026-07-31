@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { reopenIncidentSchema, type ReopenIncidentInput } from '../../domain/schemas';
 import { useProfiles } from '../../data/hooks';
@@ -28,6 +28,26 @@ export function ReopenDialog({
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+
+  // This dialog stays mounted across opens/closes (unlike UpdateDialog,
+  // which remounts fresh each time), so ownerUserId/external-handler
+  // fields above would otherwise keep showing whatever `incident` looked
+  // like at first mount, even after another flow changes them. Hydrating
+  // only on the closed->open transition (not on every `incident` change)
+  // avoids clobbering an in-progress edit while this dialog is already
+  // open.
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setOwnerUserId(incident.ownerUserId ?? '');
+      setExtName(incident.externalHandlerName ?? '');
+      setExtPerson(incident.externalHandlerContactPerson ?? '');
+      setExtDetails(incident.externalHandlerContactDetails ?? '');
+      setOwnerError(undefined);
+      setExtError(undefined);
+    }
+    wasOpenRef.current = open;
+  }, [open, incident]);
 
   const handleClose = () => {
     setReason('');

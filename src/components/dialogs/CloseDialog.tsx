@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { closeIncidentSchema, type CloseIncidentInput } from '../../domain/schemas';
 import { readinessLabels, reportedToOpsLabels } from '../../domain/labels';
@@ -38,6 +38,27 @@ export function CloseDialog({
   const [confirming, setConfirming] = useState(false);
 
   const fullyReady = readiness === 'full';
+
+  // This dialog stays mounted across opens/closes (unlike UpdateDialog,
+  // which remounts fresh each time), so ownerUserId/external-handler
+  // fields above would otherwise keep showing whatever `incident` looked
+  // like at first mount, even after another flow changes them. Hydrating
+  // only on the closed->open transition (not on every `incident` change)
+  // avoids clobbering an in-progress edit while this dialog is already
+  // open. Scoped to the owner/external-handler fields only -- the rest of
+  // this form's own reset-on-close behavior is unrelated and unchanged.
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setOwnerUserId(incident.ownerUserId ?? '');
+      setExtName(incident.externalHandlerName ?? '');
+      setExtPerson(incident.externalHandlerContactPerson ?? '');
+      setExtDetails(incident.externalHandlerContactDetails ?? '');
+      setOwnerError(undefined);
+      setExtError(undefined);
+    }
+    wasOpenRef.current = open;
+  }, [open, incident]);
 
   const handleClose = () => {
     setRootCause('');
