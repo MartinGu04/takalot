@@ -337,6 +337,7 @@ describe('external handling party: internal owner is now mandatory on every life
   it('closeIncidentSchema: internal owner is required only when readiness is not full', () => {
     const fullReadyNoOwner = closeIncidentSchema.safeParse({
       expectedVersion: 1,
+      eventTime: new Date().toISOString(),
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'full',
@@ -346,6 +347,7 @@ describe('external handling party: internal owner is now mandatory on every life
 
     const partialNoOwner = closeIncidentSchema.safeParse({
       expectedVersion: 1,
+      eventTime: new Date().toISOString(),
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'partial',
@@ -359,6 +361,7 @@ describe('external handling party: internal owner is now mandatory on every life
 
     const partialWithOwner = closeIncidentSchema.safeParse({
       expectedVersion: 1,
+      eventTime: new Date().toISOString(),
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'partial',
@@ -367,6 +370,40 @@ describe('external handling party: internal owner is now mandatory on every life
       reportedToOps: 'not_required',
     });
     expect(partialWithOwner.success).toBe(true);
+  });
+
+  it('closeIncidentSchema: eventTime (actual closure time) is required', () => {
+    const missing = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      reportedToOps: 'not_required',
+    });
+    expect(missing.success).toBe(false);
+    if (!missing.success) {
+      expect(missing.error.issues.some((i) => i.path[0] === 'eventTime')).toBe(true);
+    }
+
+    const blank = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      eventTime: '',
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      reportedToOps: 'not_required',
+    });
+    expect(blank.success).toBe(false);
+
+    const withEventTime = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      reportedToOps: 'not_required',
+    });
+    expect(withEventTime.success).toBe(true);
   });
 });
 
@@ -434,6 +471,7 @@ describe('external handling party: name-required-with-contact validation', () =>
   it('closeIncidentSchema applies the name-required-with-contact rule unconditionally, even at full readiness, when the name is explicitly blank', () => {
     const result = closeIncidentSchema.safeParse({
       expectedVersion: 1,
+      eventTime: new Date().toISOString(),
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'full',

@@ -272,6 +272,7 @@ describe('closure requirements', () => {
     await expect(
       repo.closeIncident(supervisor1, 'inc-1', {
         expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
         rootCause: '',
         resolution: '',
         readiness: 'full',
@@ -286,6 +287,7 @@ describe('closure requirements', () => {
     await expect(
       repo.closeIncident(supervisor1, 'inc-2', {
         expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
         rootCause: 'תקלת חומרה',
         resolution: 'הוחלף רכיב',
         readiness: 'partial',
@@ -299,6 +301,7 @@ describe('closure requirements', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-2');
     const closed = await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה בכרטיס התקשורת',
       resolution: 'הוחלף הכרטיס ואומתה תקינות',
       readiness: 'full',
@@ -316,6 +319,7 @@ describe('closure requirements', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-3');
     const closed = await repo.closeIncident(supervisor1, 'inc-3', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'רכיב פגום',
       resolution: 'הותקן פתרון זמני',
       readiness: 'partial',
@@ -331,6 +335,7 @@ describe('closure requirements', () => {
     await expect(
       repo.closeIncident(tech1, 'inc-1', {
         expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
         rootCause: 'x',
         resolution: 'y',
         readiness: 'full',
@@ -345,6 +350,7 @@ describe('closure requirements', () => {
     await expect(
       repo.closeIncident(supervisor1, 'inc-5', {
         expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
         rootCause: 'x',
         resolution: 'y',
         readiness: 'full',
@@ -352,6 +358,157 @@ describe('closure requirements', () => {
         reportedToOps: 'no',
       }),
     ).rejects.toThrow(AppError);
+  });
+});
+
+// Retroactive closure time (PR D, migration 0033): close_incident gains a
+// required, validated eventTime -- the actual moment the closure happened,
+// distinct from server_time (when Nexus recorded it). Deliberately scoped:
+// no reporting-field, export, readiness, or ownership behavior is touched
+// by this feature.
+describe('retroactive closure time (migration 0033)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('a backdated eventTime (within bounds) sets closedAt to that value, not "now"', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const backdated = new Date(FIXED_NOW.getTime() - 2 * 60 * 60_000).toISOString(); // 2h before FIXED_NOW
+    const closed = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: backdated,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(closed.closedAt).toBe(backdated);
+    expect(closed.closedAt).not.toBe(FIXED_NOW.toISOString());
+  });
+
+  it('the "closed" event carries the validated eventTime; createdAt (server-recorded time) stays the actual recording time, independently ~now', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const backdated = new Date(FIXED_NOW.getTime() - 3 * 60 * 60_000).toISOString(); // 3h before FIXED_NOW
+    await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: backdated,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const closedEvent = events.find((e) => e.type === 'closed');
+    expect(closedEvent).toBeDefined();
+    expect(closedEvent!.eventTime).toBe(backdated);
+    expect(closedEvent!.serverTime).toBe(FIXED_NOW.toISOString());
+    expect(closedEvent!.eventTime).not.toBe(closedEvent!.serverTime);
+  });
+
+  it('exact discoveredAt boundary is accepted (inclusive lower bound)', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const closed = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: incident!.discoveredAt,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(closed.closedAt).toBe(incident!.discoveredAt);
+  });
+
+  it('exact now()+5min boundary is accepted (inclusive upper bound)', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const boundary = new Date(FIXED_NOW.getTime() + 5 * 60_000).toISOString();
+    const closed = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: boundary,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(closed.closedAt).toBe(boundary);
+  });
+
+  it('rejects an eventTime before discoveredAt, leaving the incident, events, audits, and notifications byte-for-byte unchanged', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-2');
+    const beforeEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const beforeAudits = await repo.listAuditLogs(admin, {});
+    const beforeNotifications = await repo.listNotifications(supervisor1);
+    const tooEarly = new Date(new Date(before!.discoveredAt).getTime() - 60_000).toISOString();
+
+    await expect(
+      repo.closeIncident(supervisor1, 'inc-2', {
+        expectedVersion: before!.version,
+        eventTime: tooEarly,
+        rootCause: 'תקלת חומרה',
+        resolution: 'הוחלף רכיב',
+        readiness: 'full',
+        followUpNotes: '',
+        reportedToOps: 'no',
+      } as CloseIncidentInput),
+    ).rejects.toThrow(AppError);
+
+    const after = await repo.getIncident(supervisor1, 'inc-2');
+    const afterEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const afterAudits = await repo.listAuditLogs(admin, {});
+    const afterNotifications = await repo.listNotifications(supervisor1);
+    expect(after).toEqual(before);
+    expect(afterEvents).toEqual(beforeEvents);
+    expect(afterAudits).toEqual(beforeAudits);
+    expect(afterNotifications).toEqual(beforeNotifications);
+  });
+
+  it('rejects an eventTime beyond now()+5 minutes, leaving state unchanged', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-2');
+    const beforeEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const tooLate = new Date(FIXED_NOW.getTime() + 6 * 60_000).toISOString();
+
+    await expect(
+      repo.closeIncident(supervisor1, 'inc-2', {
+        expectedVersion: before!.version,
+        eventTime: tooLate,
+        rootCause: 'תקלת חומרה',
+        resolution: 'הוחלף רכיב',
+        readiness: 'full',
+        followUpNotes: '',
+        reportedToOps: 'no',
+      } as CloseIncidentInput),
+    ).rejects.toThrow(AppError);
+
+    const after = await repo.getIncident(supervisor1, 'inc-2');
+    const afterEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    expect(after).toEqual(before);
+    expect(afterEvents).toEqual(beforeEvents);
+  });
+
+  it('applies the validated eventTime identically in the partial-readiness branch, without setting closedAt (readiness behavior preserved)', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    const backdated = new Date(FIXED_NOW.getTime() - 60 * 60_000).toISOString();
+    const partial = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: backdated,
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב זמני',
+      readiness: 'partial',
+      followUpNotes: 'להזמין רכיב קבוע',
+      ownerUserId: DEMO_USERS.tech2,
+      reportedToOps: 'no',
+    } as CloseIncidentInput);
+    expect(partial.status).toBe('partial_readiness');
+    expect(partial.closedAt).toBeNull();
+
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const statusChangeEvent = events.find((e) => e.type === 'status_change' && e.newValue === 'partial_readiness');
+    expect(statusChangeEvent).toBeDefined();
+    expect(statusChangeEvent!.eventTime).toBe(backdated);
   });
 });
 
@@ -365,6 +522,7 @@ describe('incomplete-readiness lifecycle', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-2');
     const result = await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב זמני',
       readiness: 'partial',
@@ -388,6 +546,7 @@ describe('incomplete-readiness lifecycle', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-3');
     const result = await repo.closeIncident(supervisor1, 'inc-3', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה חמורה',
       resolution: 'טופל חלקית',
       readiness: 'none',
@@ -404,6 +563,7 @@ describe('incomplete-readiness lifecycle', () => {
     await expect(
       repo.closeIncident(supervisor1, 'inc-2', {
         expectedVersion: incident!.version,
+        eventTime: FIXED_NOW.toISOString(),
         rootCause: 'תקלת חומרה',
         resolution: 'הוחלף רכיב זמני',
         readiness: 'partial',
@@ -417,6 +577,7 @@ describe('incomplete-readiness lifecycle', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-2');
     const result = await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה',
       resolution: 'תוקנה במלואה',
       readiness: 'full',
@@ -432,6 +593,7 @@ describe('incomplete-readiness lifecycle', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-2');
     const partial = await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב זמני',
       readiness: 'partial',
@@ -443,6 +605,7 @@ describe('incomplete-readiness lifecycle', () => {
 
     const closed = await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: partial.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה',
       resolution: 'הותקן רכיב קבוע ואומתה תקינות מלאה',
       readiness: 'full',
@@ -934,6 +1097,7 @@ describe('external handling party (migration 0032)', () => {
     const before = await repo.getIncident(supervisor1, 'inc-2');
     const closed = await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'full',
@@ -949,6 +1113,7 @@ describe('external handling party (migration 0032)', () => {
     const before = await repo.getIncident(supervisor1, 'inc-3');
     const partial = await repo.closeIncident(supervisor1, 'inc-3', {
       expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'סיבה',
       resolution: 'פתרון חלקי',
       readiness: 'partial',
@@ -2328,6 +2493,7 @@ describe('closed-incident count (countClosedIncidents)', () => {
     const incident = await repo.getIncident(supervisor1, 'inc-1');
     const closed = await repo.closeIncident(supervisor1, 'inc-1', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
@@ -2450,6 +2616,7 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
     const incident = await repo.getIncident(supervisor1, 'inc-2');
     await repo.closeIncident(supervisor1, 'inc-2', {
       expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
