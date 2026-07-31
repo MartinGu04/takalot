@@ -131,7 +131,7 @@ grant execute on function pg_temp.base_assign_input(jsonb) to authenticated;
 
 create or replace function pg_temp.base_close_input(extra jsonb) returns jsonb language sql as $$
   select jsonb_build_object(
-    'expectedVersion', 1, 'rootCause', 'root', 'resolution', 'fix', 'readiness', 'full',
+    'expectedVersion', 1, 'eventTime', now(), 'rootCause', 'root', 'resolution', 'fix', 'readiness', 'full',
     'reportedToOps', 'not_required'
   ) || extra;
 $$;

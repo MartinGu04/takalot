@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { closeIncidentSchema, type CloseIncidentInput } from '../../domain/schemas';
 import { readinessLabels, reportedToOpsLabels } from '../../domain/labels';
-import { formatDuration } from '../../lib/time';
+import { formatDuration, isoToLocalInput, localInputToIso } from '../../lib/time';
 import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { ExternalPartyFields } from '../ExternalPartyFields';
@@ -22,6 +22,7 @@ export function CloseDialog({
   submitting: boolean;
 }) {
   const { data: profiles } = useProfiles();
+  const [eventTime, setEventTime] = useState(() => isoToLocalInput(new Date().toISOString()));
   const [rootCause, setRootCause] = useState('');
   const [resolution, setResolution] = useState('');
   const [readiness, setReadiness] = useState<Incident['readinessAtClose']>('full');
@@ -56,11 +57,16 @@ export function CloseDialog({
       setExtDetails(incident.externalHandlerContactDetails ?? '');
       setOwnerError(undefined);
       setExtError(undefined);
+      // The actual closure time defaults to "now" every time this dialog is
+      // opened, not just at its first mount -- otherwise reopening it later
+      // would keep showing whatever moment it happened to first render at.
+      setEventTime(isoToLocalInput(new Date().toISOString()));
     }
     wasOpenRef.current = open;
   }, [open, incident]);
 
   const handleClose = () => {
+    setEventTime(isoToLocalInput(new Date().toISOString()));
     setRootCause('');
     setResolution('');
     setReadiness('full');
@@ -81,9 +87,23 @@ export function CloseDialog({
     onClose();
   };
 
+  // Mirrors close_incident's own bounds check (migration 0033, same guarded-
+  // cast pattern already established by update_incident): the actual
+  // closure time must fall between the incident's discovery and five
+  // minutes from now. Fast UX feedback only -- the database remains the
+  // final boundary.
+  function eventTimeBoundsError(iso: string): string | undefined {
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return 'מועד סגירת התקלה אינו תקין.';
+    if (t < new Date(incident.discoveredAt)) return 'מועד סגירת התקלה אינו יכול להיות לפני שעת גילוי התקלה.';
+    if (t.getTime() > Date.now() + 5 * 60_000) return 'מועד סגירת התקלה אינו יכול להיות בעתיד.';
+    return undefined;
+  }
+
   const parsedInput = () =>
     closeIncidentSchema.safeParse({
       expectedVersion: incident.version,
+      eventTime: localInputToIso(eventTime),
       rootCause,
       resolution,
       readiness: readiness ?? 'full',
@@ -97,6 +117,13 @@ export function CloseDialog({
     });
 
   const proceedToConfirm = () => {
+    const boundsError = eventTimeBoundsError(localInputToIso(eventTime));
+    if (boundsError) {
+      setOwnerError(undefined);
+      setExtError(undefined);
+      setError(boundsError);
+      return;
+    }
     const parsed = parsedInput();
     if (!parsed.success) {
       const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
@@ -124,6 +151,13 @@ export function CloseDialog({
     <Dialog open={open} onClose={handleClose} title="סגירת תקלה" wide>
       {!confirming ? (
         <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); proceedToConfirm(); }}>
+          <Field
+            label="מועד סגירת התקלה בפועל"
+            required
+            hint="המועד שבו התקלה נסגרה בפועל, גם אם התיעוד נעשה מאוחר יותר."
+          >
+            {(a) => <Input {...a} type="datetime-local" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />}
+          </Field>
           <Field label="סיבת התקלה" required>
             {(a) => <Textarea {...a} rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)} maxLength={2000} />}
           </Field>

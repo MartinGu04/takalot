@@ -1540,6 +1540,15 @@ export class LocalDemoRepository implements Repository {
     if (incident.status === 'closed') {
       throw new AppError('INVALID_TRANSITION', 'התקלה כבר סגורה.');
     }
+    // Mirrors close_incident's own bounds check (migration 0033, same
+    // guarded-cast pattern already established by cancel_incident/
+    // update_incident): checked before any mutation below, so a rejected
+    // closure time leaves the incident, events, audits, and notifications
+    // byte-for-byte unchanged.
+    const closureEventTime = new Date(input.eventTime);
+    if (closureEventTime < new Date(incident.discoveredAt) || closureEventTime.getTime() > this.now().getTime() + 5 * 60_000) {
+      throw new AppError('VALIDATION', 'מועד סגירת התקלה אינו תקין.');
+    }
     const fullyReady = input.readiness === 'full';
     if (!fullyReady) this.validateOwner(input.ownerUserId ?? null);
 
@@ -1585,7 +1594,7 @@ export class LocalDemoRepository implements Repository {
       // Full readiness: the incident actually closes. Owner columns are
       // untouched here -- unchanged from before this feature.
       incident.status = 'closed';
-      incident.closedAt = ts;
+      incident.closedAt = input.eventTime;
       incident.closedBy = actor.id;
       incident.readinessAtClose = input.readiness;
       incident.nextUpdateDue = null;
@@ -1594,6 +1603,7 @@ export class LocalDemoRepository implements Repository {
       this.addEvent(incidentId, 'closed', actor.id, {
         newValue: input.readiness,
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}`,
+        eventTime: input.eventTime,
         operationId,
       });
       this.audit(actor.id, 'incident_closed', 'incident', incidentId, {
@@ -1606,6 +1616,7 @@ export class LocalDemoRepository implements Repository {
           oldValue: oldRecipient,
           newValue: incident.reportedToOpsRecipient,
           note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+          eventTime: input.eventTime,
           operationId,
         });
       }
@@ -1614,6 +1625,7 @@ export class LocalDemoRepository implements Repository {
           field: 'external_handler',
           oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
           newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
+          eventTime: input.eventTime,
           operationId,
         });
       }
@@ -1636,6 +1648,7 @@ export class LocalDemoRepository implements Repository {
         oldValue: oldStatus,
         newValue: 'partial_readiness',
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון החלקי שבוצע: ${input.resolution.trim()}\nפעולות המשך: ${incident.followUpNotes}\nגורם מטפל אחראי המשך: ${this.ownerLabel(incident.ownerUserId, null)}`,
+        eventTime: input.eventTime,
         operationId,
       });
       this.audit(actor.id, 'incident_partial_readiness', 'incident', incidentId, {
@@ -1648,6 +1661,7 @@ export class LocalDemoRepository implements Repository {
           oldValue: oldRecipient,
           newValue: incident.reportedToOpsRecipient,
           note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+          eventTime: input.eventTime,
           operationId,
         });
       }
@@ -1656,6 +1670,7 @@ export class LocalDemoRepository implements Repository {
           field: 'external_handler',
           oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
           newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
+          eventTime: input.eventTime,
           operationId,
         });
       }

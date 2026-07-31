@@ -387,7 +387,7 @@ begin
   --    share one operation_id.
   -- =====================================================================
   perform close_incident('00000000-0000-0000-0000-00000000fa12', jsonb_build_object(
-    'expectedVersion', 1, 'rootCause', 'תקלת חומרה', 'resolution', 'הוחלף רכיב',
+    'expectedVersion', 1, 'eventTime', now(), 'rootCause', 'תקלת חומרה', 'resolution', 'הוחלף רכיב',
     'readiness', 'full', 'followUpNotes', '',
     'reportedToOps', 'yes', 'reportedToOpsRecipient', 'יוסי מהמוקד'
   ));
@@ -403,7 +403,7 @@ begin
   --    complete_follow_up on the SAME incident gets its OWN, different id.
   -- =====================================================================
   perform close_incident('00000000-0000-0000-0000-00000000fa13', jsonb_build_object(
-    'expectedVersion', 1, 'rootCause', 'תקלת חומרה', 'resolution', 'תוקן חלקית',
+    'expectedVersion', 1, 'eventTime', now(), 'rootCause', 'תקלת חומרה', 'resolution', 'תוקן חלקית',
     'readiness', 'partial', 'followUpNotes', 'יש להשלים בדיקה נוספת',
     'ownerUserId', '00000000-0000-0000-0000-0000000000b2', 'ownerExternalName', null,
     'reportedToOps', 'yes', 'reportedToOpsRecipient', 'יוסי מהמוקד'

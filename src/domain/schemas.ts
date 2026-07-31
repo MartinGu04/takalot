@@ -313,6 +313,7 @@ export type TechnicianUpdateInput = z.infer<typeof technicianUpdateSchema>;
 export const closeIncidentSchema = z
   .object({
     expectedVersion: z.number(),
+    eventTime: z.string().min(1, 'יש להזין מועד סגירת התקלה בפועל'),
     rootCause: nonBlank(2000, 'סיבת התקלה'),
     resolution: nonBlank(4000, 'הפתרון שבוצע'),
     readiness: readinessSchema,
