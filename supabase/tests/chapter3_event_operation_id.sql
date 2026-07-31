@@ -249,15 +249,15 @@ begin
   -- 1. update_incident: all five remaining protected fields changed in one
   --    call -> exactly 6 rows (1 'update' + 5 conditional) sharing ONE
   --    operation_id, and ALL 6 carrying the submitted (backdated) eventTime.
-  --    operational_impact is no longer a protected field of update_incident
-  --    (PR B: editing it moved out of the update flow entirely, the
-  --    'impact_change' event no longer fires), so the field count here
-  --    dropped from 6 to 5 and the row count from 7 to 6. A stray
-  --    'operationalImpact' key is still passed below to prove it is
-  --    silently ignored rather than rejected. nextUpdateDue/noDeadlineReason
-  --    are also passed explicitly (legacy-shaped call) to prove they are
-  --    still honored during the compatibility window (PR B dropped them
-  --    from the active UI, not from what the RPC accepts).
+  --    operationalImpact is deliberately OMITTED from this payload (the new
+  --    frontend's contract) so this count stays clean at 6 -- its own
+  --    legacy-compat behavior (persist + impact_change only when the key IS
+  --    supplied and genuinely differs) is covered separately in
+  --    chapter2_update_event_time.sql, alongside the equivalent
+  --    nextUpdateDue/noDeadlineReason compatibility coverage. nextUpdateDue/
+  --    noDeadlineReason ARE passed explicitly here (legacy-shaped call) to
+  --    prove they are still honored during the compatibility window (PR B
+  --    dropped them from the active UI, not from what the RPC accepts).
   -- =====================================================================
   v_incident := update_incident('00000000-0000-0000-0000-00000000fa10', jsonb_build_object(
     'expectedVersion', 1,
@@ -265,7 +265,6 @@ begin
     'actionsTaken', 'בוצעה בדיקה', 'findings', '', 'nextSteps', '',
     'currentStatusText', 'ממתינים לאישור סופי',
     'status', 'monitoring', 'severity', 'high',
-    'operationalImpact', 'impact v2',
     'ownerUserId', '00000000-0000-0000-0000-0000000000b1', 'ownerExternalName', null,
     'nextUpdateDue', (now() + interval '6 hours')::text, 'noDeadlineReason', null,
     'reportedToOps', 'yes', 'reportedToOpsRecipient', 'יוסי מהמוקד'
@@ -286,7 +285,7 @@ begin
       case when v_row_count = 0 then 'PASS' else 'FAIL' end, 'mismatched_rows=' || v_row_count);
 
   insert into results (test, result, detail)
-  select 'update_incident: stray operationalImpact key is ignored, no impact_change event emitted',
+  select 'update_incident: omitting operationalImpact (new-frontend contract) emits no impact_change event',
     case when not exists (
       select 1 from incident_events
       where incident_id = '00000000-0000-0000-0000-00000000fa10' and type = 'impact_change'

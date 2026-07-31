@@ -99,6 +99,9 @@ export const eventTypeLabels: Record<EventType, string> = {
 
 export const notificationTypeLabels: Record<NotificationType, string> = {
   incident_assigned: 'תקלה הוקצתה אליך',
+  // Historical only -- no new row of this type is ever written; kept for
+  // read compatibility with hosted databases (see NotificationType).
+  update_overdue: 'עבר מועד העדכון',
   incident_reopened: 'תקלה נפתחה מחדש',
   handover_pending: 'העברת משמרת ממתינה לאישורך',
 };

@@ -164,6 +164,21 @@ export function UpdateDialog({
   if (!isFull && !isTechnician) return null;
 
   const category = treatmentCategory(status);
+  // Reachability is always computed from the incident's OWN starting status
+  // (never from `status`, which may already have been changed by the user
+  // this session) -- these three checks mirror canTransition/is_valid_transition
+  // exactly, so the picker never offers a target the backend would reject.
+  const canInProgress = canTransition(incident.status, 'in_progress');
+  const canMonitoring = canTransition(incident.status, 'monitoring');
+  const reachableWaitingReasons = WAITING_REASONS.filter((r) => canTransition(incident.status, r.value));
+  const canWaiting = reachableWaitingReasons.length > 0;
+  // A hidden/legacy/internal status (anything outside this simplified
+  // three-category model, e.g. new/acknowledged/waiting_test/
+  // partial_readiness/resolved_pending_close/waiting_equipment/reopened) is
+  // never offered as a selector choice -- it's shown as separate read-only
+  // context instead, and the underlying status is left exactly as-is unless
+  // the user actively picks one of the reachable targets below.
+  const isLegacyCurrentStatus = treatmentCategory(incident.status) === 'other';
 
   return (
     <Dialog open={open} onClose={handleClose} title="עדכון תקלה" wide>
@@ -215,29 +230,39 @@ export function UpdateDialog({
 
         {isFull && (
           <>
+            {isLegacyCurrentStatus && (
+              <p className="text-sm text-muted">
+                סטטוס נוכחי: <strong>{statusLabels[incident.status]}</strong> (רישום קיים, אינו חלק ממודל מצב הטיפול המובנה)
+              </p>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="מצב הטיפול" required>
                 {(a) => (
                   <Select
                     {...a}
-                    value={category}
+                    value={category === 'other' ? '' : category}
                     onChange={(e) => {
-                      const next = e.target.value as TreatmentCategory;
+                      const next = e.target.value as TreatmentCategory | '';
                       if (next === 'waiting') {
-                        setStatus(WAITING_STATUSES.has(status) ? status : 'waiting_external');
+                        setStatus(
+                          reachableWaitingReasons.some((r) => r.value === status)
+                            ? status
+                            : reachableWaitingReasons[0].value,
+                        );
                       } else if (next === 'in_progress' || next === 'monitoring') {
                         setStatus(next);
                       }
                     }}
                   >
-                    <option value="in_progress">בטיפול</option>
-                    <option value="waiting">בהמתנה</option>
-                    <option value="monitoring">במעקב</option>
-                    {/* The incident's own current status always renders as an
-                        option, even when it's outside this simplified model
-                        (e.g. a historical/legacy status) -- so the dropdown
-                        never misrepresents what's actually stored. */}
-                    {category === 'other' && <option value="other">{statusLabels[status]}</option>}
+                    {/* Only shown while the current status hasn't been
+                        assigned to any of the three categories -- selecting
+                        (or leaving) this placeholder submits the incident's
+                        unchanged current status (a no-op update), never a
+                        coerced default. */}
+                    {category === 'other' && <option value="">— לבחירת מצב טיפול חדש —</option>}
+                    {canInProgress && <option value="in_progress">בטיפול</option>}
+                    {canWaiting && <option value="waiting">בהמתנה</option>}
+                    {canMonitoring && <option value="monitoring">במעקב</option>}
                   </Select>
                 )}
               </Field>
@@ -255,7 +280,7 @@ export function UpdateDialog({
               <Field label="סיבת ההמתנה" required>
                 {(a) => (
                   <Select {...a} value={status} onChange={(e) => setStatus(e.target.value as Incident['status'])}>
-                    {WAITING_REASONS.map((r) => (
+                    {reachableWaitingReasons.map((r) => (
                       <option key={r.value} value={r.value}>{r.label}</option>
                     ))}
                   </Select>

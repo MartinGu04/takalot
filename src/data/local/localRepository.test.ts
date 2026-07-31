@@ -2011,3 +2011,60 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
     expect(created!.operationId).toBeNull();
   });
 });
+
+describe('listNotifications: historical update_overdue rows stay stored but excluded from the active result', () => {
+  it('an unread historical update_overdue notification is neither returned nor counted, while a normal unread notification is unaffected', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    // Seed already has one unread 'incident_assigned' notification for
+    // tech1 (ntf-2). Inject a synthetic, unread, historical 'update_overdue'
+    // row for the same user -- the next-update-ETA feature that produced
+    // rows like this was removed, but a hosted database may still hold one.
+    seeded.notifications.push({
+      id: 'ntf-legacy-overdue',
+      userId: DEMO_USERS.tech1,
+      type: 'update_overdue',
+      incidentId: 'inc-1',
+      handoverId: null,
+      text: 'עבר מועד העדכון לתקלה 2026-001.',
+      read: false,
+      createdAt: FIXED_NOW.toISOString(),
+      dedupeKey: undefined,
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+
+    const notifications = await repo.listNotifications(tech1);
+    expect(notifications.some((n) => n.type === 'update_overdue')).toBe(false);
+    expect(notifications.some((n) => n.id === 'ntf-legacy-overdue')).toBe(false);
+
+    // The normal unread notification (ntf-2) is still present and still counts.
+    const unreadCount = notifications.filter((n) => !n.read).length;
+    expect(notifications.some((n) => n.id === 'ntf-2' && !n.read)).toBe(true);
+    // Exactly the seed's own pre-existing unread count for tech1 (1) --
+    // the injected update_overdue row must not inflate it.
+    expect(unreadCount).toBe(1);
+  });
+
+  it('the row survives in storage (never deleted), just excluded from the active list', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.notifications.push({
+      id: 'ntf-legacy-overdue',
+      userId: DEMO_USERS.tech1,
+      type: 'update_overdue',
+      incidentId: 'inc-1',
+      handoverId: null,
+      text: 'עבר מועד העדכון לתקלה 2026-001.',
+      read: false,
+      createdAt: FIXED_NOW.toISOString(),
+      dedupeKey: undefined,
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    await repo.listNotifications(tech1);
+
+    const raw = storage.load();
+    expect(raw?.notifications.some((n) => n.id === 'ntf-legacy-overdue')).toBe(true);
+  });
+});

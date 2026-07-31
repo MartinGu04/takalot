@@ -72,7 +72,16 @@ values
    '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'i',
    '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
    '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
-   null, null, 1);
+   null, null, 1),
+  -- f735: open, a distinctive operational_impact (unlike base_update_input's
+  -- own default of 'i', so a call that OMITS the key can be proven to
+  -- preserve this exact value) -- used for the operationalImpact
+  -- legacy-compatibility pair below.
+  ('00000000-0000-0000-0000-00000000f735', 'T-735', '00000000-0000-0000-0000-00000000f701',
+   '00000000-0000-0000-0000-00000000f702', 'd', 'medium', 'in_progress', 'ההשפעה המקורית בעת הפתיחה',
+   '00000000-0000-0000-0000-0000000000e2', now() - interval '2 days',
+   '00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1',
+   now() + interval '1 day', null, 1);
 
 -- f740: CLOSED, with a pre-set next_update_due/no_deadline_reason pair (as
 -- close_incident would typically leave them) -- proves reopen_incident
@@ -594,6 +603,61 @@ begin
       ('update_incident: omitting both deadline keys on an already-both-NULL incident succeeds (constraint dropped)',
         'FAIL', sqlerrm);
   end;
+
+  -- =====================================================================
+  -- PART C2: update_incident -- operationalImpact legacy compatibility
+  -- (0029/0030): the new frontend never sends this key (operational-impact
+  -- editing moved out of the update flow entirely), but a legacy client
+  -- bundle still sends it on every call, so the RPC must keep honoring an
+  -- explicit, genuinely different value rather than silently discarding it.
+  -- =====================================================================
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000e1');
+
+  -- Omitting operationalImpact (the new frontend's contract) preserves the
+  -- incident's existing opening value exactly, and emits no impact_change event.
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f735',
+      (pg_temp.base_update_input(jsonb_build_object('eventTime', now() - interval '1 hour')) - 'operationalImpact'));
+    insert into results (test, result, detail) values
+      ('update_incident: omitting operationalImpact preserves the incident''s existing value exactly',
+        case when v_incident.operational_impact = 'ההשפעה המקורית בעת הפתיחה' then 'PASS' else 'FAIL' end,
+        'stored=' || v_incident.operational_impact);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: omitting operationalImpact preserves the incident''s existing value exactly', 'FAIL', sqlerrm);
+  end;
+  insert into results (test, result, detail)
+  select 'update_incident: omitting operationalImpact -> no impact_change event fires',
+    case when not exists (
+      select 1 from incident_events where incident_id = '00000000-0000-0000-0000-00000000f735' and type = 'impact_change'
+    ) then 'PASS' else 'FAIL' end, '';
+
+  -- A legacy caller that still explicitly supplies a genuinely different
+  -- operationalImpact is honored: persisted, and an impact_change event is
+  -- emitted carrying the submitted eventTime and the call's shared operation_id.
+  begin
+    v_incident := update_incident('00000000-0000-0000-0000-00000000f735', pg_temp.base_update_input(
+      jsonb_build_object('eventTime', now() - interval '30 minutes', 'expectedVersion', v_incident.version,
+        'operationalImpact', 'השפעה חדשה שדווחה על ידי לקוח ישן')));
+    insert into results (test, result, detail) values
+      ('update_incident: legacy caller explicitly changing operationalImpact is persisted',
+        case when v_incident.operational_impact = 'השפעה חדשה שדווחה על ידי לקוח ישן' then 'PASS' else 'FAIL' end,
+        v_incident.operational_impact);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident: legacy caller explicitly changing operationalImpact is persisted', 'FAIL', sqlerrm);
+  end;
+  insert into results (test, result, detail)
+  select 'update_incident: legacy operationalImpact change emits impact_change with the submitted eventTime and the shared operation_id',
+    case when exists (
+      select 1
+      from incident_events u
+      join incident_events ic on ic.operation_id = u.operation_id
+      where u.incident_id = '00000000-0000-0000-0000-00000000f735' and u.type = 'update'
+        and ic.incident_id = '00000000-0000-0000-0000-00000000f735' and ic.type = 'impact_change'
+        and ic.event_time = (now() - interval '30 minutes')
+        and u.event_time = (now() - interval '30 minutes')
+    ) then 'PASS' else 'FAIL' end, '';
 
   -- =====================================================================
   -- PART D: create_incident -- next-update-ETA compatibility (0030)

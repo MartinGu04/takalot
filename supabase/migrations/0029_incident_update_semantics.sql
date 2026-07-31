@@ -13,15 +13,19 @@
 --    verification query confirms every post-cutover row already has one;
 --    that gate has not been evaluated and nothing here anticipates it.
 --
--- 2. update_incident -- stops writing incidents.operational_impact and
---    stops emitting the 'impact_change' event. The value set at incident
---    creation now stands as the permanent opening fact; supervisors no
---    longer revise it on every update. A stray `operationalImpact` key in
---    p_input is silently ignored, not rejected -- defensive backward
---    compatibility for a browser tab still running the previous frontend
---    bundle during the gap between this migration landing and the new
---    frontend deploying. Historical operational_impact values and
---    historical impact_change events are untouched by this migration.
+-- 2. update_incident -- the new frontend no longer offers operational-impact
+--    editing (the value set at incident creation stands as the permanent
+--    opening fact), but the RPC itself stays backward-compatible rather
+--    than silently discarding a legacy client's explicit edit: a
+--    `p_input ? 'operationalImpact'` existence check (the same pattern
+--    0030 uses for nextUpdateDue/noDeadlineReason) means a browser tab
+--    still running the previous frontend bundle -- which always sent this
+--    key -- continues to have its edit persisted and its 'impact_change'
+--    event emitted exactly as before, for as long as the value it submits
+--    genuinely differs. The new frontend omits the key entirely, in which
+--    case the existing value is carried forward untouched and no event
+--    fires. Historical operational_impact values and historical
+--    impact_change events are untouched either way.
 --
 -- create_incident is NOT touched here -- it never had an operational_impact
 -- editing concern (it's the RPC that WRITES the opening fact) and this
@@ -48,6 +52,8 @@ declare
   v_new_owner uuid := (p_input->>'ownerUserId')::uuid;
   v_new_owner_ext text := nullif(trim(coalesce(p_input->>'ownerExternalName', '')), '');
   v_new_due timestamptz := (p_input->>'nextUpdateDue')::timestamptz;
+  v_impact_provided boolean := p_input ? 'operationalImpact';
+  v_new_impact text;
   v_old_owner_label text;
   v_new_owner_label text;
   v_new_reported_ops reported_to_ops := (p_input->>'reportedToOps')::reported_to_ops;
@@ -60,6 +66,7 @@ begin
     raise exception 'permission: אין הרשאה לעדכן תקלה';
   end if;
   v := lock_incident_checked(p_incident_id, (p_input->>'expectedVersion')::int);
+  v_new_impact := case when v_impact_provided then trim(p_input->>'operationalImpact') else v.operational_impact end;
   if is_incident_terminal(v.status) then
     raise exception 'invalid_transition: תקלה סגורה או מבוטלת אינה ניתנת לעדכון';
   end if;
@@ -91,6 +98,11 @@ begin
   insert into incident_events (incident_id, type, actor_id, event_time, ref_id, operation_id)
   values (p_incident_id, 'update', auth.uid(), v_event_time, v_update_id, v_operation_id);
 
+  if v_impact_provided and v_new_impact is distinct from v.operational_impact then
+    insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, event_time, operation_id)
+    values (p_incident_id, 'impact_change', auth.uid(), 'operational_impact',
+            v.operational_impact, v_new_impact, v_event_time, v_operation_id);
+  end if;
   if v_new_status <> v.status then
     insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, note, event_time, operation_id)
     values (p_incident_id, 'status_change', auth.uid(), 'status', v.status::text, v_new_status::text,
@@ -134,6 +146,7 @@ begin
   update incidents set
     status = v_new_status,
     severity = v_new_severity,
+    operational_impact = v_new_impact,
     owner_user_id = v_new_owner,
     owner_external_name = case when v_new_owner is null then v_new_owner_ext else null end,
     next_update_due = v_new_due,

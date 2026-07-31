@@ -716,6 +716,12 @@ export class SupabaseRepository implements Repository {
       .from('notifications')
       .select('*')
       .eq('user_id', session.userId)
+      // 'update_overdue': the next-update-ETA concept was removed from the
+      // active product -- no new row of this type is ever written, but a
+      // hosted database may still contain historical rows. Excluded from
+      // the active list (and therefore the unread badge, which derives its
+      // count from this same result) without deleting the row itself.
+      .neq('type', 'update_overdue')
       .order('created_at', { ascending: false });
     wrap(error);
     return (data ?? []).map((r) => ({

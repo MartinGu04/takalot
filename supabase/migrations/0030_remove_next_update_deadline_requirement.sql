@@ -48,6 +48,13 @@
 --
 -- No no-ETA "meaningfulness" validation is added anywhere -- that idea was
 -- evaluated and explicitly cancelled, not merely deferred.
+--
+-- update_incident's operational-impact legacy-compatibility handling (0029)
+-- is reproduced unchanged below: this file replaces update_incident's
+-- complete body again (for the unrelated ETA-field reasons above), so the
+-- same `p_input ? 'operationalImpact'` existence check must be carried
+-- forward here too, or this second full-body replacement would silently
+-- drop it.
 
 alter table incidents
   drop constraint incident_deadline_or_reason;
@@ -67,8 +74,10 @@ declare
   v_new_owner_ext text := nullif(trim(coalesce(p_input->>'ownerExternalName', '')), '');
   v_due_provided boolean := p_input ? 'nextUpdateDue';
   v_reason_provided boolean := p_input ? 'noDeadlineReason';
+  v_impact_provided boolean := p_input ? 'operationalImpact';
   v_new_due timestamptz;
   v_new_reason text;
+  v_new_impact text;
   v_old_owner_label text;
   v_new_owner_label text;
   v_new_reported_ops reported_to_ops := (p_input->>'reportedToOps')::reported_to_ops;
@@ -83,6 +92,7 @@ begin
   v := lock_incident_checked(p_incident_id, (p_input->>'expectedVersion')::int);
   v_new_due := case when v_due_provided then (p_input->>'nextUpdateDue')::timestamptz else v.next_update_due end;
   v_new_reason := case when v_reason_provided then nullif(trim(coalesce(p_input->>'noDeadlineReason', '')), '') else v.no_deadline_reason end;
+  v_new_impact := case when v_impact_provided then trim(p_input->>'operationalImpact') else v.operational_impact end;
   if is_incident_terminal(v.status) then
     raise exception 'invalid_transition: תקלה סגורה או מבוטלת אינה ניתנת לעדכון';
   end if;
@@ -114,6 +124,11 @@ begin
   insert into incident_events (incident_id, type, actor_id, event_time, ref_id, operation_id)
   values (p_incident_id, 'update', auth.uid(), v_event_time, v_update_id, v_operation_id);
 
+  if v_impact_provided and v_new_impact is distinct from v.operational_impact then
+    insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, event_time, operation_id)
+    values (p_incident_id, 'impact_change', auth.uid(), 'operational_impact',
+            v.operational_impact, v_new_impact, v_event_time, v_operation_id);
+  end if;
   if v_new_status <> v.status then
     insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, note, event_time, operation_id)
     values (p_incident_id, 'status_change', auth.uid(), 'status', v.status::text, v_new_status::text,
@@ -157,6 +172,7 @@ begin
   update incidents set
     status = v_new_status,
     severity = v_new_severity,
+    operational_impact = v_new_impact,
     owner_user_id = v_new_owner,
     owner_external_name = case when v_new_owner is null then v_new_owner_ext else null end,
     next_update_due = v_new_due,

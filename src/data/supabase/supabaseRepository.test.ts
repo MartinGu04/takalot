@@ -309,3 +309,40 @@ describe('SupabaseRepository.getIncidentEvents: operation_id mapping', () => {
     expect(events[0].operationId).toBeNull();
   });
 });
+
+describe('SupabaseRepository.listNotifications: excludes historical update_overdue rows', () => {
+  function fakeNotificationsClient(rows: Record<string, unknown>[]) {
+    const neqCalls: [string, unknown][] = [];
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      neq: (col: string, val: unknown) => {
+        neqCalls.push([col, val]);
+        return builder;
+      },
+      order: async () => ({ data: rows, error: null }),
+    };
+    return { client: { from: () => builder }, neqCalls };
+  }
+
+  it('filters update_overdue at the query level (never fetched as an active row)', async () => {
+    const { client, neqCalls } = fakeNotificationsClient([
+      {
+        id: 'n1',
+        user_id: session.userId,
+        type: 'incident_assigned',
+        incident_id: 'i1',
+        handover_id: null,
+        text: 'תקלה הוקצתה אליך',
+        read: false,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const repo = new SupabaseRepository(client as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    const result = await repo.listNotifications(session);
+
+    expect(neqCalls).toContainEqual(['type', 'update_overdue']);
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('incident_assigned');
+  });
+});

@@ -1810,6 +1810,12 @@ export class LocalDemoRepository implements Repository {
     const actor = this.requireSession(session);
     return this.db.notifications
       .filter((n) => n.userId === actor.id)
+      // 'update_overdue': the next-update-ETA concept was removed from the
+      // active product -- no new row of this type is ever written, but a
+      // historical row must not resurface in the active notification list
+      // or the unread badge (which derives its count from this same
+      // result). The row itself is preserved in storage, not deleted.
+      .filter((n) => n.type !== 'update_overdue')
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(({ dedupeKey: _dedupeKey, ...n }) => n);
   }

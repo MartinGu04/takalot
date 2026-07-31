@@ -259,6 +259,12 @@ export interface HandoverAddendum {
 
 export type NotificationType =
   | 'incident_assigned'
+  // 'update_overdue': the next-update-ETA concept is no longer an active
+  // product feature (no new row of this type is ever written), but hosted
+  // databases may still contain historical rows of it. Kept in the domain
+  // type and label mapping for read compatibility; both repositories filter
+  // it out of active listNotifications results (see PR review follow-up).
+  | 'update_overdue'
   | 'incident_reopened'
   | 'handover_pending';
 
