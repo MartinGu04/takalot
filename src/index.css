@@ -131,6 +131,31 @@ body {
   border-radius: 4px;
 }
 
+/*
+ * iOS Safari (and other WebKit-based mobile browsers) automatically zooms
+ * the page when a focused text-entry control's computed font-size is below
+ * 16px. Scoped to (pointer: coarse) -- touch devices -- only, so the
+ * desktop/tablet-with-mouse visual scale (text-sm etc.) is untouched. This
+ * targets bare element/attribute selectors rather than a shared class, so it
+ * also covers native <input>/<select> usage that bypasses the shared
+ * Input/Textarea/Select components (e.g. Layout.tsx's demo role switcher).
+ * !important is deliberate and narrow: it overrides per-field Tailwind
+ * text-size utilities for exactly one property (font-size), on exactly
+ * text-entry controls, on touch devices only -- the minimal, standard fix
+ * for this exact iOS behavior. It does not touch field height/padding
+ * (those are fixed via min-h-*, not font-relative), so dimensions are
+ * unaffected.
+ */
+@media (pointer: coarse) {
+  input:not([type='button']):not([type='submit']):not([type='reset']):not([type='checkbox']):not(
+      [type='radio']
+    ):not([type='range']):not([type='color']):not([type='file']):not([type='image']):not([type='hidden']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* ---------- Typography hierarchy ---------- */
 /* Centralized so every page title, section heading, and muted metadata
    line reads consistently instead of each page picking its own scale. */
