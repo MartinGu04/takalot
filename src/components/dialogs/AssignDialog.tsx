@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { assignIncidentSchema, type AssignIncidentInput } from '../../domain/schemas';
 import { useProfiles } from '../../data/hooks';
 import { Dialog, Field, Input, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
+import { ExternalPartyFields } from '../ExternalPartyFields';
 
 export function AssignDialog({
   open,
@@ -20,14 +21,45 @@ export function AssignDialog({
 }) {
   const { data: profiles } = useProfiles();
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
-  const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
+  const [extName, setExtName] = useState(incident.externalHandlerName ?? '');
+  const [extPerson, setExtPerson] = useState(incident.externalHandlerContactPerson ?? '');
+  const [extDetails, setExtDetails] = useState(incident.externalHandlerContactDetails ?? '');
   const [note, setNote] = useState('');
+  const [ownerError, setOwnerError] = useState<string | undefined>();
+  const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+
+  // Unlike UpdateDialog (conditionally mounted, so it remounts fresh on
+  // every open), this dialog stays mounted across opens/closes -- its
+  // `useState` initializers above only ran once, at first mount. Without
+  // this, owner/external-handler fields would keep showing whatever
+  // `incident` looked like back then, even after another flow (e.g.
+  // UpdateDialog) changes them. Hydrating on the closed->open transition
+  // (not on every `incident` change) is what avoids clobbering an
+  // in-progress edit while this dialog is already open.
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setOwnerUserId(incident.ownerUserId ?? '');
+      setExtName(incident.externalHandlerName ?? '');
+      setExtPerson(incident.externalHandlerContactPerson ?? '');
+      setExtDetails(incident.externalHandlerContactDetails ?? '');
+      setNote('');
+      setOwnerError(undefined);
+      setExtError(undefined);
+      setError(undefined);
+    }
+    wasOpenRef.current = open;
+  }, [open, incident]);
 
   const handleClose = () => {
     setOwnerUserId(incident.ownerUserId ?? '');
-    setOwnerExternalName(incident.ownerExternalName ?? '');
+    setExtName(incident.externalHandlerName ?? '');
+    setExtPerson(incident.externalHandlerContactPerson ?? '');
+    setExtDetails(incident.externalHandlerContactDetails ?? '');
     setNote('');
+    setOwnerError(undefined);
+    setExtError(undefined);
     setError(undefined);
     onClose();
   };
@@ -37,12 +69,22 @@ export function AssignDialog({
       expectedVersion: incident.version,
       note,
       ownerUserId: ownerUserId || null,
-      ownerExternalName: ownerExternalName || null,
+      externalHandlerName: extName || null,
+      externalHandlerContactPerson: extPerson || null,
+      externalHandlerContactDetails: extDetails || null,
     });
     if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message);
+      const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
+      const extIssue = parsed.error.issues.find((i) => i.path[0] === 'externalHandlerName');
+      const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName');
+      setOwnerError(ownerIssue?.message);
+      setExtError(extIssue?.message);
+      setError(otherIssue?.message);
       return;
     }
+    setOwnerError(undefined);
+    setExtError(undefined);
+    setError(undefined);
     onSubmit(parsed.data);
   };
 
@@ -52,9 +94,18 @@ export function AssignDialog({
         <OwnerField
           profiles={profiles}
           ownerUserId={ownerUserId}
-          ownerExternalName={ownerExternalName}
-          onChangeInternal={setOwnerUserId}
-          onChangeExternal={setOwnerExternalName}
+          onChange={setOwnerUserId}
+          error={ownerError}
+          legacyExternalName={!incident.ownerUserId ? incident.ownerExternalName : null}
+        />
+        <ExternalPartyFields
+          name={extName}
+          contactPerson={extPerson}
+          contactDetails={extDetails}
+          onChangeName={setExtName}
+          onChangeContactPerson={setExtPerson}
+          onChangeContactDetails={setExtDetails}
+          nameError={extError}
         />
         <Field label="הערה (לא חובה)">
           {(a) => <Input {...a} value={note} onChange={(e) => setNote(e.target.value)} />}

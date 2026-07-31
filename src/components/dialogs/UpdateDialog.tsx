@@ -15,6 +15,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { hasCapability, canTechnicianUpdate } from '../../domain/permissions';
 import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
+import { ExternalPartyFields } from '../ExternalPartyFields';
 import { isoToLocalInput, localInputToIso } from '../../lib/time';
 
 /** מצב הטיפול -- the simplified three-state treatment model this dialog
@@ -65,7 +66,9 @@ export function UpdateDialog({
   const [status, setStatus] = useState(incident.status);
   const [severity, setSeverity] = useState(incident.severity);
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
-  const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
+  const [extName, setExtName] = useState(incident.externalHandlerName ?? '');
+  const [extPerson, setExtPerson] = useState(incident.externalHandlerContactPerson ?? '');
+  const [extDetails, setExtDetails] = useState(incident.externalHandlerContactDetails ?? '');
   // Update-specific reporting: three fresh questions about THIS update only
   // -- deliberately never seeded from the incident's own opening-time
   // reportedToOps/reportedToComms/wisdomReported facts, and always reset to
@@ -78,6 +81,8 @@ export function UpdateDialog({
   const [updateReportedToCommsRecipient, setUpdateReportedToCommsRecipient] = useState('');
   const [updateWisdomReported, setUpdateWisdomReported] = useState<'yes' | 'no' | ''>('');
   const [changeReason, setChangeReason] = useState('');
+  const [ownerError, setOwnerError] = useState<string | undefined>();
+  const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
 
   const reset = () => {
@@ -89,7 +94,11 @@ export function UpdateDialog({
     setStatus(incident.status);
     setSeverity(incident.severity);
     setOwnerUserId(incident.ownerUserId ?? '');
-    setOwnerExternalName(incident.ownerExternalName ?? '');
+    setExtName(incident.externalHandlerName ?? '');
+    setExtPerson(incident.externalHandlerContactPerson ?? '');
+    setExtDetails(incident.externalHandlerContactDetails ?? '');
+    setOwnerError(undefined);
+    setExtError(undefined);
     setUpdateReportedToOps('');
     setUpdateReportedToOpsRecipient('');
     setUpdateReportedToComms('');
@@ -111,7 +120,9 @@ export function UpdateDialog({
       severity,
       changeReason,
       ownerUserId: ownerUserId || null,
-      ownerExternalName: ownerExternalName || null,
+      externalHandlerName: extName || null,
+      externalHandlerContactPerson: extPerson || null,
+      externalHandlerContactDetails: extDetails || null,
       updateReportedToOps,
       updateReportedToOpsRecipient: updateReportedToOps === 'yes' ? updateReportedToOpsRecipient : null,
       updateReportedToComms,
@@ -150,6 +161,8 @@ export function UpdateDialog({
 
   const submit = () => {
     setError(undefined);
+    setOwnerError(undefined);
+    setExtError(undefined);
     const boundsError = eventTimeBoundsError(localInputToIso(eventTime));
     if (boundsError) {
       setError(boundsError);
@@ -162,7 +175,12 @@ export function UpdateDialog({
       }
       const parsed = updateIncidentSchema.safeParse(buildFullInput());
       if (!parsed.success) {
-        setError(parsed.error.issues[0]?.message);
+        const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
+        const extIssue = parsed.error.issues.find((i) => i.path[0] === 'externalHandlerName');
+        const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName');
+        setOwnerError(ownerIssue?.message);
+        setExtError(extIssue?.message);
+        setError(otherIssue?.message);
         return;
       }
       onSubmitFull(parsed.data);
@@ -305,9 +323,18 @@ export function UpdateDialog({
             <OwnerField
               profiles={profiles}
               ownerUserId={ownerUserId}
-              ownerExternalName={ownerExternalName}
-              onChangeInternal={setOwnerUserId}
-              onChangeExternal={setOwnerExternalName}
+              onChange={setOwnerUserId}
+              error={ownerError}
+              legacyExternalName={!incident.ownerUserId ? incident.ownerExternalName : null}
+            />
+            <ExternalPartyFields
+              name={extName}
+              contactPerson={extPerson}
+              contactDetails={extDetails}
+              onChangeName={setExtName}
+              onChangeContactPerson={setExtPerson}
+              onChangeContactDetails={setExtDetails}
+              nameError={extError}
             />
             <div className="flex flex-col gap-3 border-t border-hairline pt-3">
               <p className="text-xs text-muted">

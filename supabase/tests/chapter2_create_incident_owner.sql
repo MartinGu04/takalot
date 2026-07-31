@@ -1,9 +1,16 @@
 -- Tests for migration 0019: create_incident requires a valid, active
 -- internal owner (בעל אחריות פנימי) and rejects external-owner-only (or
 -- external-alongside-internal) creation. assert_owner_valid itself is
--- untouched -- update_incident (and, by the same code path, assign_incident/
--- close_incident/create_handover) must still accept a null internal owner
--- with only an external name, exactly as before this migration.
+-- untouched.
+--
+-- As of migration 0032 (additive external handling party), the mandatory-
+-- internal-owner rule was intentionally extended to update_incident (and
+-- assign_incident/close_incident/reopen_incident) as well -- see test 14
+-- below, which now asserts the *current* contract rather than the historical
+-- isolation-to-create_incident-only behavior. The legacy `ownerExternalName`
+-- payload key is tolerated but silently ignored by these RPCs; it is never
+-- read, written, or used to clear `owner_external_name`. Full external-
+-- handling-party coverage lives in chapter2_external_handling_party.sql.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -304,10 +311,39 @@ where n.nspname = 'public' and p.proname = 'create_incident'
   );
 
 -- =====================================================================
--- 14. assert_owner_valid is unmodified: update_incident (an unrelated
---     lifecycle RPC sharing the same helper) must still accept a null
---     internal owner alongside an external name, exactly as before this
---     migration -- proving the tightening is isolated to create_incident.
+-- 14. Post-0032: update_incident now ALSO requires a valid internal owner
+--     on every call (the mandatory-owner rule was intentionally extended
+--     beyond create_incident by migration 0032). Supplying only a legacy
+--     ownerExternalName, with no ownerUserId, is rejected with the same
+--     controlled error create_incident uses.
+-- =====================================================================
+do $$
+begin
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000b1');
+  set local role authenticated;
+  begin
+    perform update_incident('00000000-0000-0000-0000-00000000f610', jsonb_build_object(
+      'expectedVersion', 1, 'eventTime', now(), 'actionsTaken', 'עדכון בדיקה',
+      'status', 'in_progress', 'severity', 'medium',
+      'ownerExternalName', 'טכנאי מטעם ספק (מעודכן)',
+      'reportedToOps', 'not_required'));
+    insert into results (test, result, detail) values
+      ('update_incident now requires an internal owner too -- external-only is rejected',
+        'FAIL', 'expected rejection, call unexpectedly succeeded');
+  exception when others then
+    insert into results (test, result, detail) values
+      ('update_incident now requires an internal owner too -- external-only is rejected',
+        case when sqlerrm = 'validation: יש לבחור בעל אחריות פנימי' then 'PASS' else 'FAIL' end,
+        sqlerrm);
+  end;
+  reset role;
+end $$;
+
+-- =====================================================================
+-- 14b. Legacy ownerExternalName is tolerated but ignored once a valid
+--      internal owner is supplied: the historical external-owner-only
+--      incident's owner_external_name column survives byte-identical --
+--      neither overwritten with the supplied value nor cleared.
 -- =====================================================================
 do $$
 declare
@@ -318,17 +354,20 @@ begin
   begin
     v_updated := update_incident('00000000-0000-0000-0000-00000000f610', jsonb_build_object(
       'expectedVersion', 1, 'eventTime', now(), 'actionsTaken', 'עדכון בדיקה',
-      'status', 'in_progress', 'severity', 'medium', 'operationalImpact', 'impact',
+      'status', 'in_progress', 'severity', 'medium',
+      'ownerUserId', '00000000-0000-0000-0000-0000000000b2',
       'ownerExternalName', 'טכנאי מטעם ספק (מעודכן)',
-      'nextUpdateDue', now() + interval '1 day', 'reportedToOps', 'not_required'));
+      'reportedToOps', 'not_required'));
     insert into results (test, result, detail) values
-      ('update_incident (unrelated RPC) still accepts external-only ownership -- assert_owner_valid unmodified',
-        case when v_updated.owner_user_id is null and v_updated.owner_external_name = 'טכנאי מטעם ספק (מעודכן)'
+      ('legacy ownerExternalName is tolerated but ignored -- owner_external_name untouched',
+        case when v_updated.owner_user_id::text = '00000000-0000-0000-0000-0000000000b2'
+              and v_updated.owner_external_name = 'טכנאי מטעם ספק (היסטורי)'
              then 'PASS' else 'FAIL' end,
-        'owner_user_id=' || coalesce(v_updated.owner_user_id::text, '<null>'));
+        'owner_user_id=' || coalesce(v_updated.owner_user_id::text, '<null>')
+        || ' owner_external_name=' || coalesce(v_updated.owner_external_name, '<null>'));
   exception when others then
     insert into results (test, result, detail) values
-      ('update_incident (unrelated RPC) still accepts external-only ownership -- assert_owner_valid unmodified',
+      ('legacy ownerExternalName is tolerated but ignored -- owner_external_name untouched',
         'FAIL', sqlerrm);
   end;
   reset role;

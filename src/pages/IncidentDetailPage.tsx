@@ -14,7 +14,7 @@ import {
 import { useAuth, useSession } from '../auth/AuthContext';
 import { isOpen } from '../domain/types';
 import { hasCapability, canTechnicianUpdate } from '../domain/permissions';
-import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay } from '../components/incident';
+import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { Timeline } from '../components/Timeline';
 import { Button, EmptyState, ErrorState, Spinner, useToast } from '../components/ui';
 import { formatDateTime, formatDuration } from '../lib/time';
@@ -365,9 +365,15 @@ export default function IncidentDetailPage() {
       <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <dt className="text-xs text-muted">גורם מטפל נוכחי</dt>
+            <dt className="text-xs text-muted">בעל אחריות פנימי</dt>
             <dd className="font-medium">{ownerDisplay(incident, profiles)}</dd>
           </div>
+          {externalHandlerDisplay(incident) && (
+            <div>
+              <dt className="text-xs text-muted">גורם מטפל חיצוני</dt>
+              <dd dir="auto" className="font-medium">{externalHandlerDisplay(incident)}</dd>
+            </div>
+          )}
           <div>
             <dt className="text-xs text-muted">השפעה מבצעית</dt>
             <dd>{incident.operationalImpact}</dd>

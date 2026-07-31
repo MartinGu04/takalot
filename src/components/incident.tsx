@@ -37,11 +37,32 @@ export function ReadinessBadge({ readiness }: { readiness: 'full' | 'partial' | 
   return <Badge color={color}>כשירות: {readinessLabels[readiness]}</Badge>;
 }
 
+/** Internal owner only -- compact contexts (cards, list popups) never show
+ *  the external handling party as a substitute for the internal owner, so
+ *  a legacy external-only incident (or one with no internal owner at all)
+ *  renders as "ללא בעל אחריות פנימי" here, never the external name. Detail
+ *  and export surfaces show the internal owner and external handler as two
+ *  separate facts instead of calling this function. */
 export function ownerDisplay(incident: Incident, profiles: Profile[] | undefined): string {
   if (incident.ownerUserId) {
     return profiles?.find((p) => p.id === incident.ownerUserId)?.fullName ?? 'משתמש פנימי';
   }
-  return incident.ownerExternalName ? `${incident.ownerExternalName} (חיצוני)` : 'ללא גורם מטפל';
+  return 'ללא בעל אחריות פנימי';
+}
+
+/** The additive external handling party -- a separate fact from the
+ *  internal owner, never collapsed into it. Falls back to the legacy,
+ *  frozen owner_external_name for any row the migration-time backfill
+ *  somehow didn't reach; every current row already has externalHandlerName
+ *  populated identically by that backfill. Returns null when there is no
+ *  external handler recorded at all (the common case). */
+export function externalHandlerDisplay(incident: Incident): string | null {
+  const name = incident.externalHandlerName ?? incident.ownerExternalName;
+  if (!name) return null;
+  const parts = [name];
+  if (incident.externalHandlerContactPerson) parts.push(`איש קשר: ${incident.externalHandlerContactPerson}`);
+  if (incident.externalHandlerContactDetails) parts.push(`פרטי קשר: ${incident.externalHandlerContactDetails}`);
+  return parts.join(' · ');
 }
 
 export function IncidentCard({
@@ -59,7 +80,7 @@ export function IncidentCard({
 }) {
   const critical = incident.severity === 'critical';
   const accentClass = critical ? 'incident-card-accent-critical' : '';
-  const hasOwner = !!(incident.ownerUserId || incident.ownerExternalName);
+  const ownerLabel = ownerDisplay(incident, profiles);
   return (
     <Link
       to={`/incidents/${incident.id}`}
@@ -133,9 +154,9 @@ export function IncidentCard({
           <span
             dir="auto"
             className="max-w-full truncate text-sm font-medium text-text-primary"
-            title={hasOwner ? ownerDisplay(incident, profiles) : undefined}
+            title={ownerLabel}
           >
-            {hasOwner ? ownerDisplay(incident, profiles) : 'ללא גורם מטפל'}
+            {ownerLabel}
           </span>
           <span className="text-xs text-muted">עודכן {formatRelative(incident.lastUpdateAt, now)}</span>
         </div>

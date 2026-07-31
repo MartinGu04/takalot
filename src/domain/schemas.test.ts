@@ -9,6 +9,8 @@ import {
   updateIncidentSchema,
   technicianUpdateSchema,
   reopenIncidentSchema,
+  assignIncidentSchema,
+  closeIncidentSchema,
   type CreateIncidentInput,
 } from './schemas';
 
@@ -279,5 +281,169 @@ describe('createIncidentSchema: 600-character limit on פעולות שבוצעו
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
     });
     expect(technicianResult.success).toBe(true);
+  });
+});
+
+// Additive external handling party (migration 0032): a separate, always-
+// optional org/handler alongside the (now uniformly mandatory) internal
+// owner. update/assign/close/reopen no longer accept "internal OR external"
+// -- an internal owner is required outright, exactly like create_incident
+// already required since 0019.
+describe('external handling party: internal owner is now mandatory on every lifecycle schema', () => {
+  it('createIncidentSchema: unchanged -- still requires an internal owner and rejects an external-only one', () => {
+    const missing = createIncidentSchema.safeParse(baseInput({ ownerUserId: null }));
+    expect(missing.success).toBe(false);
+    const externalOnly = createIncidentSchema.safeParse(baseInput({ ownerUserId: null, ownerExternalName: 'ספק חיצוני' }));
+    expect(externalOnly.success).toBe(false);
+  });
+
+  it('updateIncidentSchema rejects a null internal owner (the UI\'s own "not selected" value)', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ ownerUserId: null }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'ownerUserId' && i.message === 'יש לבחור בעל אחריות פנימי')).toBe(true);
+    }
+  });
+
+  it('updateIncidentSchema no longer has an ownerExternalName key -- it is stripped, not read', () => {
+    const parsed = updateIncidentSchema.safeParse({ ...baseUpdateInput(), ownerExternalName: 'לא אמור להישמר' });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect((parsed.data as Record<string, unknown>).ownerExternalName).toBeUndefined();
+    }
+  });
+
+  it('assignIncidentSchema rejects a null internal owner', () => {
+    const result = assignIncidentSchema.safeParse({ expectedVersion: 1, note: '', ownerUserId: null });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'ownerUserId' && i.message === 'יש לבחור בעל אחריות פנימי')).toBe(true);
+    }
+  });
+
+  it('assignIncidentSchema accepts a valid internal owner with no external-handler fields at all', () => {
+    const result = assignIncidentSchema.safeParse({ expectedVersion: 1, note: '', ownerUserId: 'u-tech-1' });
+    expect(result.success).toBe(true);
+  });
+
+  it('reopenIncidentSchema rejects a null internal owner', () => {
+    const result = reopenIncidentSchema.safeParse({ expectedVersion: 1, reason: 'סיבה', ownerUserId: null });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'ownerUserId' && i.message === 'יש לבחור בעל אחריות פנימי')).toBe(true);
+    }
+  });
+
+  it('closeIncidentSchema: internal owner is required only when readiness is not full', () => {
+    const fullReadyNoOwner = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      reportedToOps: 'not_required',
+    });
+    expect(fullReadyNoOwner.success).toBe(true);
+
+    const partialNoOwner = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'partial',
+      followUpNotes: 'המשך טיפול',
+      reportedToOps: 'not_required',
+    });
+    expect(partialNoOwner.success).toBe(false);
+    if (!partialNoOwner.success) {
+      expect(partialNoOwner.error.issues.some((i) => i.path[0] === 'ownerUserId')).toBe(true);
+    }
+
+    const partialWithOwner = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'partial',
+      followUpNotes: 'המשך טיפול',
+      ownerUserId: 'u-tech-1',
+      reportedToOps: 'not_required',
+    });
+    expect(partialWithOwner.success).toBe(true);
+  });
+});
+
+describe('external handling party: name-required-with-contact validation', () => {
+  it('createIncidentSchema rejects a contact person with no external-handler name', () => {
+    const result = createIncidentSchema.safeParse(baseInput({ externalHandlerContactPerson: 'דנה' }));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some(
+          (i) => i.path[0] === 'externalHandlerName' && i.message === 'יש להזין שם גורם מטפל חיצוני כאשר מצוין איש קשר או פרטי קשר',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('createIncidentSchema rejects contact details with no external-handler name', () => {
+    const result = createIncidentSchema.safeParse(baseInput({ externalHandlerContactDetails: '03-1234567' }));
+    expect(result.success).toBe(false);
+  });
+
+  it('createIncidentSchema accepts a name alone, with no contact info at all', () => {
+    const result = createIncidentSchema.safeParse(baseInput({ externalHandlerName: 'ארגון שותף' }));
+    expect(result.success).toBe(true);
+  });
+
+  it('createIncidentSchema accepts the full external-handler trio together', () => {
+    const result = createIncidentSchema.safeParse(
+      baseInput({
+        externalHandlerName: 'ארגון שותף',
+        externalHandlerContactPerson: 'דנה',
+        externalHandlerContactDetails: '03-1234567',
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('createIncidentSchema treats a whitespace-only name as absent when contact info is supplied (blank-as-absent)', () => {
+    const result = createIncidentSchema.safeParse(
+      baseInput({ externalHandlerName: '   ', externalHandlerContactPerson: 'דנה' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('createIncidentSchema accepts no external handler at all', () => {
+    const result = createIncidentSchema.safeParse(baseInput());
+    expect(result.success).toBe(true);
+  });
+
+  it('updateIncidentSchema: an EXPLICITLY blank name alongside contact info is rejected', () => {
+    const result = updateIncidentSchema.safeParse(
+      baseUpdateInput({ externalHandlerName: '', externalHandlerContactPerson: 'דנה' }),
+    );
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'externalHandlerName')).toBe(true);
+    }
+  });
+
+  it('updateIncidentSchema: OMITTING the name key while supplying contact is accepted client-side -- omission means "preserve," and this schema has no visibility into the incident\'s existing name; the repository/RPC layer (which merges with the existing value) is the actual enforcement point for this combination', () => {
+    const result = updateIncidentSchema.safeParse(baseUpdateInput({ externalHandlerContactPerson: 'דנה' }));
+    expect(result.success).toBe(true);
+  });
+
+  it('closeIncidentSchema applies the name-required-with-contact rule unconditionally, even at full readiness, when the name is explicitly blank', () => {
+    const result = closeIncidentSchema.safeParse({
+      expectedVersion: 1,
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      reportedToOps: 'not_required',
+      externalHandlerName: '',
+      externalHandlerContactPerson: 'דנה',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'externalHandlerName')).toBe(true);
+    }
   });
 });

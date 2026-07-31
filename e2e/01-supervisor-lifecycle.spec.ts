@@ -21,7 +21,7 @@ test('shift supervisor creates an incident, assigns a technician, adds an update
   // Assign a technician.
   await page.getByRole('button', { name: 'שינוי גורם מטפל' }).click();
   const assignDialog = page.getByRole('dialog', { name: 'שינוי גורם מטפל' });
-  await assignDialog.getByLabel('גורם מטפל פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
+  await assignDialog.getByLabel('בעל אחריות פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
   await assignDialog.locator('form button[type="submit"]').click();
   await expect(page.getByRole('definition').filter({ hasText: 'עומר פרץ (דמו)' })).toBeVisible();
 

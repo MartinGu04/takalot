@@ -49,25 +49,29 @@ test('archive incident cards align right and keep mixed-direction text readable'
   expect(parseFloat(borders.left)).toBe(0);
 });
 
-test('a mixed Hebrew+Latin handler name renders in its own base direction', async ({ page }) => {
+test('a mixed Hebrew+Latin external-handler name renders in its own base direction', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginAs(page, DEMO_USERS.supervisor1);
 
-  // Put the exact mixed string on an incident through the real assign flow.
+  // Put the exact mixed string on an incident's additive external handling
+  // party through the real assign flow. The internal owner (mandatory,
+  // migration 0032) is left untouched -- external handling is a separate,
+  // additive fact, never a substitute for it.
   await page.goto('/incidents');
   await page.getByRole('link', { name: /2026-001/ }).first().click();
   await expect(page.getByRole('heading', { name: /2026-001/ })).toBeVisible();
   await page.getByRole('button', { name: 'שינוי גורם מטפל' }).click();
   const dialog = page.getByRole('dialog', { name: 'שינוי גורם מטפל' });
-  // The external-name field is enabled only once no internal owner is
-  // selected -- clear the internal picker first (the real user flow).
-  await dialog.getByLabel('גורם מטפל פנימי').selectOption('');
-  await dialog.getByLabel(/גורם חיצוני/).fill('טיפול של אלתא (IAF)');
+  await dialog.getByLabel('גורם מטפל חיצוני').fill('טיפול של אלתא (IAF)');
   await dialog.getByRole('button', { name: 'עדכון גורם מטפל' }).click();
   await expect(dialog).toBeHidden();
 
-  await page.goto('/incidents');
-  const owner = page.getByText('טיפול של אלתא (IAF) (חיצוני)').first();
+  // Compact contexts (the incidents list) never substitute the external
+  // handler for the internal owner -- the mixed name only ever appears on
+  // the detail page's own, separate "גורם מטפל חיצוני" fact (a <dd>; the
+  // timeline's own entry for this same change is a <strong>, not a
+  // definition, so scoping to role="definition" disambiguates the two).
+  const owner = page.getByRole('definition').filter({ hasText: 'טיפול של אלתא (IAF)' });
   await expect(owner).toBeVisible();
   await expect(owner).toHaveAttribute('dir', 'auto');
   // First strong character is Hebrew, so the resolved base direction is RTL

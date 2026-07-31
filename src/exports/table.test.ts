@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { incidentsToCsv, incidentsToXlsxBlob, INCIDENT_EXPORT_HEADERS } from './table';
+import { incidentsToCsv, incidentsToXlsxBlob, incidentToExportRow, INCIDENT_EXPORT_HEADERS } from './table';
 import type { Incident } from '../domain/types';
 
 function makeIncident(overrides: Partial<Incident> = {}): Incident {
@@ -15,6 +15,9 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     operationalImpact: 'השפעה עם "מרכאות", פסיקים, ומספרים 123 ותווית ASCII-1',
     ownerUserId: null,
     ownerExternalName: 'טכנאי חיצוני',
+    externalHandlerName: null,
+    externalHandlerContactPerson: null,
+    externalHandlerContactDetails: null,
     discoveredAt: '2026-07-16T10:00:00.000Z',
     createdAt: '2026-07-16T10:05:00.000Z',
     createdBy: 'u1',
@@ -96,5 +99,57 @@ describe('XLSX export', () => {
   it('handles very long descriptions without truncation error', () => {
     const long = makeIncident({ description: 'א'.repeat(3900) });
     expect(() => incidentsToXlsxBlob([long], ctx)).not.toThrow();
+  });
+});
+
+// Additive external handling party (migration 0032): the internal owner and
+// the external handler are two separate facts, exported as two separate
+// columns -- never folded into one, unlike the pre-PR-C export.
+describe('export: internal owner and external handler are separate columns', () => {
+  it('has distinct header columns for the internal owner and the external handler', () => {
+    expect(INCIDENT_EXPORT_HEADERS).toContain('בעל אחריות פנימי');
+    expect(INCIDENT_EXPORT_HEADERS).toContain('גורם מטפל חיצוני');
+    expect(INCIDENT_EXPORT_HEADERS.indexOf('בעל אחריות פנימי')).toBeLessThan(
+      INCIDENT_EXPORT_HEADERS.indexOf('גורם מטפל חיצוני'),
+    );
+  });
+
+  it('an incident with both an internal owner and an external handler shows both, separately', () => {
+    const incident = makeIncident({
+      ownerUserId: 'u-tech-1',
+      ownerExternalName: null,
+      externalHandlerName: 'ארגון שותף',
+      externalHandlerContactPerson: 'דנה',
+    });
+    const ctxWithProfile = {
+      ...ctx,
+      profiles: [{ id: 'u-tech-1', fullName: 'עומר פרץ', role: 'technician' as const, active: true, createdAt: '' }],
+    };
+    const row = incidentToExportRow(incident, ctxWithProfile);
+    const ownerIdx = INCIDENT_EXPORT_HEADERS.indexOf('בעל אחריות פנימי');
+    const extIdx = INCIDENT_EXPORT_HEADERS.indexOf('גורם מטפל חיצוני');
+    expect(row[ownerIdx]).toBe('עומר פרץ');
+    expect(row[extIdx]).toMatch(/ארגון שותף/);
+    expect(row[extIdx]).toMatch(/דנה/);
+  });
+
+  it('a legacy external-only incident (no internal owner) shows "ללא בעל אחריות פנימי" in the owner column and the legacy name in the external-handler column', () => {
+    const incident = makeIncident({
+      ownerUserId: null,
+      ownerExternalName: 'טכנאי מטעם ספק (רישום היסטורי)',
+      externalHandlerName: null, // not yet backfilled in this fixture -- falls back to the legacy column
+    });
+    const row = incidentToExportRow(incident, ctx);
+    const ownerIdx = INCIDENT_EXPORT_HEADERS.indexOf('בעל אחריות פנימי');
+    const extIdx = INCIDENT_EXPORT_HEADERS.indexOf('גורם מטפל חיצוני');
+    expect(row[ownerIdx]).toBe('ללא בעל אחריות פנימי');
+    expect(row[extIdx]).toBe('טכנאי מטעם ספק (רישום היסטורי)');
+  });
+
+  it('an incident with neither an internal owner nor any external handler leaves both columns empty/absent', () => {
+    const incident = makeIncident({ ownerUserId: null, ownerExternalName: null, externalHandlerName: null });
+    const row = incidentToExportRow(incident, ctx);
+    const extIdx = INCIDENT_EXPORT_HEADERS.indexOf('גורם מטפל חיצוני');
+    expect(row[extIdx]).toBe('');
   });
 });

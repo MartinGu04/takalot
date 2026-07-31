@@ -52,11 +52,73 @@ const ownerFields = {
   ownerExternalName: z.string().max(120, 'שם גורם חיצוני: עד 120 תווים').nullable(),
 };
 
-/** Owner fields that may be entirely omitted (used where an owner is only conditionally required). */
-const optionalOwnerFields = {
-  ownerUserId: z.string().nullable().optional(),
-  ownerExternalName: z.string().max(120, 'שם גורם חיצוני: עד 120 תווים').nullable().optional(),
+/** Internal owner only -- used by every flow where the (now always
+ *  mandatory) internal owner is unconditionally required. The legacy
+ *  ownerExternalName key is deliberately absent: these flows never send it,
+ *  and the backend tolerates but ignores it if an old client still does. */
+const internalOwnerField = {
+  ownerUserId: z.string().nullable(),
 };
+
+/** Internal owner only, optionally required (used by close_incident, where
+ *  an owner is required only when readiness is not full). */
+const optionalInternalOwnerField = {
+  ownerUserId: z.string().nullable().optional(),
+};
+
+/** The additive external handling party -- always optional, independent of
+ *  the internal owner. Shared by every lifecycle flow: creation, update,
+ *  assignment, closure at every readiness level, and reopening. */
+const externalHandlerFields = {
+  externalHandlerName: z.string().max(120, 'שם גורם מטפל חיצוני: עד 120 תווים').nullable().optional(),
+  externalHandlerContactPerson: z.string().max(120, 'איש קשר: עד 120 תווים').nullable().optional(),
+  externalHandlerContactDetails: z.string().max(500, 'פרטי קשר: עד 500 תווים').nullable().optional(),
+};
+
+/** Contact person/details are only meaningful once a name is given -- one
+ *  directional, mirroring migration 0032's RPC-level guard and CHECK
+ *  constraint exactly (blank-as-absent). Used by createIncidentSchema,
+ *  where there is no prior incident to merge with: an omitted name is the
+ *  same as a blank one. */
+function checkExternalHandlerNameRequired(
+  data: {
+    externalHandlerName?: string | null;
+    externalHandlerContactPerson?: string | null;
+    externalHandlerContactDetails?: string | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const hasContact =
+    (data.externalHandlerContactPerson ?? '').trim() || (data.externalHandlerContactDetails ?? '').trim();
+  if (hasContact && !(data.externalHandlerName ?? '').trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['externalHandlerName'],
+      message: 'יש להזין שם גורם מטפל חיצוני כאשר מצוין איש קשר או פרטי קשר',
+    });
+  }
+}
+
+/** Same rule, but for update_incident/assign_incident/close_incident/
+ *  reopen_incident, which merge an OMITTED key with the incident's existing
+ *  value (preserve-on-omit) before this check would ever run server-side --
+ *  this schema has no visibility into that existing value, so an omitted
+ *  name must NOT be treated as blank here (that would wrongly reject a
+ *  contact-only update against an incident that already has a name). Only
+ *  an EXPLICITLY supplied blank/null name, alongside contact info, is
+ *  caught client-side; a bad omitted-name-with-new-contact combination is
+ *  still caught by the repository/RPC layer, which has the merged value. */
+function checkExternalHandlerNameRequiredOnSupply(
+  data: {
+    externalHandlerName?: string | null;
+    externalHandlerContactPerson?: string | null;
+    externalHandlerContactDetails?: string | null;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (data.externalHandlerName === undefined) return;
+  checkExternalHandlerNameRequired(data, ctx);
+}
 
 const reportedToOpsFields = {
   reportedToOps: reportedToOpsSchema,
@@ -97,6 +159,7 @@ export const createIncidentSchema = z
       message: 'סטטוס פתיחה חייב להיות סטטוס פעיל נתמך',
     }),
     ...ownerFields,
+    ...externalHandlerFields,
     ...reportedToOpsFields,
     // Opening-time-only questions -- both plain booleans (unlike
     // reportedToOps, there is no third "not_required" state here), each with
@@ -149,6 +212,7 @@ export const createIncidentSchema = z
         message: 'יש להזין מספר תקלה ב-WISDOM',
       });
     }
+    checkExternalHandlerNameRequired(data, ctx);
   });
 
 export type CreateIncidentInput = z.infer<typeof createIncidentSchema>;
@@ -171,7 +235,8 @@ export const updateIncidentSchema = z
     // see createIncidentSchema).
     currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
     changeReason: z.string().max(500).optional().default(''),
-    ...ownerFields,
+    ...internalOwnerField,
+    ...externalHandlerFields,
     // Update-specific reporting -- three fresh questions about THIS update
     // only, deliberately distinct payload keys from the incident-level
     // reportedToOps/reportedToOpsRecipient (reportedToOpsFields, above):
@@ -188,13 +253,14 @@ export const updateIncidentSchema = z
     updateWisdomReported: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
   })
   .superRefine((data, ctx) => {
-    if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+    if (!data.ownerUserId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ownerUserId'],
-        message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
+        message: 'יש לבחור בעל אחריות פנימי',
       });
     }
+    checkExternalHandlerNameRequiredOnSupply(data, ctx);
     if (data.updateReportedToOps === '') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -251,7 +317,8 @@ export const closeIncidentSchema = z
     resolution: nonBlank(4000, 'הפתרון שבוצע'),
     readiness: readinessSchema,
     followUpNotes: z.string().max(2000).optional().default(''),
-    ...optionalOwnerFields,
+    ...optionalInternalOwnerField,
+    ...externalHandlerFields,
     ...reportedToOpsFields,
   })
   .superRefine((data, ctx) => {
@@ -263,7 +330,7 @@ export const closeIncidentSchema = z
           message: 'בסגירה עם כשירות חלקית או ללא כשירות יש לפרט פעולות המשך',
         });
       }
-      if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+      if (!data.ownerUserId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['ownerUserId'],
@@ -271,6 +338,10 @@ export const closeIncidentSchema = z
         });
       }
     }
+    // External handling is independent of readiness -- ExternalPartyFields
+    // is shown in CloseDialog at every readiness level, so this check is
+    // unconditional (unlike the internal-owner check above).
+    checkExternalHandlerNameRequiredOnSupply(data, ctx);
     checkReportedToOpsRecipient(data, ctx);
   });
 
@@ -280,16 +351,18 @@ export const reopenIncidentSchema = z
   .object({
     expectedVersion: z.number(),
     reason: nonBlank(2000, 'סיבת הפתיחה מחדש'),
-    ...ownerFields,
+    ...internalOwnerField,
+    ...externalHandlerFields,
   })
   .superRefine((data, ctx) => {
-    if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+    if (!data.ownerUserId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ownerUserId'],
-        message: 'יש לבחור גורם מטפל לתקלה שנפתחת מחדש',
+        message: 'יש לבחור בעל אחריות פנימי',
       });
     }
+    checkExternalHandlerNameRequiredOnSupply(data, ctx);
   });
 
 export type ReopenIncidentInput = z.infer<typeof reopenIncidentSchema>;
@@ -306,16 +379,18 @@ export const assignIncidentSchema = z
   .object({
     expectedVersion: z.number(),
     note: z.string().max(1000).optional().default(''),
-    ...ownerFields,
+    ...internalOwnerField,
+    ...externalHandlerFields,
   })
   .superRefine((data, ctx) => {
-    if (!data.ownerUserId && !(data.ownerExternalName ?? '').trim()) {
+    if (!data.ownerUserId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['ownerUserId'],
-        message: 'יש לבחור גורם מטפל פנימי או להזין שם גורם חיצוני',
+        message: 'יש לבחור בעל אחריות פנימי',
       });
     }
+    checkExternalHandlerNameRequiredOnSupply(data, ctx);
   });
 
 export type AssignIncidentInput = z.infer<typeof assignIncidentSchema>;

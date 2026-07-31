@@ -5,7 +5,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { IncidentCard, StatusBadge } from './incident';
 import { statusLabels } from '../domain/labels';
-import type { Incident, IncidentStatus } from '../domain/types';
+import type { Incident, IncidentStatus, Profile } from '../domain/types';
 
 const NOW = new Date('2026-01-10T12:00:00.000Z');
 
@@ -22,6 +22,9 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     operationalImpact: 'תיאור השפעה',
     ownerUserId: null,
     ownerExternalName: null,
+    externalHandlerName: null,
+    externalHandlerContactPerson: null,
+    externalHandlerContactDetails: null,
     discoveredAt: '2026-01-10T08:00:00.000Z',
     createdAt: '2026-01-10T08:00:00.000Z',
     createdBy: 'u1',
@@ -96,13 +99,17 @@ describe('StatusBadge: Chapter 2 statuses render a label without throwing', () =
 
 function renderCardWith(
   incident: Incident,
-  { systemName = 'מערכת', locationName = 'אתר' }: { systemName?: string; locationName?: string } = {},
+  {
+    systemName = 'מערכת',
+    locationName = 'אתר',
+    profiles = [],
+  }: { systemName?: string; locationName?: string; profiles?: Profile[] } = {},
 ) {
   const view = render(
     <MemoryRouter>
       <IncidentCard
         incident={incident}
-        profiles={[]}
+        profiles={profiles}
         systemName={systemName}
         locationName={locationName}
         now={NOW}
@@ -136,9 +143,14 @@ describe('IncidentCard: RTL alignment and bidirectional text', () => {
     expect(metadata.className).not.toMatch(/\bsm:pe-4\b/);
   });
 
-  it('resolves a mixed Hebrew+Latin handler name by its own direction: טיפול של אלתא (IAF)', () => {
-    renderCardWith(makeIncident({ ownerExternalName: 'טיפול של אלתא (IAF)' }));
-    const owner = screen.getByText('טיפול של אלתא (IAF) (חיצוני)');
+  it('resolves a mixed Hebrew+Latin internal owner name by its own direction: טיפול של אלתא (IAF)', () => {
+    // Compact cards render the internal owner only -- never the external
+    // handling party as a substitute -- so this RTL-resolution case now
+    // exercises a profile whose own full name is mixed Hebrew+Latin.
+    renderCardWith(makeIncident({ ownerUserId: 'p-mixed' }), {
+      profiles: [{ id: 'p-mixed', fullName: 'טיפול של אלתא (IAF)', role: 'technician', active: true, createdAt: NOW.toISOString() }],
+    });
+    const owner = screen.getByText('טיפול של אלתא (IAF)');
     // dir="auto" -> the browser picks the base direction from the first
     // strong character (Hebrew "ט"), so the trailing "(IAF)" keeps its
     // parentheses on the correct side instead of being reordered.

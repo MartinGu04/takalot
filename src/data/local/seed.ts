@@ -61,6 +61,9 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     impact: string;
     ownerUserId?: string;
     ownerExternalName?: string;
+    externalHandlerName?: string;
+    externalHandlerContactPerson?: string;
+    externalHandlerContactDetails?: string;
     createdOffset: number;
     createdBy: string;
     nextUpdateOffset?: number | null;
@@ -79,6 +82,9 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     operationalImpact: s.impact,
     ownerUserId: s.ownerUserId ?? null,
     ownerExternalName: s.ownerExternalName ?? null,
+    externalHandlerName: s.externalHandlerName ?? null,
+    externalHandlerContactPerson: s.externalHandlerContactPerson ?? null,
+    externalHandlerContactDetails: s.externalHandlerContactDetails ?? null,
     discoveredAt: at(s.createdOffset - minutes(10)),
     createdAt: at(s.createdOffset),
     createdBy: s.createdBy,
@@ -191,6 +197,10 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     status: 'waiting_external',
     impact: 'מערכת גמא עובדת במצב גיבוי. אין פגיעה מיידית בפעילות.',
     ownerExternalName: 'טכנאי מטעם ספק (חברת דוגמה בע״מ)',
+    // Mirrors the migration-time backfill (0032): every legacy external-only
+    // incident (owner_user_id null, owner_external_name set) gets this value
+    // copied into externalHandlerName, open incidents included.
+    externalHandlerName: 'טכנאי מטעם ספק (חברת דוגמה בע״מ)',
     createdOffset: -hours(30),
     createdBy: DEMO_USERS.supervisor1,
     nextUpdateOffset: hours(20),
@@ -324,8 +334,41 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   inc8.lastUpdateAt = at(-hours(30));
   inc8.updatedAt = at(-hours(30));
 
-  db.incidents = [inc1, inc2, inc3, inc4, inc5, inc6, inc7, inc8];
-  db.sequences[String(year)] = 8;
+  // 9. Historical record: closed, legacy external-only (no internal owner
+  // at all -- owner_external_name is its sole historical owner fact).
+  // externalHandlerName mirrors the migration-time backfill (0032): a real
+  // hosted database copies owner_external_name into externalHandlerName for
+  // every legacy external-only incident, open or closed alike, so this
+  // fixture reflects that already-backfilled state rather than a pre-PR-C
+  // one -- covering the terminal-incident half of that backfill's scope
+  // (inc3, above, is the still-open half).
+  const inc9 = mk({
+    id: 'inc-9',
+    n: 9,
+    systemId: 'sys-alpha',
+    locationId: 'loc-3',
+    description: 'תקלה היסטורית שטופלה במלואה על ידי גורם חיצוני, ללא בעל אחריות פנימי, עוד לפני הנהגת המודל הנוכחי.',
+    severity: 'low',
+    status: 'closed',
+    impact: 'לא הייתה פגיעה תפקודית מתמשכת.',
+    ownerExternalName: 'טכנאי מטעם ספק (רישום היסטורי)',
+    externalHandlerName: 'טכנאי מטעם ספק (רישום היסטורי)',
+    createdOffset: -hours(500),
+    createdBy: DEMO_USERS.supervisor1,
+    nextUpdateOffset: null,
+    noDeadlineReason: 'התקלה נסגרה',
+  });
+  inc9.version = 2;
+  inc9.closedAt = at(-hours(490));
+  inc9.closedBy = DEMO_USERS.supervisor1;
+  inc9.rootCause = 'תקלה בציוד שסופק על ידי הגורם החיצוני.';
+  inc9.resolution = 'הגורם החיצוני ביצע החלפה מלאה של הציוד הפגום.';
+  inc9.readinessAtClose = 'full';
+  inc9.lastUpdateAt = at(-hours(490));
+  inc9.updatedAt = at(-hours(490));
+
+  db.incidents = [inc1, inc2, inc3, inc4, inc5, inc6, inc7, inc8, inc9];
+  db.sequences[String(year)] = 9;
 
   // --- updates & events ---
   const updates: IncidentUpdate[] = [

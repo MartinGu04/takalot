@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { closeIncidentSchema, type CloseIncidentInput } from '../../domain/schemas';
 import { readinessLabels, reportedToOpsLabels } from '../../domain/labels';
 import { formatDuration } from '../../lib/time';
 import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
 import { OwnerField } from '../OwnerField';
+import { ExternalPartyFields } from '../ExternalPartyFields';
 import { useProfiles } from '../../data/hooks';
 
 export function CloseDialog({
@@ -26,8 +27,11 @@ export function CloseDialog({
   const [readiness, setReadiness] = useState<Incident['readinessAtClose']>('full');
   const [followUpNotes, setFollowUpNotes] = useState('');
   const [ownerUserId, setOwnerUserId] = useState(incident.ownerUserId ?? '');
-  const [ownerExternalName, setOwnerExternalName] = useState(incident.ownerExternalName ?? '');
+  const [extName, setExtName] = useState(incident.externalHandlerName ?? '');
+  const [extPerson, setExtPerson] = useState(incident.externalHandlerContactPerson ?? '');
+  const [extDetails, setExtDetails] = useState(incident.externalHandlerContactDetails ?? '');
   const [ownerError, setOwnerError] = useState<string | undefined>();
+  const [extError, setExtError] = useState<string | undefined>();
   const [reportedToOps, setReportedToOps] = useState(incident.reportedToOps);
   const [reportedToOpsRecipient, setReportedToOpsRecipient] = useState(incident.reportedToOpsRecipient ?? '');
   const [error, setError] = useState<string | undefined>();
@@ -35,14 +39,38 @@ export function CloseDialog({
 
   const fullyReady = readiness === 'full';
 
+  // This dialog stays mounted across opens/closes (unlike UpdateDialog,
+  // which remounts fresh each time), so ownerUserId/external-handler
+  // fields above would otherwise keep showing whatever `incident` looked
+  // like at first mount, even after another flow changes them. Hydrating
+  // only on the closed->open transition (not on every `incident` change)
+  // avoids clobbering an in-progress edit while this dialog is already
+  // open. Scoped to the owner/external-handler fields only -- the rest of
+  // this form's own reset-on-close behavior is unrelated and unchanged.
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setOwnerUserId(incident.ownerUserId ?? '');
+      setExtName(incident.externalHandlerName ?? '');
+      setExtPerson(incident.externalHandlerContactPerson ?? '');
+      setExtDetails(incident.externalHandlerContactDetails ?? '');
+      setOwnerError(undefined);
+      setExtError(undefined);
+    }
+    wasOpenRef.current = open;
+  }, [open, incident]);
+
   const handleClose = () => {
     setRootCause('');
     setResolution('');
     setReadiness('full');
     setFollowUpNotes('');
     setOwnerUserId(incident.ownerUserId ?? '');
-    setOwnerExternalName(incident.ownerExternalName ?? '');
+    setExtName(incident.externalHandlerName ?? '');
+    setExtPerson(incident.externalHandlerContactPerson ?? '');
+    setExtDetails(incident.externalHandlerContactDetails ?? '');
     setOwnerError(undefined);
+    setExtError(undefined);
     // Both halves of the reporting answer are restored together: resetting
     // only the recipient could leave a "כן" selection paired with a cleared
     // recipient, a combination the user never chose.
@@ -61,7 +89,9 @@ export function CloseDialog({
       readiness: readiness ?? 'full',
       followUpNotes,
       ownerUserId: fullyReady ? null : ownerUserId || null,
-      ownerExternalName: fullyReady ? null : ownerExternalName || null,
+      externalHandlerName: extName || null,
+      externalHandlerContactPerson: extPerson || null,
+      externalHandlerContactDetails: extDetails || null,
       reportedToOps,
       reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
     });
@@ -70,12 +100,15 @@ export function CloseDialog({
     const parsed = parsedInput();
     if (!parsed.success) {
       const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
-      const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId');
+      const extIssue = parsed.error.issues.find((i) => i.path[0] === 'externalHandlerName');
+      const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName');
       setOwnerError(ownerIssue?.message);
+      setExtError(extIssue?.message);
       setError(otherIssue?.message);
       return;
     }
     setOwnerError(undefined);
+    setExtError(undefined);
     setError(undefined);
     setConfirming(true);
   };
@@ -118,14 +151,25 @@ export function CloseDialog({
                 <OwnerField
                   profiles={profiles}
                   ownerUserId={ownerUserId}
-                  ownerExternalName={ownerExternalName}
-                  onChangeInternal={setOwnerUserId}
-                  onChangeExternal={setOwnerExternalName}
+                  onChange={setOwnerUserId}
                   error={ownerError}
+                  legacyExternalName={!incident.ownerUserId ? incident.ownerExternalName : null}
                 />
               </div>
             </>
           )}
+          {/* Independent of readiness: a full-readiness closure can still
+              record or update an external handling party -- OwnerField above
+              is conditional, this is not. */}
+          <ExternalPartyFields
+            name={extName}
+            contactPerson={extPerson}
+            contactDetails={extDetails}
+            onChangeName={setExtName}
+            onChangeContactPerson={setExtPerson}
+            onChangeContactDetails={setExtDetails}
+            nameError={extError}
+          />
           <Field label="דווח למבצעים">
             {(a) => (
               <Select

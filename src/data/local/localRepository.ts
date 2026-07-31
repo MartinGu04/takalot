@@ -94,6 +94,23 @@ function parseOrThrow<S extends ZodTypeAny>(schema: S, input: unknown): z.infer<
   return result.data;
 }
 
+/** Mirrors format_external_handler_snapshot (migration 0032): a single
+ *  human-readable snapshot of all three external-handler fields, used
+ *  identically for both old_value and new_value on a field='external_handler'
+ *  event -- so a contact-only change (name unchanged) is still visibly
+ *  distinct even when the organization name itself doesn't change. */
+function externalHandlerSnapshot(
+  name: string | null,
+  contactPerson: string | null,
+  contactDetails: string | null,
+): string {
+  if (!name && !contactPerson && !contactDetails) return 'ללא גורם מטפל חיצוני';
+  const parts = [name || 'ללא שם גורם'];
+  if (contactPerson) parts.push(`איש קשר: ${contactPerson}`);
+  if (contactDetails) parts.push(`פרטי קשר: ${contactDetails}`);
+  return parts.join(' · ');
+}
+
 export interface LocalRepositoryOptions {
   now?: () => Date;
   autoSeed?: boolean;
@@ -283,6 +300,18 @@ export class LocalDemoRepository implements Repository {
     if (!owner) throw new AppError('VALIDATION', 'הגורם המטפל שנבחר אינו קיים.');
     if (!owner.active) {
       throw new AppError('VALIDATION', 'הגורם המטפל שנבחר אינו פעיל. יש לבחור משתמש פעיל אחר.');
+    }
+  }
+
+  /** Defense-in-depth mirror of migration 0032's RPC guard (and CHECK
+   *  constraint): checked against the MERGED post-preserve/update/clear
+   *  values, not the raw payload -- catches the same "contact with no name"
+   *  state the schema's lenient update-family check must let through when
+   *  the name key was merely omitted (see checkExternalHandlerNameRequiredOnSupply
+   *  in schemas.ts). */
+  private assertExternalHandlerValid(name: string | null, contactPerson: string | null, contactDetails: string | null): void {
+    if (!name && (contactPerson || contactDetails)) {
+      throw new AppError('VALIDATION', 'יש להזין שם גורם מטפל חיצוני כאשר מצוין איש קשר או פרטי קשר');
     }
   }
 
@@ -1057,6 +1086,9 @@ export class LocalDemoRepository implements Repository {
       // blank here.
       ownerUserId: input.ownerUserId,
       ownerExternalName: null,
+      externalHandlerName: (input.externalHandlerName ?? '').trim() || null,
+      externalHandlerContactPerson: (input.externalHandlerContactPerson ?? '').trim() || null,
+      externalHandlerContactDetails: (input.externalHandlerContactDetails ?? '').trim() || null,
       discoveredAt: input.discoveredAt,
       createdAt: ts,
       createdBy: actor.id,
@@ -1202,6 +1234,25 @@ export class LocalDemoRepository implements Repository {
     this.validateEventTime(incident, input.eventTime);
     this.validateOwner(input.ownerUserId);
 
+    // Compute the merged external-handler values and validate them BEFORE
+    // any mutation or side effect (incidentUpdates.push, addEvent, audit,
+    // notify, incident field mutation) -- a rejected external-handler
+    // payload must leave the incident, its updates, events, audits, and
+    // notifications byte-for-byte unchanged.
+    const oldExtName = incident.externalHandlerName;
+    const oldExtPerson = incident.externalHandlerContactPerson;
+    const oldExtDetails = incident.externalHandlerContactDetails;
+    const newExtName = input.externalHandlerName !== undefined
+      ? (input.externalHandlerName ?? '').trim() || null
+      : oldExtName;
+    const newExtPerson = input.externalHandlerContactPerson !== undefined
+      ? (input.externalHandlerContactPerson ?? '').trim() || null
+      : oldExtPerson;
+    const newExtDetails = input.externalHandlerContactDetails !== undefined
+      ? (input.externalHandlerContactDetails ?? '').trim() || null
+      : oldExtDetails;
+    this.assertExternalHandlerValid(newExtName, newExtPerson, newExtDetails);
+
     const ts = this.now().toISOString();
     const update: IncidentUpdate = {
       id: newId(),
@@ -1262,11 +1313,17 @@ export class LocalDemoRepository implements Repository {
         after: JSON.stringify({ severity: input.severity }),
       });
     }
-    const newOwnerLabel = this.ownerLabel(input.ownerUserId, input.ownerExternalName);
+    // Internal owner is now mandatory (updateIncidentSchema's own
+    // superRefine guarantees input.ownerUserId is non-null by the time
+    // parseOrThrow returns) -- the new-label lookup never falls back to an
+    // external name anymore, mirroring update_incident's own
+    // v_new_owner_label (migration 0032). A legacy ownerExternalName
+    // payload key is tolerated but never read here (updateIncidentSchema
+    // no longer even has the key); ownerExternalName is therefore never
+    // written or cleared by this flow.
+    const newOwnerLabel = this.ownerLabel(input.ownerUserId, null);
     const oldOwnerLabel = this.ownerLabel(incident.ownerUserId, incident.ownerExternalName);
-    const ownerChanged =
-      input.ownerUserId !== incident.ownerUserId ||
-      ((input.ownerExternalName ?? '').trim() || null) !== incident.ownerExternalName;
+    const ownerChanged = input.ownerUserId !== incident.ownerUserId;
     if (ownerChanged) {
       this.addEvent(incidentId, 'assignment_change', actor.id, {
         field: 'owner',
@@ -1287,15 +1344,33 @@ export class LocalDemoRepository implements Repository {
         });
       }
     }
+    // Additive external handling party: preserve-on-omit (key absent from
+    // the parsed input, i.e. `undefined`), update-on-supply, clear-on-
+    // explicit-null -- mirroring update_incident's v_new_ext_* handling
+    // (migration 0032) exactly. One event, field='external_handler',
+    // distinct from the 'owner' event above, only on a genuine change to
+    // any of the three fields. (Values already computed and validated
+    // above, before any side effect.)
+    if (newExtName !== oldExtName || newExtPerson !== oldExtPerson || newExtDetails !== oldExtDetails) {
+      this.addEvent(incidentId, 'assignment_change', actor.id, {
+        field: 'external_handler',
+        oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
+        newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
+        eventTime: input.eventTime,
+        operationId,
+      });
+    }
     incident.status = input.status;
     incident.severity = input.severity;
     // operational_impact is a creation-time opening fact only -- update_incident
     // no longer revises it (historical values and impact_change events from
     // before this PR remain readable, but no new ones are written).
     incident.ownerUserId = input.ownerUserId;
-    incident.ownerExternalName = input.ownerUserId
-      ? null
-      : (input.ownerExternalName ?? '').trim() || null;
+    // ownerExternalName is a frozen historical column -- never written or
+    // cleared here (see above).
+    incident.externalHandlerName = newExtName;
+    incident.externalHandlerContactPerson = newExtPerson;
+    incident.externalHandlerContactDetails = newExtDetails;
     // next_update_due / no_deadline_reason are left untouched -- the new
     // update form never asks for either, so any existing (possibly legacy)
     // value simply carries forward unchanged.
@@ -1382,33 +1457,69 @@ export class LocalDemoRepository implements Repository {
     }
     this.validateOwner(input.ownerUserId);
 
-    const ts = this.now().toISOString();
-    const oldLabel = this.ownerLabel(incident.ownerUserId, incident.ownerExternalName);
-    const newLabel = this.ownerLabel(input.ownerUserId, input.ownerExternalName);
+    // Compute the merged external-handler values and validate them BEFORE
+    // any event/audit/notification/mutation -- a rejected payload must
+    // leave the incident, its events, audits, and notifications untouched.
+    const oldExtName = incident.externalHandlerName;
+    const oldExtPerson = incident.externalHandlerContactPerson;
+    const oldExtDetails = incident.externalHandlerContactDetails;
+    const newExtName = input.externalHandlerName !== undefined
+      ? (input.externalHandlerName ?? '').trim() || null
+      : oldExtName;
+    const newExtPerson = input.externalHandlerContactPerson !== undefined
+      ? (input.externalHandlerContactPerson ?? '').trim() || null
+      : oldExtPerson;
+    const newExtDetails = input.externalHandlerContactDetails !== undefined
+      ? (input.externalHandlerContactDetails ?? '').trim() || null
+      : oldExtDetails;
+    this.assertExternalHandlerValid(newExtName, newExtPerson, newExtDetails);
 
-    this.addEvent(incidentId, 'assignment_change', actor.id, {
-      field: 'owner',
-      oldValue: oldLabel,
-      newValue: newLabel,
-      note: input.note.trim() || null,
-      operationId: newId(),
-    });
-    this.audit(actor.id, 'incident_assigned', 'incident', incidentId, {
-      incidentNumber: incident.number,
-      before: JSON.stringify({ owner: oldLabel }),
-      after: JSON.stringify({ owner: newLabel }),
-    });
-    if (input.ownerUserId && input.ownerUserId !== actor.id) {
-      this.notify(input.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
-        incidentId,
-        dedupeKey: `assign-${incidentId}-${ts}`,
+    const ts = this.now().toISOString();
+    const operationId = newId();
+
+    // Gated on a GENUINE owner change: assignIncident is also the entry
+    // point for an external-handler-only edit (same owner, changed
+    // external handler fields), which must never fabricate an 'owner'
+    // event, an incident_assigned audit row, or a reassignment
+    // notification.
+    if (input.ownerUserId !== incident.ownerUserId) {
+      const oldLabel = this.ownerLabel(incident.ownerUserId, incident.ownerExternalName);
+      const newLabel = this.ownerLabel(input.ownerUserId, null);
+      this.addEvent(incidentId, 'assignment_change', actor.id, {
+        field: 'owner',
+        oldValue: oldLabel,
+        newValue: newLabel,
+        note: input.note.trim() || null,
+        operationId,
+      });
+      this.audit(actor.id, 'incident_assigned', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        before: JSON.stringify({ owner: oldLabel }),
+        after: JSON.stringify({ owner: newLabel }),
+      });
+      if (input.ownerUserId && input.ownerUserId !== actor.id) {
+        this.notify(input.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
+          incidentId,
+          dedupeKey: `assign-${incidentId}-${ts}`,
+        });
+      }
+    }
+
+    if (newExtName !== oldExtName || newExtPerson !== oldExtPerson || newExtDetails !== oldExtDetails) {
+      this.addEvent(incidentId, 'assignment_change', actor.id, {
+        field: 'external_handler',
+        oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
+        newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
+        operationId,
       });
     }
 
     incident.ownerUserId = input.ownerUserId;
-    incident.ownerExternalName = input.ownerUserId
-      ? null
-      : (input.ownerExternalName ?? '').trim() || null;
+    // ownerExternalName is a frozen historical column -- never written or
+    // cleared by this flow.
+    incident.externalHandlerName = newExtName;
+    incident.externalHandlerContactPerson = newExtPerson;
+    incident.externalHandlerContactDetails = newExtDetails;
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
@@ -1435,6 +1546,25 @@ export class LocalDemoRepository implements Repository {
     const ts = this.now().toISOString();
     const oldReportedToOps = incident.reportedToOps;
     const oldRecipient = incident.reportedToOpsRecipient;
+    // External handling is independent of readiness -- captured once,
+    // before the branch split, mirroring close_incident's own
+    // v_old_ext_*/v_new_ext_* (migration 0032). Both branches gain the
+    // three columns; only the full-readiness branch never touches
+    // ownerUserId/ownerExternalName (unchanged from before this feature).
+    const oldExtName = incident.externalHandlerName;
+    const oldExtPerson = incident.externalHandlerContactPerson;
+    const oldExtDetails = incident.externalHandlerContactDetails;
+    const newExtName = input.externalHandlerName !== undefined
+      ? (input.externalHandlerName ?? '').trim() || null
+      : oldExtName;
+    const newExtPerson = input.externalHandlerContactPerson !== undefined
+      ? (input.externalHandlerContactPerson ?? '').trim() || null
+      : oldExtPerson;
+    const newExtDetails = input.externalHandlerContactDetails !== undefined
+      ? (input.externalHandlerContactDetails ?? '').trim() || null
+      : oldExtDetails;
+    this.assertExternalHandlerValid(newExtName, newExtPerson, newExtDetails);
+    const extChanged = newExtName !== oldExtName || newExtPerson !== oldExtPerson || newExtDetails !== oldExtDetails;
     incident.rootCause = input.rootCause.trim();
     incident.resolution = input.resolution.trim();
     incident.followUpNotes = input.followUpNotes.trim() || null;
@@ -1442,6 +1572,9 @@ export class LocalDemoRepository implements Repository {
     incident.reportedToOps = input.reportedToOps;
     incident.reportedToOpsRecipient =
       input.reportedToOps === 'yes' ? (input.reportedToOpsRecipient ?? '').trim() || null : null;
+    incident.externalHandlerName = newExtName;
+    incident.externalHandlerContactPerson = newExtPerson;
+    incident.externalHandlerContactDetails = newExtDetails;
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;
@@ -1449,7 +1582,8 @@ export class LocalDemoRepository implements Repository {
     const operationId = newId();
 
     if (fullyReady) {
-      // Full readiness: the incident actually closes.
+      // Full readiness: the incident actually closes. Owner columns are
+      // untouched here -- unchanged from before this feature.
       incident.status = 'closed';
       incident.closedAt = ts;
       incident.closedBy = actor.id;
@@ -1475,6 +1609,14 @@ export class LocalDemoRepository implements Repository {
           operationId,
         });
       }
+      if (extChanged) {
+        this.addEvent(incidentId, 'assignment_change', actor.id, {
+          field: 'external_handler',
+          oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
+          newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
+          operationId,
+        });
+      }
     } else {
       // Incomplete readiness: the incident stays active as "כשירות חלקית" —
       // it is never marked closed while follow-up is still outstanding.
@@ -1483,9 +1625,8 @@ export class LocalDemoRepository implements Repository {
       const oldStatus = incident.status;
       incident.status = 'partial_readiness';
       incident.ownerUserId = input.ownerUserId ?? null;
-      incident.ownerExternalName = input.ownerUserId
-        ? null
-        : (input.ownerExternalName ?? '').trim() || null;
+      // ownerExternalName is a frozen historical column -- never written or
+      // cleared by this flow.
       if (!incident.nextUpdateDue) {
         incident.noDeadlineReason = 'התקלה נותרה פעילה עם כשירות לא מלאה, ממתינה להשלמת פעולות המשך';
       }
@@ -1494,7 +1635,7 @@ export class LocalDemoRepository implements Repository {
         field: 'status',
         oldValue: oldStatus,
         newValue: 'partial_readiness',
-        note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון החלקי שבוצע: ${input.resolution.trim()}\nפעולות המשך: ${incident.followUpNotes}\nגורם מטפל אחראי המשך: ${this.ownerLabel(incident.ownerUserId, incident.ownerExternalName)}`,
+        note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון החלקי שבוצע: ${input.resolution.trim()}\nפעולות המשך: ${incident.followUpNotes}\nגורם מטפל אחראי המשך: ${this.ownerLabel(incident.ownerUserId, null)}`,
         operationId,
       });
       this.audit(actor.id, 'incident_partial_readiness', 'incident', incidentId, {
@@ -1507,6 +1648,14 @@ export class LocalDemoRepository implements Repository {
           oldValue: oldRecipient,
           newValue: incident.reportedToOpsRecipient,
           note: `דווח למבצעים: ${reportedToOpsLabels[incident.reportedToOps]}${incident.reportedToOpsRecipient ? ` (${incident.reportedToOpsRecipient})` : ''}`,
+          operationId,
+        });
+      }
+      if (extChanged) {
+        this.addEvent(incidentId, 'assignment_change', actor.id, {
+          field: 'external_handler',
+          oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
+          newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
           operationId,
         });
       }
@@ -1578,23 +1727,53 @@ export class LocalDemoRepository implements Repository {
     }
     this.validateOwner(input.ownerUserId);
 
+    // Compute the merged external-handler values and validate them BEFORE
+    // any event/audit/notification/mutation -- a rejected external-handler
+    // payload must leave the incident, its events, and its audits
+    // byte-for-byte unchanged.
+    const oldExtName = incident.externalHandlerName;
+    const oldExtPerson = incident.externalHandlerContactPerson;
+    const oldExtDetails = incident.externalHandlerContactDetails;
+    const newExtName = input.externalHandlerName !== undefined
+      ? (input.externalHandlerName ?? '').trim() || null
+      : oldExtName;
+    const newExtPerson = input.externalHandlerContactPerson !== undefined
+      ? (input.externalHandlerContactPerson ?? '').trim() || null
+      : oldExtPerson;
+    const newExtDetails = input.externalHandlerContactDetails !== undefined
+      ? (input.externalHandlerContactDetails ?? '').trim() || null
+      : oldExtDetails;
+    this.assertExternalHandlerValid(newExtName, newExtPerson, newExtDetails);
+
     const ts = this.now().toISOString();
+    const operationId = newId();
     this.addEvent(incidentId, 'reopened', actor.id, {
       note: input.reason.trim(),
       oldValue: 'closed',
       newValue: 'reopened',
-      operationId: newId(),
+      operationId,
     });
     this.audit(actor.id, 'incident_reopened', 'incident', incidentId, {
       incidentNumber: incident.number,
       after: JSON.stringify({ reason: input.reason.trim() }),
     });
 
+    if (newExtName !== oldExtName || newExtPerson !== oldExtPerson || newExtDetails !== oldExtDetails) {
+      this.addEvent(incidentId, 'assignment_change', actor.id, {
+        field: 'external_handler',
+        oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
+        newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
+        operationId,
+      });
+    }
+
     incident.status = 'reopened';
     incident.ownerUserId = input.ownerUserId;
-    incident.ownerExternalName = input.ownerUserId
-      ? null
-      : (input.ownerExternalName ?? '').trim() || null;
+    // ownerExternalName is a frozen historical column -- never written or
+    // cleared by this flow.
+    incident.externalHandlerName = newExtName;
+    incident.externalHandlerContactPerson = newExtPerson;
+    incident.externalHandlerContactDetails = newExtDetails;
     // next_update_due / no_deadline_reason are left untouched -- reopening
     // no longer asks for a next-update expectation, so whatever
     // close_incident last left them as simply carries forward.

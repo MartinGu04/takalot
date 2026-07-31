@@ -13,7 +13,7 @@ test('professional manager reopens a closed incident', async ({ page }) => {
   await page.getByRole('button', { name: 'פתיחה מחדש' }).click();
   const dialog = page.getByRole('dialog', { name: 'פתיחה מחדש של תקלה' });
   await dialog.getByLabel('סיבת הפתיחה מחדש').fill('התגלה כי התקלה חזרה לאחר הסגירה, בבדיקה אוטומטית');
-  await dialog.getByLabel('גורם מטפל פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
+  await dialog.getByLabel('בעל אחריות פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
   await dialog.locator('form button[type="submit"]').click();
 
   await expect(page.getByText('התקלה נפתחה מחדש')).toBeVisible();

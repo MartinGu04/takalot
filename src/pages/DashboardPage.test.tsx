@@ -121,10 +121,12 @@ describe('information architecture: urgent, open, recently-closed', () => {
     await loginAs('login-u-admin');
     const closedHeading = within(main()).getByRole('heading', { name: 'נסגרו לאחרונה' });
     const closedSection = closedHeading.closest('section') as HTMLElement;
-    // inc-5 (closed 44h ago) is more recent than inc-6 (closed 60h ago).
+    // inc-5 (closed 44h ago) is more recent than inc-6 (closed 60h ago), and
+    // inc-9 (closed ~490h ago) is the oldest of the three -- all three fit
+    // within the section's five-row cap.
     const links = within(closedSection).getAllByRole('link');
     const numberLinks = links.filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
-    expect(numberLinks.length).toBe(2);
+    expect(numberLinks.length).toBe(3);
     // The archive link now carries the closed-outcome filter, so it lands on
     // the same set the section and its counter describe rather than on the
     // wider closed-and-cancelled archive.
@@ -166,10 +168,10 @@ describe('information architecture: urgent, open, recently-closed', () => {
     const closedSection = closedHeading.closest('section') as HTMLElement;
     expect(within(closedSection).getByText('2026-999')).toBeInTheDocument();
     expect(within(closedSection).getByText('בוטלה')).toBeInTheDocument();
-    // The two real closed fixtures are unaffected -- three rows total now.
+    // The three real closed fixtures are unaffected -- four rows total now.
     const links = within(closedSection).getAllByRole('link');
     const numberLinks = links.filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
-    expect(numberLinks.length).toBe(3);
+    expect(numberLinks.length).toBe(4);
 
     spy.mockRestore();
   });
@@ -213,14 +215,14 @@ describe('incident card content and structure', () => {
 });
 
 describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
-  // Seed (src/data/local/seed.ts) has exactly two closed incidents
-  // (inc-5, inc-6) and no cancelled ones.
+  // Seed (src/data/local/seed.ts) has exactly three closed incidents
+  // (inc-5, inc-6, inc-9) and no cancelled ones.
   it('shows the total number of closed incidents and links to the closed-only archive', async () => {
     await loginAs('login-u-admin');
     const counter = await within(main()).findByTestId('closed-total');
-    expect(counter).toHaveTextContent('2');
+    expect(counter).toHaveTextContent('3');
     expect(counter).toHaveAttribute('href', '/archive?outcome=closed');
-    expect(counter).toHaveAccessibleName('סך הכול 2 תקלות סגורות — מעבר לארכיון');
+    expect(counter).toHaveAccessibleName('סך הכול 3 תקלות סגורות — מעבר לארכיון');
   });
 
   it('counts every closed incident, not only the five rendered rows', async () => {
@@ -274,8 +276,8 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
         .closest('section') as HTMLElement;
       // The cancelled incident is visible in the section...
       expect(within(closedSection).getByText('בוטלה')).toBeInTheDocument();
-      // ...but the counter still reports only the two genuinely closed ones.
-      expect(within(main()).getByTestId('closed-total')).toHaveTextContent('2');
+      // ...but the counter still reports only the three genuinely closed ones.
+      expect(within(main()).getByTestId('closed-total')).toHaveTextContent('3');
     } finally {
       spy.mockRestore();
     }
@@ -283,7 +285,7 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
 
   it('refreshes after an incident is closed and again after it is reopened', async () => {
     const user = await loginAs('login-u-admin');
-    expect(await within(main()).findByTestId('closed-total')).toHaveTextContent('2');
+    expect(await within(main()).findByTestId('closed-total')).toHaveTextContent('3');
 
     // --- close inc-1 through the real closure flow ---
     const inc1Card = (await within(main()).findByText(INC1_TEXT)).closest('a.incident-card') as HTMLElement;
@@ -298,7 +300,7 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
     expect(await screen.findByText('התקלה נסגרה.')).toBeInTheDocument();
 
     await gotoDashboard(user);
-    await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('3'));
+    await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('4'));
 
     // --- reopen it, and the count must come back down ---
     // It is no longer an open card; it now sits in the recently-closed list,
@@ -314,6 +316,6 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
     expect(await screen.findByText('התקלה נפתחה מחדש.')).toBeInTheDocument();
 
     await gotoDashboard(user);
-    await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('2'));
+    await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('3'));
   });
 });

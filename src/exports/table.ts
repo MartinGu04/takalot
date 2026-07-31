@@ -7,6 +7,7 @@ import {
   severityLabels,
   statusLabels,
 } from '../domain/labels';
+import { ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { formatDateTime, formatDuration } from '../lib/time';
 
 export interface ExportContext {
@@ -25,7 +26,8 @@ export const INCIDENT_EXPORT_HEADERS = [
   'חומרה',
   'סטטוס',
   'השפעה מבצעית',
-  'גורם מטפל',
+  'בעל אחריות פנימי',
+  'גורם מטפל חיצוני',
   'עדכון אחרון',
   'דווח למבצעים',
   'זמן סגירה',
@@ -40,11 +42,6 @@ export const INCIDENT_EXPORT_HEADERS = [
 
 export function incidentToExportRow(incident: Incident, ctx: ExportContext): string[] {
   const name = (id: string | null) => (id ? (ctx.profiles.find((p) => p.id === id)?.fullName ?? '') : '');
-  const owner = incident.ownerUserId
-    ? name(incident.ownerUserId)
-    : incident.ownerExternalName
-      ? `${incident.ownerExternalName} (חיצוני)`
-      : '';
   return [
     incident.number,
     formatDateTime(incident.createdAt),
@@ -54,7 +51,8 @@ export function incidentToExportRow(incident: Incident, ctx: ExportContext): str
     severityLabels[incident.severity],
     statusLabels[incident.status],
     incident.operationalImpact,
-    owner,
+    ownerDisplay(incident, ctx.profiles),
+    externalHandlerDisplay(incident) ?? '',
     formatDateTime(incident.lastUpdateAt),
     reportedToOpsLabels[incident.reportedToOps],
     incident.closedAt ? formatDateTime(incident.closedAt) : '',
@@ -87,7 +85,7 @@ export function incidentsToXlsxBlob(incidents: Incident[], ctx: ExportContext): 
     ...incidents.map((i) => incidentToExportRow(i, ctx)),
   ];
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = INCIDENT_EXPORT_HEADERS.map((_, idx) => ({ wch: idx === 7 || idx === 15 || idx === 16 ? 40 : 18 }));
+  ws['!cols'] = INCIDENT_EXPORT_HEADERS.map((_, idx) => ({ wch: idx === 7 || idx === 16 || idx === 17 ? 40 : 18 }));
   const wb = XLSX.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
   XLSX.utils.book_append_sheet(wb, ws, 'תקלות');

@@ -111,6 +111,7 @@ export const fieldLabels: Record<string, string> = {
   severity: 'חומרה',
   operational_impact: 'השפעה מבצעית',
   owner: 'גורם מטפל',
+  external_handler: 'גורם מטפל חיצוני',
   // next_update_due/no_deadline_reason: the next-update-ETA concept was
   // removed from creation/update/reopen (no longer an active question the
   // product asks), but these labels stay -- historical deadline_change
