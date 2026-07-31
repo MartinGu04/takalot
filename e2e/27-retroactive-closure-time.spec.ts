@@ -50,10 +50,10 @@ test.describe('CloseDialog: actual closure time', () => {
     const closedAtRow = closedAtLabel.locator('xpath=..');
     await expect(closedAtRow).toContainText(backdatedHm);
 
-    // Timeline: the closure event carries a distinct "(נרשם בשרת: …)" note
+    // Timeline: the closure event carries a distinct "תועד במערכת: …" line
     // -- server_time stays the actual recording time, independently ~now,
     // more than 60s away from the backdated event time.
-    await expect(page.getByText('נרשם בשרת:')).toBeVisible();
+    await expect(page.getByText('תועד במערכת:')).toBeVisible();
   });
 
   test('rejects a closure time before the incident was discovered, leaving the form open with entered values intact', async ({ page }) => {
