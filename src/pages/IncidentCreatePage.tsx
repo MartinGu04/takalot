@@ -63,8 +63,14 @@ export default function IncidentCreatePage() {
   const { data: profiles } = useProfiles();
   const [submitted, setSubmitted] = useState(false);
 
+  // Merge a restored draft OVER the current defaults rather than using it
+  // directly: a draft saved before a later form revision (e.g. PR C's
+  // external-handler fields) won't have those keys at all, and using it
+  // as-is would leave them `undefined` -- an uncontrolled input value,
+  // not the `''` every field here expects. Merging keeps every value the
+  // draft does have while filling in anything it predates.
   const { register, handleSubmit, watch, formState, reset, setValue } = useForm<FormValues>({
-    defaultValues: loadDraft<FormValues>(DRAFT_KEY) ?? defaultValues(),
+    defaultValues: { ...defaultValues(), ...loadDraft<FormValues>(DRAFT_KEY) },
   });
   const values = watch();
   useDraft(DRAFT_KEY, values, formState.isDirty && !submitted);

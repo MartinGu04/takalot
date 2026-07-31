@@ -502,3 +502,59 @@ describe('IncidentCreatePage: draft discarded on navigating away from the create
     await waitFor(() => expect(screen.getByLabelText(/^בעל אחריות פנימי/)).toHaveValue('u-admin'));
   });
 });
+
+describe('IncidentCreatePage: restoring a draft saved before the external-handler fields existed', () => {
+  it('restores an old-shaped draft (no externalHandlerName/_ContactPerson/_ContactDetails keys) with those fields empty, and every pre-existing draft value intact', async () => {
+    // Simulates a draft saved by a pre-PR-C client bundle: none of the three
+    // external-handler keys exist on the stored object at all.
+    const oldShapedDraft = {
+      systemId: 'sys-alpha',
+      locationId: 'loc-1',
+      discoveredAt: '2026-01-01T10:00',
+      description: 'תיאור שנשמר לפני הוספת גורם מטפל חיצוני',
+      severity: 'high',
+      operationalImpact: 'השפעה שנשמרה בטיוטה ישנה',
+      actionsTaken: 'פעולות שנשמרו בטיוטה ישנה',
+      ownerUserId: 'u-tech-1',
+      reportedToOps: 'no',
+      reportedToOpsRecipient: '',
+      reportedToComms: 'no',
+      reportedToCommsRecipient: '',
+      wisdomReported: 'no',
+      wisdomIncidentNumber: '',
+      // externalHandlerName / externalHandlerContactPerson /
+      // externalHandlerContactDetails deliberately absent.
+    };
+    localStorage.setItem('takalot-draft-incident-create', JSON.stringify(oldShapedDraft));
+
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+
+    // Every value the old draft did have survives intact.
+    expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe(
+      'תיאור שנשמר לפני הוספת גורם מטפל חיצוני',
+    );
+    expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe(
+      'השפעה שנשמרה בטיוטה ישנה',
+    );
+    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe(
+      'פעולות שנשמרו בטיוטה ישנה',
+    );
+    expect(screen.getByLabelText(/^מערכת \/ עמדה/)).toHaveValue('sys-alpha');
+    expect(screen.getByLabelText(/^מיקום/)).toHaveValue('loc-1');
+
+    // The three keys the old draft never had restore as empty strings --
+    // a controlled, editable input, not an "undefined" value.
+    const nameInput = screen.getByLabelText('גורם מטפל חיצוני') as HTMLInputElement;
+    expect(nameInput.value).toBe('');
+    const contactPersonInput = screen.getByLabelText('איש קשר') as HTMLInputElement;
+    expect(contactPersonInput.value).toBe('');
+    const contactDetailsInput = screen.getByLabelText('פרטי קשר') as HTMLInputElement;
+    expect(contactDetailsInput.value).toBe('');
+
+    // Proves it's genuinely controlled (not merely defaulting visually):
+    // typing works normally.
+    await user.type(nameInput, 'ארגון שהוזן לאחר שחזור הטיוטה');
+    expect(nameInput.value).toBe('ארגון שהוזן לאחר שחזור הטיוטה');
+  });
+});

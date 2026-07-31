@@ -810,6 +810,41 @@ describe('external handling party (migration 0032)', () => {
     ).rejects.toThrow(AppError);
   });
 
+  it('update_incident: a rejected external-handler payload leaves the incident, its updates, events, audits, and notifications byte-for-byte unchanged, even when the same call also proposes a genuine status/severity/owner change', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-1'); // seeded with no external handler
+    expect(before!.externalHandlerName).toBeNull();
+    const updatesBefore = await repo.getIncidentUpdates(supervisor1, 'inc-1');
+    const eventsBefore = await repo.getIncidentEvents(supervisor1, 'inc-1');
+    const auditBefore = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const notificationsBefore = await repo.listNotifications(tech2);
+
+    await expect(
+      repo.updateIncident(supervisor1, 'inc-1', {
+        expectedVersion: before!.version,
+        eventTime: FIXED_NOW.toISOString(),
+        actionsTaken: 'ניסיון עדכון עם מטען לא תקין',
+        findings: '',
+        nextSteps: '',
+        currentStatusText: 'בדיקה',
+        status: 'monitoring', // genuine status change, proposed alongside the invalid payload
+        severity: 'high', // genuine severity change
+        changeReason: '',
+        ownerUserId: DEMO_USERS.tech2, // genuine owner change
+        externalHandlerContactPerson: 'דנה', // name omitted -> preserved as null -> invalid
+        updateReportedToOps: 'not_required',
+        updateReportedToComms: 'no',
+        updateWisdomReported: 'no',
+      } as Parameters<LocalDemoRepository['updateIncident']>[2]),
+    ).rejects.toThrow(AppError);
+
+    const after = await repo.getIncident(supervisor1, 'inc-1');
+    expect(after).toEqual(before);
+    expect(await repo.getIncidentUpdates(supervisor1, 'inc-1')).toEqual(updatesBefore);
+    expect(await repo.getIncidentEvents(supervisor1, 'inc-1')).toEqual(eventsBefore);
+    expect(await repo.listAuditLogs(admin, { incidentNumber: before!.number })).toEqual(auditBefore);
+    expect(await repo.listNotifications(tech2)).toEqual(notificationsBefore);
+  });
+
   it('assign_incident: repository-level guard rejects a contact-only merged result (name omitted, incident had none) -- the schema alone cannot catch this since it has no visibility into the existing incident', async () => {
     const before = await repo.getIncident(supervisor1, 'inc-4'); // seeded with no external handler
     expect(before!.externalHandlerName).toBeNull();
@@ -821,6 +856,29 @@ describe('external handling party (migration 0032)', () => {
         externalHandlerContactPerson: 'דנה', // name key omitted -> preserved as null
       } as Parameters<LocalDemoRepository['assignIncident']>[2]),
     ).rejects.toThrow(AppError);
+  });
+
+  it('assign_incident: a rejected external-handler payload leaves the incident, events, audits, and notifications byte-for-byte unchanged, even when the same call also proposes a genuine owner change', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-4'); // seeded with no external handler
+    expect(before!.externalHandlerName).toBeNull();
+    const eventsBefore = await repo.getIncidentEvents(supervisor1, 'inc-4');
+    const auditBefore = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const notificationsBefore = await repo.listNotifications(tech2);
+
+    await expect(
+      repo.assignIncident(supervisor1, 'inc-4', {
+        expectedVersion: before!.version,
+        note: '',
+        ownerUserId: DEMO_USERS.tech2, // genuine owner change, proposed alongside the invalid payload
+        externalHandlerContactPerson: 'דנה', // name omitted -> preserved as null -> invalid
+      } as Parameters<LocalDemoRepository['assignIncident']>[2]),
+    ).rejects.toThrow(AppError);
+
+    const after = await repo.getIncident(supervisor1, 'inc-4');
+    expect(after).toEqual(before);
+    expect(await repo.getIncidentEvents(supervisor1, 'inc-4')).toEqual(eventsBefore);
+    expect(await repo.listAuditLogs(admin, { incidentNumber: before!.number })).toEqual(auditBefore);
+    expect(await repo.listNotifications(tech2)).toEqual(notificationsBefore);
   });
 
   it('assign_incident: preserve/update/clear semantics and a separate field=external_handler event', async () => {
@@ -843,6 +901,33 @@ describe('external handling party (migration 0032)', () => {
       ownerUserId: DEMO_USERS.tech1,
     } as Parameters<LocalDemoRepository['assignIncident']>[2]);
     expect(preserved.externalHandlerName).toBe('ארגון הקצאה');
+  });
+
+  it('assign_incident: same owner + changed external handler emits ONLY the external_handler event -- no fake owner event, no reassignment audit, no reassignment notification', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-4');
+    const sameOwner = before!.ownerUserId!; // DEMO_USERS.supervisor1 (seed.ts)
+    // Actor is deliberately NOT the owner, so a genuine reassignment here
+    // would have sent supervisor1 a notification -- proving the assertion
+    // below tests the owner-unchanged gate, not the pre-existing
+    // self-assignment-never-notifies rule.
+    const assigned = await repo.assignIncident(manager, 'inc-4', {
+      expectedVersion: before!.version,
+      note: '',
+      ownerUserId: sameOwner,
+      externalHandlerName: 'ארגון ללא שינוי בעלים',
+    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    expect(assigned.ownerUserId).toBe(sameOwner);
+    expect(assigned.externalHandlerName).toBe('ארגון ללא שינוי בעלים');
+
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-4');
+    expect(events.filter((e) => e.field === 'owner').length).toBe(0);
+    expect(events.filter((e) => e.field === 'external_handler').length).toBe(1);
+
+    const auditLog = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    expect(auditLog.filter((a) => a.action === 'incident_assigned').length).toBe(0);
+
+    const notifications = await repo.listNotifications(supervisor1);
+    expect(notifications.filter((n) => n.type === 'incident_assigned' && n.incidentId === 'inc-4').length).toBe(0);
   });
 
   it('close_incident (full readiness): accepts the external-handler trio without touching owner columns', async () => {
@@ -911,6 +996,30 @@ describe('external handling party (migration 0032)', () => {
         ownerUserId: null,
       } as ReopenIncidentInput),
     ).rejects.toThrow(AppError);
+  });
+
+  it('reopen_incident: a rejected external-handler payload leaves the (still-closed) incident, events, audits, and notifications byte-for-byte unchanged, even when the same call also proposes a genuine owner change', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-5'); // seeded closed, no external handler
+    expect(before!.status).toBe('closed');
+    expect(before!.externalHandlerName).toBeNull();
+    const eventsBefore = await repo.getIncidentEvents(supervisor1, 'inc-5');
+    const auditBefore = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const notificationsBefore = await repo.listNotifications(tech2);
+
+    await expect(
+      repo.reopenIncident(manager, 'inc-5', {
+        expectedVersion: before!.version,
+        reason: 'התברר שהתקלה חוזרת',
+        ownerUserId: DEMO_USERS.tech2, // genuine owner change, proposed alongside the invalid payload
+        externalHandlerContactPerson: 'דנה', // name omitted -> preserved as null -> invalid
+      } as Parameters<LocalDemoRepository['reopenIncident']>[2]),
+    ).rejects.toThrow(AppError);
+
+    const after = await repo.getIncident(supervisor1, 'inc-5');
+    expect(after).toEqual(before);
+    expect(await repo.getIncidentEvents(supervisor1, 'inc-5')).toEqual(eventsBefore);
+    expect(await repo.listAuditLogs(admin, { incidentNumber: before!.number })).toEqual(auditBefore);
+    expect(await repo.listNotifications(tech2)).toEqual(notificationsBefore);
   });
 });
 

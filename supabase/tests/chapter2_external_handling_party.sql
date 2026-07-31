@@ -423,6 +423,60 @@ begin
         case when sqlerrm = 'validation: יש לבחור בעל אחריות פנימי' then 'PASS' else 'FAIL' end, sqlerrm);
   end;
 
+  -- 17a. Unchanged owner + changed external handler emits ONLY the
+  --      field='external_handler' event: no fake field='owner' event, no
+  --      incident_assigned audit row, no reassignment notification. g814
+  --      is currently owned by a2 (from test 14), external_handler_name is
+  --      null (cleared by test 15).
+  declare
+    v_owner_events_before int;
+    v_owner_events_after int;
+    v_ext_events_before int;
+    v_ext_events_after int;
+    v_audit_before int;
+    v_audit_after int;
+    v_notif_before int;
+    v_notif_after int;
+  begin
+    select count(*) into v_owner_events_before from incident_events
+     where incident_id = '00000000-0000-0000-0000-00000000a814' and field = 'owner';
+    select count(*) into v_ext_events_before from incident_events
+     where incident_id = '00000000-0000-0000-0000-00000000a814' and field = 'external_handler';
+    select count(*) into v_audit_before from audit_logs
+     where action = 'incident_assigned' and entity_id = '00000000-0000-0000-0000-00000000a814';
+    select count(*) into v_notif_before from notifications
+     where type = 'incident_assigned' and user_id = '00000000-0000-0000-0000-0000000000a2';
+
+    v_incident := assign_incident('00000000-0000-0000-0000-00000000a814', pg_temp.base_assign_input(jsonb_build_object(
+      'expectedVersion', 4, 'ownerUserId', '00000000-0000-0000-0000-0000000000a2',
+      'externalHandlerName', 'ארגון ללא שינוי בעלים')));
+
+    select count(*) into v_owner_events_after from incident_events
+     where incident_id = '00000000-0000-0000-0000-00000000a814' and field = 'owner';
+    select count(*) into v_ext_events_after from incident_events
+     where incident_id = '00000000-0000-0000-0000-00000000a814' and field = 'external_handler';
+    select count(*) into v_audit_after from audit_logs
+     where action = 'incident_assigned' and entity_id = '00000000-0000-0000-0000-00000000a814';
+    select count(*) into v_notif_after from notifications
+     where type = 'incident_assigned' and user_id = '00000000-0000-0000-0000-0000000000a2';
+
+    insert into results (test, result, detail) values
+      ('assign_incident: same owner + changed external handler -> one external_handler event, zero owner event/audit/notification',
+        case when v_owner_events_after = v_owner_events_before
+              and v_ext_events_after = v_ext_events_before + 1
+              and v_audit_after = v_audit_before
+              and v_notif_after = v_notif_before
+             then 'PASS' else 'FAIL' end,
+        'owner_events ' || v_owner_events_before || '->' || v_owner_events_after ||
+        ' ext_events ' || v_ext_events_before || '->' || v_ext_events_after ||
+        ' audit ' || v_audit_before || '->' || v_audit_after ||
+        ' notif ' || v_notif_before || '->' || v_notif_after);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('assign_incident: same owner + changed external handler -> one external_handler event, zero owner event/audit/notification',
+        'FAIL', sqlerrm);
+  end;
+
   -- 17. Legacy incident (g811) via assign_incident: internal owner now
   --     required; owner_external_name still untouched.
   begin
@@ -444,11 +498,12 @@ begin
 
   -- 18. Full-readiness close with a full external-handler trio: columns
   --     set; owner_user_id/owner_external_name remain untouched by this
-  --     branch (still unset here, since g814 was cleared above -- but the
-  --     point is the branch never references those two columns at all).
+  --     branch -- the point is the branch never references those two
+  --     columns at all (g814's external handler already has a value from
+  --     test 17a; this call overwrites it with its own new value).
   begin
     v_incident := close_incident('00000000-0000-0000-0000-00000000a814', pg_temp.base_close_input(jsonb_build_object(
-      'expectedVersion', 4, 'externalHandlerName', 'ארגון בסגירה', 'externalHandlerContactPerson', 'טל')));
+      'expectedVersion', 5, 'externalHandlerName', 'ארגון בסגירה', 'externalHandlerContactPerson', 'טל')));
     insert into results (test, result, detail) values
       ('close_incident (full readiness): external-handler trio persisted, owner columns untouched by this branch',
         case when v_incident.external_handler_name = 'ארגון בסגירה'

@@ -456,17 +456,23 @@ begin
     raise exception 'validation: יש להזין שם גורם מטפל חיצוני כאשר מצוין איש קשר או פרטי קשר';
   end if;
 
-  select coalesce((select full_name from profiles where id = v.owner_user_id), v.owner_external_name, 'ללא') into v_old_label;
-  select full_name into v_new_label from profiles where id = v_new_owner;
+  -- Gated on a GENUINE owner change: assign_incident is also the entry
+  -- point for an external-handler-only edit (same owner, changed
+  -- external_handler_*), which must never fabricate an 'owner' event, an
+  -- incident_assigned audit row, or a reassignment notification.
+  if v_new_owner is distinct from v.owner_user_id then
+    select coalesce((select full_name from profiles where id = v.owner_user_id), v.owner_external_name, 'ללא') into v_old_label;
+    select full_name into v_new_label from profiles where id = v_new_owner;
 
-  insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, note, operation_id)
-  values (p_incident_id, 'assignment_change', auth.uid(), 'owner', v_old_label, v_new_label,
-          nullif(trim(coalesce(p_input->>'note', '')), ''), v_operation_id);
-  perform write_audit('incident_assigned', 'incident', p_incident_id::text, v.number,
-    jsonb_build_object('owner', v_old_label), jsonb_build_object('owner', v_new_label));
-  if v_new_owner <> auth.uid() then
-    insert into notifications (user_id, type, incident_id, text)
-    values (v_new_owner, 'incident_assigned', p_incident_id, 'תקלה ' || v.number || ' הוקצתה אליך.');
+    insert into incident_events (incident_id, type, actor_id, field, old_value, new_value, note, operation_id)
+    values (p_incident_id, 'assignment_change', auth.uid(), 'owner', v_old_label, v_new_label,
+            nullif(trim(coalesce(p_input->>'note', '')), ''), v_operation_id);
+    perform write_audit('incident_assigned', 'incident', p_incident_id::text, v.number,
+      jsonb_build_object('owner', v_old_label), jsonb_build_object('owner', v_new_label));
+    if v_new_owner <> auth.uid() then
+      insert into notifications (user_id, type, incident_id, text)
+      values (v_new_owner, 'incident_assigned', p_incident_id, 'תקלה ' || v.number || ' הוקצתה אליך.');
+    end if;
   end if;
   if v_new_ext_name is distinct from v_old_ext_name
      or v_new_ext_person is distinct from v_old_ext_person
