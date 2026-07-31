@@ -466,6 +466,34 @@ describe('retroactive closure time (migration 0033)', () => {
     expect(afterNotifications).toEqual(beforeNotifications);
   });
 
+  it('rejects a malformed, unparseable eventTime ("not-a-date"), leaving state unchanged', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-2');
+    const beforeEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const beforeAudits = await repo.listAuditLogs(admin, {});
+    const beforeNotifications = await repo.listNotifications(supervisor1);
+
+    await expect(
+      repo.closeIncident(supervisor1, 'inc-2', {
+        expectedVersion: before!.version,
+        eventTime: 'not-a-date',
+        rootCause: 'תקלת חומרה',
+        resolution: 'הוחלף רכיב',
+        readiness: 'full',
+        followUpNotes: '',
+        reportedToOps: 'no',
+      } as CloseIncidentInput),
+    ).rejects.toThrow(AppError);
+
+    const after = await repo.getIncident(supervisor1, 'inc-2');
+    const afterEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');
+    const afterAudits = await repo.listAuditLogs(admin, {});
+    const afterNotifications = await repo.listNotifications(supervisor1);
+    expect(after).toEqual(before);
+    expect(afterEvents).toEqual(beforeEvents);
+    expect(afterAudits).toEqual(beforeAudits);
+    expect(afterNotifications).toEqual(beforeNotifications);
+  });
+
   it('rejects an eventTime beyond now()+5 minutes, leaving state unchanged', async () => {
     const before = await repo.getIncident(supervisor1, 'inc-2');
     const beforeEvents = await repo.getIncidentEvents(supervisor1, 'inc-2');

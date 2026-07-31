@@ -1544,8 +1544,15 @@ export class LocalDemoRepository implements Repository {
     // guarded-cast pattern already established by cancel_incident/
     // update_incident): checked before any mutation below, so a rejected
     // closure time leaves the incident, events, audits, and notifications
-    // byte-for-byte unchanged.
+    // byte-for-byte unchanged. An unparseable value (e.g. "not-a-date")
+    // produces an Invalid Date, whose comparisons against a valid Date are
+    // always false -- without this explicit check it would silently pass
+    // the bounds test below instead of being rejected, unlike the guarded
+    // cast on the server side.
     const closureEventTime = new Date(input.eventTime);
+    if (Number.isNaN(closureEventTime.getTime())) {
+      throw new AppError('VALIDATION', 'מועד סגירת התקלה אינו תקין.');
+    }
     if (closureEventTime < new Date(incident.discoveredAt) || closureEventTime.getTime() > this.now().getTime() + 5 * 60_000) {
       throw new AppError('VALIDATION', 'מועד סגירת התקלה אינו תקין.');
     }
