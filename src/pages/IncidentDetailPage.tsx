@@ -315,7 +315,7 @@ export default function IncidentDetailPage() {
   const exportPdf = async () => {
     try {
       await repo().recordExport(session, { exportType: 'incident_pdf', filtersDescription: incident.number });
-      const pdf = buildIncidentPdf(
+      const pdf = await buildIncidentPdf(
         incident,
         events ?? [],
         updates ?? [],

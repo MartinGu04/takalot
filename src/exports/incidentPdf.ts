@@ -1,16 +1,12 @@
 import type { Incident, IncidentEvent, IncidentUpdate, Profile, SystemRecord, LocationRecord } from '../domain/types';
-import {
-  eventTypeLabels,
-  readinessLabels,
-  reportedToOpsLabels,
-  severityLabels,
-  statusLabels,
-} from '../domain/labels';
+import { readinessLabels, reportedToOpsLabels, severityLabels, statusLabels } from '../domain/labels';
 import { ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { formatDateTime, formatDuration } from '../lib/time';
-import { HebrewPdf } from './pdf';
+import { HebrewPdf, type DepartmentLogo } from './pdf';
+import { buildTimelineBlocks } from './timelineNarrative';
+import { loadDepartmentLogoBytes } from './departmentLogos';
 
-export function buildIncidentPdf(
+export async function buildIncidentPdf(
   incident: Incident,
   events: IncidentEvent[],
   updates: IncidentUpdate[],
@@ -18,13 +14,15 @@ export function buildIncidentPdf(
   systems: SystemRecord[],
   locations: LocationRecord[],
   exportedByName: string,
-): HebrewPdf {
+  logos: DepartmentLogo[] = [],
+): Promise<HebrewPdf> {
+  const departmentLogos = logos.length > 0 ? logos : await loadDepartmentLogoBytes();
   const pdf = new HebrewPdf();
   const name = (id: string | null) => (id ? (profiles.find((p) => p.id === id)?.fullName ?? 'לא ידוע') : '');
   const owner = ownerDisplay(incident, profiles);
   const externalHandler = externalHandlerDisplay(incident);
 
-  pdf.header(`תקלה ${incident.number}`, exportedByName);
+  pdf.incidentHeader(incident.number, exportedByName, new Date(), departmentLogos);
 
   pdf.sectionTitle('פרטי פתיחה');
   pdf.field('מספר תקלה', incident.number);
@@ -36,8 +34,8 @@ export function buildIncidentPdf(
   pdf.spacer();
 
   pdf.sectionTitle('מצב נוכחי');
-  pdf.field('חומרה', severityLabels[incident.severity]);
-  pdf.field('סטטוס', statusLabels[incident.status]);
+  pdf.fieldBadge('חומרה', severityLabels[incident.severity]);
+  pdf.fieldBadge('סטטוס', statusLabels[incident.status]);
   pdf.field('השפעה מבצעית', incident.operationalImpact);
   pdf.field('בעל אחריות פנימי', owner);
   if (externalHandler) pdf.field('גורם מטפל חיצוני', externalHandler);
@@ -68,26 +66,10 @@ export function buildIncidentPdf(
   }
 
   pdf.sectionTitle('ציר זמן מלא');
-  const updatesById = new Map(updates.map((u) => [u.id, u]));
-  for (const event of events) {
-    pdf.field(
-      `${eventTypeLabels[event.type]}`,
-      `${formatDateTime(event.eventTime)} — ${event.actorLabel ?? name(event.actorId) ?? 'המערכת'}`,
-    );
-    if (event.field) {
-      pdf.paragraph(`${event.field}: ${event.oldValue ?? '—'} ← ${event.newValue ?? '—'}`);
-    }
-    const update = event.refId ? updatesById.get(event.refId) : undefined;
-    if (update) {
-      pdf.paragraph(`פעולות: ${update.actionsTaken}`);
-      if (update.findings) pdf.paragraph(`ממצאים: ${update.findings}`);
-      if (update.nextSteps) pdf.paragraph(`המשך: ${update.nextSteps}`);
-    } else if (event.note) {
-      pdf.paragraph(event.note);
-    }
-    pdf.divider();
-  }
+  const blocks = buildTimelineBlocks(events, updates, profiles);
+  pdf.timelineBlocks(blocks);
 
+  pdf.finalize();
   return pdf;
 }
 
