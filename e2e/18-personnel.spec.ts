@@ -35,6 +35,43 @@ test.describe('desktop', () => {
     await expect(page.getByText('e2e.tech@example.com')).toBeVisible();
   });
 
+  test('a pending row matches the active/inactive row layout: initials avatar, prominent name, email below, no inline role label', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.supervisor1);
+    await page.goto('/personnel');
+
+    await page.getByRole('button', { name: 'הוספת איש צוות' }).click();
+    const dialog = page.getByRole('dialog', { name: 'הוספת איש צוות' });
+    await dialog.getByLabel('שם מלא', { exact: false }).fill('טכנאי פריסה E2E');
+    await dialog.getByLabel('כתובת חשבון Google', { exact: false }).fill('e2e.layout@example.com');
+    await dialog.getByRole('button', { name: 'הוספה' }).click();
+    await expect(page.getByText('טכנאי פריסה E2E')).toBeVisible();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'טכנאי פריסה E2E' });
+
+    // Initials avatar, never a photo -- unclaimed before first login.
+    const avatar = row.locator('span[aria-hidden="true"]');
+    await expect(avatar).toBeVisible();
+    await expect(avatar).toHaveText('ט');
+    await expect(avatar.locator('img')).toHaveCount(0);
+
+    // Email sits directly under the name, same right edge.
+    const nameBox = await row.getByText('טכנאי פריסה E2E').boundingBox();
+    const emailBox = await row.getByText('e2e.layout@example.com').boundingBox();
+    expect(nameBox).not.toBeNull();
+    expect(emailBox).not.toBeNull();
+    expect(Math.abs(emailBox!.x + emailBox!.width - (nameBox!.x + nameBox!.width))).toBeLessThan(4);
+    expect(emailBox!.y).toBeGreaterThan(nameBox!.y);
+    expect(emailBox!.y - (nameBox!.y + nameBox!.height)).toBeLessThan(12);
+
+    // No redundant inline role label on the row -- shown once, on the group heading.
+    await expect(page.getByRole('heading', { name: /^טכנאי/ })).toBeVisible();
+    await expect(row.getByText('טכנאי', { exact: true })).toHaveCount(0);
+
+    // Status badge and three-dot actions preserved, on the opposite side.
+    await expect(row.getByText('ממתין להתחברות')).toBeVisible();
+    await expect(row.getByRole('button', { name: /^פעולות עבור / })).toBeVisible();
+  });
+
   test('the personnel list is compact: no permanently visible role select or deactivate button', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     await page.goto('/personnel');
@@ -186,6 +223,42 @@ test.describe('mobile', () => {
     await dialog.getByLabel('כתובת חשבון Google', { exact: false }).fill('mobile.tech@example.com');
     await dialog.getByRole('button', { name: 'הוספה' }).click();
     await expect(page.getByText('טכנאי נייד')).toBeVisible();
+  });
+
+  test('a pending row keeps the initials avatar and email-under-name layout at mobile width too, with no inline role label', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.supervisor1);
+    await page.goto('/personnel');
+
+    await page.getByRole('button', { name: 'הוספת איש צוות' }).click();
+    const dialog = page.getByRole('dialog', { name: 'הוספת איש צוות' });
+    await dialog.getByLabel('שם מלא', { exact: false }).fill('טכנאי פריסה נייד');
+    await dialog.getByLabel('כתובת חשבון Google', { exact: false }).fill('mobile.layout@example.com');
+    await dialog.getByRole('button', { name: 'הוספה' }).click();
+    await expect(page.getByText('טכנאי פריסה נייד')).toBeVisible();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'טכנאי פריסה נייד' });
+
+    const avatar = row.locator('span[aria-hidden="true"]');
+    await expect(avatar).toBeVisible();
+    await expect(avatar).toHaveText('ט');
+    await expect(avatar.locator('img')).toHaveCount(0);
+
+    const nameBox = await row.getByText('טכנאי פריסה נייד').boundingBox();
+    const emailBox = await row.getByText('mobile.layout@example.com').boundingBox();
+    expect(nameBox).not.toBeNull();
+    expect(emailBox).not.toBeNull();
+    expect(Math.abs(emailBox!.x + emailBox!.width - (nameBox!.x + nameBox!.width))).toBeLessThan(4);
+    expect(emailBox!.y).toBeGreaterThan(nameBox!.y);
+    expect(emailBox!.y - (nameBox!.y + nameBox!.height)).toBeLessThan(12);
+
+    await expect(page.getByRole('heading', { name: /^טכנאי/ })).toBeVisible();
+    await expect(row.getByText('טכנאי', { exact: true })).toHaveCount(0);
+
+    await expect(row.getByText('ממתין להתחברות')).toBeVisible();
+    await expect(row.getByRole('button', { name: /^פעולות עבור / })).toBeVisible();
+
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(391);
   });
 
   test('editing and cancelling a pending entry works at mobile width, with a confirmation step', async ({ page }) => {
