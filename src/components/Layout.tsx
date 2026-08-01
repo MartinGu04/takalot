@@ -13,6 +13,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { navItems, type NavItem } from './navItems';
 import { IconBell, IconDotsHorizontal, IconLogOut, IconPlus, IconUsers } from './icons';
 import { AvariaIcon } from './AvariaBrand';
+import { DepartmentLogos } from './DepartmentLogos';
 import { FloatingPopover } from './FloatingPopover';
 import { LiveClock } from './LiveClock';
 
@@ -315,6 +316,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <AvariaIcon className="size-7" />
               <span className="truncate text-base font-extrabold tracking-tight text-text-primary">{APP_NAME}</span>
             </Link>
+            {/* Desktop/tablet only (md:), same breakpoint the mobile brand
+                link above switches on -- never shown on the mobile header.
+                A normal (non-absolute) flex child placed before the
+                absolutely-positioned clock below: it takes up space at the
+                row's start (the right, in RTL) without affecting the clock,
+                which centers itself against the whole header via
+                absolute inset-0, not the flex layout. */}
+            <DepartmentLogos />
             <div className="pointer-events-none absolute inset-0 hidden items-center justify-center lg:flex">
               <LiveClock />
             </div>
