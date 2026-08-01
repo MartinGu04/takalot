@@ -232,6 +232,12 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         setUser(profile);
         setStatus('active');
         setSessionExpired(false);
+        // Best-effort refresh of the persisted avatar, from data this
+        // session's own OAuth identity already carries -- never blocks or
+        // fails the surrounding auth flow, and never touches full_name.
+        if (avatar) {
+          void getRepository().setOwnAvatarUrl(avatar).catch(() => {});
+        }
       } else {
         setUser(null);
         setStatus('unauthorized');

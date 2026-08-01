@@ -63,6 +63,11 @@ export interface Profile {
    *  field existed. */
   deletedAt?: string | null;
   deletedBy?: string | null;
+  /** Persisted Google avatar image URL, set best-effort on sign-in via
+   *  set_own_avatar_url(). Optional: absent/undefined for data shaped
+   *  before this field existed, and always null/absent in demo mode
+   *  (no OAuth session to read a picture from). */
+  avatarUrl?: string | null;
 }
 
 export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled' | 'expired';
@@ -104,6 +109,9 @@ export interface PersonnelEntry {
    *  historical record, not a live, manageable account. */
   state: 'pending' | 'active' | 'inactive' | 'deleted';
   createdAt: string;
+  /** Stored Google avatar image URL for a linked profile; always null for
+   *  a pending entry (it has no auth identity yet). */
+  avatarUrl: string | null;
 }
 
 export interface SystemRecord {

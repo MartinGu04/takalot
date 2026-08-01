@@ -438,3 +438,33 @@ export const pendingPersonnelInputSchema = z.object({
 });
 
 export type PendingPersonnelInput = z.infer<typeof pendingPersonnelInputSchema>;
+
+/** Renaming only -- pending entry or already-linked profile. Deliberately
+ *  narrower than pendingPersonnelInputSchema's fullName rule (1-120 chars):
+ *  2-60 characters after trimming, rejecting any embedded line break or
+ *  control character -- otherwise any Unicode display-name text is
+ *  accepted (Hebrew, English, parentheses, punctuation, hyphens,
+ *  apostrophes, ...), never restricted to a narrow character allowlist or
+ *  to ASCII. Mirrors admin_set_user_name/rename_pending_personnel
+ *  (migration 0034) exactly, including trimming ONLY leading/trailing
+ *  plain space characters (not other whitespace, e.g. tab/newline) --
+ *  matching Postgres's own trim() default -- so a value with an edge or
+ *  embedded tab/newline/control character is rejected outright rather
+ *  than silently normalized away. */
+const CONTROL_CHAR_RE = /[\x00-\x1F\x7F]/;
+export const renamePersonnelInputSchema = z.object({
+  fullName: z
+    .string()
+    .transform((v) => v.replace(/^ +| +$/g, ''))
+    .superRefine((v, ctx) => {
+      if (v.length < 2 || v.length > 60) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'שם: בין 2 ל-60 תווים' });
+        return;
+      }
+      if (CONTROL_CHAR_RE.test(v)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'השם אינו יכול להכיל שורה חדשה או תווי בקרה' });
+      }
+    }),
+});
+
+export type RenamePersonnelInput = z.infer<typeof renamePersonnelInputSchema>;

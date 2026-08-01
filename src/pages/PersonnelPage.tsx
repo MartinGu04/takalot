@@ -13,10 +13,11 @@ import { allowedAssignRoles, allowedManageRoles } from '../domain/permissions';
 import { personnelRoleLabels, personnelStatusLabels } from '../domain/labels';
 import type { PersonnelEntry, Role } from '../domain/types';
 import type { PendingPersonnelInput } from '../domain/schemas';
-import { Badge, Button, EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
+import { Avatar, Badge, Button, EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
 import { PersonnelFormDialog } from '../components/dialogs/PersonnelFormDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { DeleteUserDialog } from '../components/dialogs/DeleteUserDialog';
+import { RenamePersonnelDialog } from '../components/dialogs/RenamePersonnelDialog';
 import { ActionMenu } from '../components/ActionMenu';
 import { IconPlus } from '../components/icons';
 
@@ -59,6 +60,7 @@ export default function PersonnelPage() {
   const [cancelingEntry, setCancelingEntry] = useState<PersonnelEntry | null>(null);
   const [deactivatingEntry, setDeactivatingEntry] = useState<PersonnelEntry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<PersonnelEntry | null>(null);
+  const [renamingEntry, setRenamingEntry] = useState<PersonnelEntry | null>(null);
   const [recoveringEntry, setRecoveringEntry] = useState<PersonnelEntry | null>(null);
   const [roleChangeRequest, setRoleChangeRequest] = useState<{ entry: PersonnelEntry; newRole: Role } | null>(null);
   // Which linked row currently has its role/status controls expanded --
@@ -72,6 +74,12 @@ export default function PersonnelPage() {
   // functions (role_ceiling_allows_assign / role_ceiling_allows_manage).
   const assignRoles = allowedAssignRoles(session.role);
   const manageRoles = allowedManageRoles(session.role);
+  // A non-empty manageRoles ceiling exists only for the three
+  // personnel-manager roles (shift_supervisor / professional_manager /
+  // system_admin) -- used for the self-service rename carve-out below,
+  // which is deliberately independent of manageRoles.includes(entry.role)
+  // (that ceiling excludes a caller's own peer rank).
+  const isPersonnelManager = manageRoles.length > 0;
 
   const createMutation = useAppMutation((input: PendingPersonnelInput) => repo().createPendingPersonnel(session, input), {
     invalidate: [['personnel']],
@@ -94,6 +102,21 @@ export default function PersonnelPage() {
     successText: 'הרישום הממתין בוטל.',
     onSuccess: () => setCancelingEntry(null),
   });
+
+  const renameMutation = useAppMutation(
+    async (vars: { entry: PersonnelEntry; fullName: string }): Promise<void> => {
+      if (vars.entry.kind === 'pending') {
+        await repo().renamePendingPersonnel(session, vars.entry.id, { fullName: vars.fullName });
+      } else {
+        await repo().renameLinkedPersonnel(session, vars.entry.id, { fullName: vars.fullName });
+      }
+    },
+    {
+      invalidate: [['personnel'], ['profiles']],
+      successText: 'השם עודכן.',
+      onSuccess: () => setRenamingEntry(null),
+    },
+  );
 
   const activateMutation = useAppMutation((id: string) => repo().setUserActive(session, id, true), {
     invalidate: [['personnel'], ['profiles']],
@@ -233,6 +256,7 @@ export default function PersonnelPage() {
                 label={`פעולות עבור ${entry.fullName}`}
                 items={[
                   { label: 'עריכה', onSelect: () => setEditingEntry(entry) },
+                  { label: 'שינוי שם', onSelect: () => setRenamingEntry(entry) },
                   // A pending entry is cancelled, not deleted -- it has no
                   // account to remove yet. The label stays "ביטול" so the
                   // action keeps meaning exactly what it always did.
@@ -245,50 +269,80 @@ export default function PersonnelPage() {
       );
     }
 
+    const isSelf = entry.id === session.userId;
     // A tombstoned profile is permanent history, not manageable
     // personnel: no עריכה toggle, no role/active controls, and no
     // repeated delete action -- the frontend just doesn't offer
     // them (the database rejects all three regardless).
-    const canManage = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state !== 'deleted';
+    const canManageOthers = manageRoles.includes(entry.role) && !isSelf && entry.state !== 'deleted';
+    // Self-service rename only: the same three personnel-manager roles
+    // that may manage OTHER people's records (isPersonnelManager, derived
+    // from allowedManageRoles being non-empty for this session) may
+    // rename THEMSELVES -- deliberately not gated by manageRoles.includes
+    // (that ceiling excludes a caller's own peer rank and would wrongly
+    // block e.g. a professional_manager from renaming themselves). Every
+    // other self-service control (role, activation, deletion) stays
+    // unavailable, matching the backend exactly.
+    const canRenameSelf = isSelf && isPersonnelManager && entry.state !== 'deleted';
     // Recovery-only: the SAME role-ceiling/self exclusion as
-    // canManage, but for an already-tombstoned profile -- offers
+    // canManageOthers, but for an already-tombstoned profile -- offers
     // nothing except retrying/verifying Auth-account removal
     // (never role, activation, edit, or repeated deletion).
-    const canRecoverAuth = manageRoles.includes(entry.role) && entry.id !== session.userId && entry.state === 'deleted';
+    const canRecoverAuth = manageRoles.includes(entry.role) && !isSelf && entry.state === 'deleted';
     const soleActiveAdmin = entry.role === 'system_admin' && entry.state === 'active' && activeAdminCount <= 1;
-    const expanded = canManage && expandedId === entry.id;
+    const expanded = canManageOthers && expandedId === entry.id;
     return (
       <div key={entry.id} data-personnel-row={entry.id} className="flex flex-col gap-2 px-3 py-2.5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
-            {entry.email && (
-              <p className="truncate text-xs text-muted" dir="ltr">
-                {entry.email}
-              </p>
-            )}
+          {/* RTL: first in source order sits rightmost -- the avatar sits
+              at the row's start (right), immediately before the name/email
+              block, which stays first overall so the status/menu group
+              below reads as the row's end (left). The email keeps dir="ltr"
+              for correct character ordering but is explicitly text-right so
+              it stays pinned under the name instead of hugging the left
+              edge of this (often much wider) flex-1 box. */}
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Avatar
+              aria-hidden
+              src={entry.avatarUrl}
+              name={entry.fullName}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+                {isSelf && <Badge color="blue">אתה</Badge>}
+              </div>
+              {entry.email && (
+                <p className="truncate text-right text-xs text-muted" dir="ltr">
+                  {entry.email}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
             <Badge color={entry.state === 'active' ? 'green' : entry.state === 'deleted' ? 'red' : 'neutral'}>
               {personnelStatusLabels[entry.state]}
             </Badge>
-            {entry.id === session.userId && <Badge color="blue">אתה</Badge>}
-            {canManage && (
+            {(canManageOthers || canRenameSelf) && (
               <ActionMenu
                 label={`פעולות עבור ${entry.fullName}`}
                 items={[
-                  {
-                    label: 'עריכה',
-                    onSelect: () => setExpandedId(expanded ? null : entry.id),
-                  },
-                  {
-                    label: 'מחיקה',
-                    destructive: true,
-                    disabled: soleActiveAdmin,
-                    title: soleActiveAdmin ? 'לא ניתן למחוק את מנהל המערכת הפעיל האחרון' : undefined,
-                    onSelect: () => setDeletingEntry(entry),
-                  },
+                  ...(canManageOthers
+                    ? [{ label: 'עריכה', onSelect: () => setExpandedId(expanded ? null : entry.id) }]
+                    : []),
+                  { label: 'שינוי שם', onSelect: () => setRenamingEntry(entry) },
+                  ...(canManageOthers
+                    ? [
+                        {
+                          label: 'מחיקה',
+                          destructive: true,
+                          disabled: soleActiveAdmin,
+                          title: soleActiveAdmin ? 'לא ניתן למחוק את מנהל המערכת הפעיל האחרון' : undefined,
+                          onSelect: () => setDeletingEntry(entry),
+                        },
+                      ]
+                    : []),
                 ]}
               />
             )}
@@ -469,6 +523,16 @@ export default function PersonnelPage() {
         submitting={deleteMutation.isPending}
         onConfirm={() => deletingEntry && deleteMutation.mutate(deletingEntry.id)}
       />
+
+      {renamingEntry && (
+        <RenamePersonnelDialog
+          open
+          currentName={renamingEntry.fullName}
+          onClose={() => setRenamingEntry(null)}
+          submitting={renameMutation.isPending}
+          onSubmit={(fullName) => renameMutation.mutate({ entry: renamingEntry, fullName })}
+        />
+      )}
 
       <ConfirmDialog
         open={!!recoveringEntry}
