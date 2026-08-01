@@ -2,17 +2,25 @@
 --  1. admin_set_user_name: happy path on an active linked profile, audited
 --     as 'user_renamed'.
 --  2. admin_set_user_name: happy path on an INACTIVE linked profile.
---  3. admin_set_user_name: self-rename blocked.
+--  3. admin_set_user_name: self-rename is ALLOWED for the three personnel-
+--     manager roles (shift_supervisor / professional_manager /
+--     system_admin) but BLOCKED for technician and viewer, who may never
+--     rename anyone including themselves.
 --  4. admin_set_user_name: role-ceiling rejection (shift_supervisor cannot
---     rename a professional_manager).
+--     rename a professional_manager) -- for managing SOMEONE ELSE only.
 --  5. admin_set_user_name: a tombstoned (deleted) profile is rejected.
---  6. admin_set_user_name: validation -- blank, too short, too long, and
---     disallowed characters are all rejected; a normal Hebrew name and a
---     normal English (incl. hyphen/apostrophe) name both succeed.
+--  6. admin_set_user_name: validation -- blank, too short (1 char), too
+--     long (61 chars), an embedded newline and an embedded control
+--     character are all rejected; ordinary Unicode display names --
+--     Hebrew with parentheses, and English with a hyphen and apostrophe --
+--     are accepted (the old narrow character allowlist is gone).
 --  7. rename_pending_personnel: happy path on a pending entry.
 --  8. rename_pending_personnel: role-ceiling rejection.
 --  9. rename_pending_personnel: only a status='pending' entry can be renamed
 --     (a cancelled entry is rejected).
+--  9b. rename_pending_personnel: the same validation rules as
+--      admin_set_user_name -- blank and embedded-newline rejected, a
+--      Hebrew name with parentheses accepted.
 --  10. Pending-edited-name survives claim: renaming a pending entry, then
 --      claiming it as that identity, produces a profile with the RENAMED
 --      value -- not the original.
@@ -117,14 +125,75 @@ begin
   insert into results (test, result, detail) values
     ('inactive technician name updated', case when v_name = 'Inactive Renamed' then 'PASS' else 'FAIL' end, coalesce(v_name, 'null'));
 
-  -- ===== 3. self-rename blocked =====
-  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
+  -- ===== 3. self-rename: allowed for personnel-manager roles, blocked for
+  -- technician/viewer =====
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c1'); -- system_admin
   set local role authenticated;
   begin
-    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c1', 'Self Renamed');
-    insert into results (test, result, detail) values ('self-rename blocked', 'FAIL', 'succeeded');
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c1', 'Admin Self Renamed');
+    insert into results (test, result, detail) values ('system_admin can rename themselves', 'PASS', '');
   exception when others then
-    insert into results (test, result, detail) values ('self-rename blocked',
+    insert into results (test, result, detail) values ('system_admin can rename themselves', 'FAIL', sqlerrm);
+  end;
+  reset role;
+  select full_name into v_name from profiles where id = '00000000-0000-0000-0000-0000000000c1';
+  insert into results (test, result, detail) values
+    ('system_admin self-rename persisted', case when v_name = 'Admin Self Renamed' then 'PASS' else 'FAIL' end, coalesce(v_name, 'null'));
+  select count(*) into v_audit_count from audit_logs where action = 'user_renamed' and entity_id = '00000000-0000-0000-0000-0000000000c1';
+  insert into results (test, result, detail) values
+    ('system_admin self-rename is audited', case when v_audit_count = 1 then 'PASS' else 'FAIL' end, 'rows=' || v_audit_count);
+
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c2'); -- professional_manager
+  set local role authenticated;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c2', 'Manager Self Renamed');
+    insert into results (test, result, detail) values ('professional_manager can rename themselves', 'PASS', '');
+  exception when others then
+    insert into results (test, result, detail) values ('professional_manager can rename themselves', 'FAIL', sqlerrm);
+  end;
+  reset role;
+
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c3'); -- shift_supervisor
+  set local role authenticated;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c3', 'Supervisor Self Renamed');
+    insert into results (test, result, detail) values ('shift_supervisor can rename themselves', 'PASS', '');
+  exception when others then
+    insert into results (test, result, detail) values ('shift_supervisor can rename themselves', 'FAIL', sqlerrm);
+  end;
+  reset role;
+
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c4'); -- technician
+  set local role authenticated;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', 'Tech Self Renamed');
+    insert into results (test, result, detail) values ('technician cannot rename themselves', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('technician cannot rename themselves',
+      case when sqlerrm like 'permission%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+  reset role;
+
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c7'); -- viewer
+  set local role authenticated;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c7', 'Viewer Self Renamed');
+    insert into results (test, result, detail) values ('viewer cannot rename themselves', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('viewer cannot rename themselves',
+      case when sqlerrm like 'permission%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+  reset role;
+
+  -- Technician/viewer also still cannot rename anyone ELSE (unchanged
+  -- behavior -- their ceiling was always empty).
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c4'); -- technician
+  set local role authenticated;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c7', 'Should Not Work');
+    insert into results (test, result, detail) values ('technician cannot rename another user', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('technician cannot rename another user',
       case when sqlerrm like 'permission%' then 'PASS' else 'FAIL' end, sqlerrm);
   end;
   reset role;
@@ -178,10 +247,17 @@ begin
       case when sqlerrm like 'validation%' then 'PASS' else 'FAIL' end, sqlerrm);
   end;
   begin
-    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', 'Tech123');
-    insert into results (test, result, detail) values ('digits in name rejected', 'FAIL', 'succeeded');
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', E'Name\nWith Newline');
+    insert into results (test, result, detail) values ('embedded newline rejected', 'FAIL', 'succeeded');
   exception when others then
-    insert into results (test, result, detail) values ('digits in name rejected',
+    insert into results (test, result, detail) values ('embedded newline rejected',
+      case when sqlerrm like 'validation%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', E'Name\tWith Tab');
+    insert into results (test, result, detail) values ('embedded control character (tab) rejected', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('embedded control character (tab) rejected',
       case when sqlerrm like 'validation%' then 'PASS' else 'FAIL' end, sqlerrm);
   end;
   begin
@@ -189,6 +265,18 @@ begin
     insert into results (test, result, detail) values ('normal Hebrew name accepted', 'PASS', '');
   exception when others then
     insert into results (test, result, detail) values ('normal Hebrew name accepted', 'FAIL', sqlerrm);
+  end;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', 'עומר פרץ (דמו)');
+    insert into results (test, result, detail) values ('Hebrew name with parentheses accepted', 'PASS', '');
+  exception when others then
+    insert into results (test, result, detail) values ('Hebrew name with parentheses accepted', 'FAIL', sqlerrm);
+  end;
+  begin
+    perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', 'Martin Gusin');
+    insert into results (test, result, detail) values ('plain English name accepted', 'PASS', '');
+  exception when others then
+    insert into results (test, result, detail) values ('plain English name accepted', 'FAIL', sqlerrm);
   end;
   begin
     perform admin_set_user_name('00000000-0000-0000-0000-0000000000c4', 'Mary-Jane O''Neil');
@@ -236,6 +324,31 @@ begin
   exception when others then
     insert into results (test, result, detail) values ('cancelled pending entry cannot be renamed',
       case when sqlerrm like 'validation%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+  reset role;
+
+  -- ===== 9b. rename_pending_personnel: validation mirrors admin_set_user_name =====
+  perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c1');
+  set local role authenticated;
+  begin
+    perform rename_pending_personnel('00000000-0000-0000-0000-00000000d101', '  ');
+    insert into results (test, result, detail) values ('pending rename: blank name rejected', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('pending rename: blank name rejected',
+      case when sqlerrm like 'validation%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+  begin
+    perform rename_pending_personnel('00000000-0000-0000-0000-00000000d101', E'Broken\nName');
+    insert into results (test, result, detail) values ('pending rename: embedded newline rejected', 'FAIL', 'succeeded');
+  exception when others then
+    insert into results (test, result, detail) values ('pending rename: embedded newline rejected',
+      case when sqlerrm like 'validation%' then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+  begin
+    perform rename_pending_personnel('00000000-0000-0000-0000-00000000d101', 'עומר פרץ (דמו)');
+    insert into results (test, result, detail) values ('pending rename: Hebrew name with parentheses accepted', 'PASS', '');
+  exception when others then
+    insert into results (test, result, detail) values ('pending rename: Hebrew name with parentheses accepted', 'FAIL', sqlerrm);
   end;
   reset role;
 

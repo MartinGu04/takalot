@@ -16,18 +16,36 @@
 --          to the claim function itself is needed.
 --        - admin_set_user_name(p_user_id, p_full_name) -- mirrors
 --          admin_set_user_role/admin_set_user_active (0010, revised 0012):
---          same self-exclusion, same advisory lock key (so it serializes
---          with concurrent role/activation writes on the same target), same
---          role_ceiling_allows_manage check, same tombstoned-profile guard.
---          No other RPC ever writes profiles.full_name from Google/session
---          data after the one-time claim insert, so a name set here is
---          never silently overwritten by a later login.
---      Both apply the same new name rules: required, trimmed, 2-60
---      characters, and restricted to human-name characters (letters --
---      Hebrew, English or otherwise, never ASCII-only -- spaces, hyphens,
---      apostrophes, periods). This is a NEW, narrower rule than the
---      existing 1-120/no-charset-restriction full_name check used by
---      create/update_pending_personnel's fuller edit form (unchanged).
+--          same advisory lock key (so it serializes with concurrent
+--          role/activation/rename writes on the same target), same
+--          role_ceiling_allows_manage check for managing SOMEONE ELSE, same
+--          tombstoned-profile guard. UNLIKE admin_set_user_role/
+--          admin_set_user_active, self-service is allowed here: a caller
+--          whose OWN role is shift_supervisor, professional_manager or
+--          system_admin -- the same three personnel-manager roles that may
+--          manage OTHER people's records -- may rename THEMSELVES; a
+--          technician or viewer may never rename anyone, including
+--          themselves. This is a deliberate carve-out, independent of
+--          role_ceiling_allows_manage (which governs the hierarchy over
+--          OTHER people, not one's own record -- a professional_manager's
+--          ceiling excludes a peer professional_manager, which would
+--          otherwise wrongly block a professional_manager from renaming
+--          themselves). No other RPC ever writes profiles.full_name from
+--          Google/session data after the one-time claim insert, so a name
+--          set here (self or otherwise) is never silently overwritten by a
+--          later login.
+--      Both apply the same new name rules: required, trimmed (leading/
+--      trailing plain spaces only -- see below), 2-60 characters, and
+--      rejecting any embedded line break or control character. Otherwise
+--      any Unicode display-name text is allowed -- Hebrew, English,
+--      parentheses, punctuation, hyphens, apostrophes and so on -- never
+--      restricted to a narrow character allowlist or to ASCII. This is a
+--      NEW, narrower length/shape rule than the existing 1-120-character,
+--      no-charset-restriction full_name check used by create/
+--      update_pending_personnel's fuller edit form (unchanged); trim()'s
+--      default behavior only strips plain space characters (not tab/
+--      newline), so a value with an embedded or edge tab/newline/control
+--      character is rejected outright rather than silently normalized.
 --
 --   2. Avatar persistence: profiles.avatar_url is new. Previously an
 --      avatar was only ever available ephemerally, for the CURRENTLY
@@ -46,7 +64,9 @@
 -- qualified references, matching every other SECURITY DEFINER function in
 -- this schema.
 --
--- 0001-0033 are untouched. This is an ADDITIVE migration.
+-- 0001-0033 are untouched. This migration has never been applied to any
+-- hosted database, so it is revised IN PLACE (self-rename + the broadened
+-- character rule) rather than superseded by a new migration.
 
 -- =====================================================================
 -- 1. profiles.avatar_url
@@ -106,8 +126,8 @@ begin
   if length(v_name) < 2 or length(v_name) > 60 then
     raise exception 'validation: השם חייב להכיל בין 2 ל-60 תווים';
   end if;
-  if v_name !~ '^[[:alpha:][:space:]''’.-]+$' then
-    raise exception 'validation: השם יכול להכיל אותיות, רווחים, מקפים וגרשים בלבד';
+  if v_name ~ '[[:cntrl:]]' then
+    raise exception 'validation: השם אינו יכול להכיל שורה חדשה או תווי בקרה';
   end if;
 
   update public.pending_personnel
@@ -129,13 +149,12 @@ declare
   v_actor_role public.app_role;
   v_target public.profiles;
   v_name text := trim(coalesce(p_full_name, ''));
+  v_is_self boolean;
 begin
   if auth.uid() is null then
-    raise exception 'permission: אין הרשאה לנהל אנשי צוות';
+    raise exception 'permission: אין הרשאה לשנות שם';
   end if;
-  if p_user_id = auth.uid() then
-    raise exception 'permission: לא ניתן לשנות את השם של עצמך';
-  end if;
+  v_is_self := (p_user_id = auth.uid());
 
   -- Same lock, same key as admin_set_user_role/admin_set_user_active --
   -- serializes against concurrent role/activation/rename writes on the
@@ -145,7 +164,7 @@ begin
 
   v_actor_role := public.my_role();
   if v_actor_role is null then
-    raise exception 'permission: אין הרשאה לנהל אנשי צוות';
+    raise exception 'permission: אין הרשאה לשנות שם';
   end if;
 
   select * into v_target from public.profiles where id = p_user_id;
@@ -154,20 +173,37 @@ begin
   end if;
 
   -- A tombstoned profile's name is permanent historical record, not an
-  -- editable field -- same protection as role/active (0012).
+  -- editable field -- same protection as role/active (0012). Applies to
+  -- self too (a tombstoned identity has no session to call this from in
+  -- practice, but the guard stays unconditional regardless).
   if v_target.deleted_at is not null then
     raise exception 'validation: לא ניתן לשנות שם למשתמש שנמחק';
   end if;
 
-  if not public.role_ceiling_allows_manage(v_actor_role, v_target.role) then
-    raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
+  if v_is_self then
+    -- Self-service rename: allowed only for the three personnel-manager
+    -- roles -- the same roles that may manage OTHER people's records.
+    -- Deliberately NOT role_ceiling_allows_manage(v_actor_role,
+    -- v_actor_role): that matrix governs the hierarchy over OTHER people
+    -- and excludes a caller's own peer rank (e.g. a professional_manager
+    -- may not manage another professional_manager), which would wrongly
+    -- block a professional_manager or shift_supervisor from renaming
+    -- themselves. A technician or viewer may never rename anyone,
+    -- including themselves.
+    if v_actor_role not in ('shift_supervisor', 'professional_manager', 'system_admin') then
+      raise exception 'permission: אין הרשאה לשנות שם';
+    end if;
+  else
+    if not public.role_ceiling_allows_manage(v_actor_role, v_target.role) then
+      raise exception 'permission: אין הרשאה לנהל משתמש בתפקיד זה';
+    end if;
   end if;
 
   if length(v_name) < 2 or length(v_name) > 60 then
     raise exception 'validation: השם חייב להכיל בין 2 ל-60 תווים';
   end if;
-  if v_name !~ '^[[:alpha:][:space:]''’.-]+$' then
-    raise exception 'validation: השם יכול להכיל אותיות, רווחים, מקפים וגרשים בלבד';
+  if v_name ~ '[[:cntrl:]]' then
+    raise exception 'validation: השם אינו יכול להכיל שורה חדשה או תווי בקרה';
   end if;
 
   update public.profiles set full_name = v_name where id = p_user_id;

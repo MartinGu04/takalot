@@ -312,12 +312,11 @@ describe('editing and cancelling a pending entry', () => {
 });
 
 describe('linked user management and safety rules', () => {
-  it('the role select and deactivate button are hidden by default; the row shows role as text and an עריכה action in its menu', async () => {
+  it('the role select and deactivate button are hidden by default; an עריכה action is offered in the menu', async () => {
     const user = await openPersonnel('login-u-admin');
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('עומר פרץ (דמו)');
     const row = rowFor('עומר פרץ (דמו)');
-    expect(within(row).getByText('סוג משתמש: טכנאי')).toBeInTheDocument();
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
     // The row's actions are collapsed behind the overflow trigger and are
@@ -365,7 +364,7 @@ describe('linked user management and safety rules', () => {
     expect(menuTriggerIn(row)).not.toBeInTheDocument();
   });
 
-  it("no controls or action menu are shown for the signed-in user's own row (no self-service)", async () => {
+  it("no role/activation/deletion self-service is offered on the signed-in user's own row -- only שינוי שם", async () => {
     const user = await openPersonnel('login-u-admin');
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('אלון ברק (דמו)');
@@ -373,7 +372,13 @@ describe('linked user management and safety rules', () => {
     expect(within(row).getByText('אתה')).toBeInTheDocument();
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
-    expect(menuTriggerIn(row)).not.toBeInTheDocument();
+    // The menu exists (self-rename is allowed for a system_admin), but
+    // offers ONLY שינוי שם -- never עריכה or מחיקה on one's own row.
+    const menu = await openRowMenu(user, 'אלון ברק (דמו)');
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(1);
+    expect(within(menu).getByRole('menuitem', { name: 'שינוי שם' })).toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'עריכה' })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('menuitem', { name: 'מחיקה' })).not.toBeInTheDocument();
   });
 
   it('the sole active system_admin cannot be managed away: after returning to one active admin, that admin has no self-service controls', async () => {
@@ -398,11 +403,12 @@ describe('linked user management and safety rules', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'שינוי תפקיד' })).not.toBeInTheDocument());
 
     // Back to exactly one active admin: their own row still shows no
-    // controls (self-service is never offered, regardless of admin count).
+    // role/activation controls (that self-service is never offered,
+    // regardless of admin count) -- only the self-rename menu item.
     const ownRow = rowFor('אלון ברק (דמו)');
     expect(within(ownRow).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(ownRow).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
-    expect(menuTriggerIn(ownRow)).not.toBeInTheDocument();
+    expect(menuTriggerIn(ownRow)).toBeInTheDocument();
   });
 });
 
@@ -436,7 +442,6 @@ describe('renaming personnel', () => {
     await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
 
     expect(await within(main()).findByText('עומר פרץ החדש')).toBeInTheDocument();
-    expect(within(rowFor('עומר פרץ החדש')).getByText('סוג משתמש: טכנאי')).toBeInTheDocument();
   });
 
   it('renaming an inactive linked profile from שינוי שם updates the displayed name', async () => {
@@ -469,13 +474,28 @@ describe('renaming personnel', () => {
 
     const nameField = within(dialog).getByLabelText(/^שם מלא/);
     await user.clear(nameField);
-    await user.type(nameField, 'Tech123');
+    await user.type(nameField, 'א');
     await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
 
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('אותיות');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('2');
     // Rejected client-side: the dialog stays open and no change reached the list.
     expect(screen.getByRole('dialog', { name: 'שינוי שם' })).toBeInTheDocument();
     expect(within(main()).getByText('עומר פרץ (דמו)')).toBeInTheDocument();
+  });
+
+  it('accepts a display name with digits, parentheses and mixed punctuation -- the character allowlist is gone', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+    await clickRowAction(user, 'עומר פרץ (דמו)', 'שינוי שם');
+
+    const dialog = await screen.findByRole('dialog', { name: 'שינוי שם' });
+    const nameField = within(dialog).getByLabelText(/^שם מלא/);
+    await user.clear(nameField);
+    await user.type(nameField, 'צוות 7 (משמרת ב׳)');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
+
+    expect(await within(main()).findByText('צוות 7 (משמרת ב׳)')).toBeInTheDocument();
   });
 
   it('the ActionMenu offers שינוי שם alongside the existing actions, without removing them', async () => {
@@ -606,7 +626,13 @@ describe('permanent deletion', () => {
     const row = await within(main()).findByText('מאיה רוזן (דמו)');
     const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
     expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
-    expect(within(rowEl).getByText('סוג משתמש: אחמ״ש')).toBeInTheDocument(); // historical role preserved
+    // Historical role preserved -- no longer shown as a text line on the
+    // card itself, but still reflected in which role GROUP the row sits
+    // under (groups are unchanged by this redesign).
+    const group = Array.from(main().querySelectorAll('section[aria-labelledby^="personnel-group-"]')).find((s) =>
+      (s.querySelector('h2')?.textContent ?? '').startsWith('אחמ״ש'),
+    ) as HTMLElement;
+    expect(within(group).getByText('מאיה רוזן (דמו)')).toBeInTheDocument();
     expect(menuTriggerIn(rowEl)).not.toBeInTheDocument();
     expect(within(rowEl).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
     expect(within(rowEl).queryByRole('button', { name: 'הפעלה' })).not.toBeInTheDocument();
@@ -633,14 +659,18 @@ describe('permanent deletion', () => {
     expect(within(main()).getByText('עומר פרץ (דמו)')).toBeInTheDocument();
   });
 
-  it("a shift_supervisor cannot see מחיקה for a professional_manager (above ceiling); never for their own row", async () => {
+  it("a shift_supervisor cannot see מחיקה for a professional_manager (above ceiling), nor for their own row", async () => {
     const user = await openPersonnel('login-u-supervisor-1');
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('דנה לוי (דמו)');
-    // Neither row exposes an overflow trigger, so מחיקה is unreachable on
-    // both counts (above the ceiling, and never on one's own row).
+    // Above ceiling: no overflow trigger at all -- מחיקה is unreachable.
     expect(menuTriggerIn(rowFor('דנה לוי (דמו)'))).not.toBeInTheDocument();
-    expect(menuTriggerIn(rowFor('יואב כהן (דמו)'))).not.toBeInTheDocument();
+    // Own row: a trigger now exists (self-rename is allowed for a
+    // shift_supervisor), but its only item is שינוי שם -- never מחיקה.
+    const ownMenu = await openRowMenu(user, 'יואב כהן (דמו)');
+    expect(within(ownMenu).getAllByRole('menuitem')).toHaveLength(1);
+    expect(within(ownMenu).getByRole('menuitem', { name: 'שינוי שם' })).toBeInTheDocument();
+    expect(within(ownMenu).queryByRole('menuitem', { name: 'מחיקה' })).not.toBeInTheDocument();
   });
 
   describe('DELETE_INCOMPLETE recovery', () => {

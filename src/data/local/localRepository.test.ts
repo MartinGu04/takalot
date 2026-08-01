@@ -2289,9 +2289,43 @@ describe('renaming personnel (mirrors migration 0034 rules)', () => {
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
-    it('no user may rename themselves, even system_admin', async () => {
+    it('system_admin, professional_manager and shift_supervisor may all rename THEMSELVES', async () => {
       await expect(
         repo.renameLinkedPersonnel(admin, DEMO_USERS.admin, { fullName: 'שם עצמי חדש' }),
+      ).resolves.toBeUndefined();
+      await expect(
+        repo.renameLinkedPersonnel(manager, DEMO_USERS.manager, { fullName: 'שם עצמי חדש 2' }),
+      ).resolves.toBeUndefined();
+      await expect(
+        repo.renameLinkedPersonnel(supervisor1, DEMO_USERS.supervisor1, { fullName: 'שם עצמי חדש 3' }),
+      ).resolves.toBeUndefined();
+      const profile = await repo.getProfile(DEMO_USERS.admin);
+      expect(profile).toMatchObject({ fullName: 'שם עצמי חדש' });
+    });
+
+    it('a self-rename is audited as user_renamed, just like renaming someone else', async () => {
+      await repo.renameLinkedPersonnel(admin, DEMO_USERS.admin, { fullName: 'שם עצמי חדש' });
+      const logs = await repo.listAuditLogs(admin, {});
+      const entry = logs.find((l) => l.action === 'user_renamed' && l.entityId === DEMO_USERS.admin);
+      expect(entry).toBeTruthy();
+    });
+
+    it('technician and viewer cannot rename themselves or anyone else', async () => {
+      await expect(repo.renameLinkedPersonnel(tech1, DEMO_USERS.tech1, { fullName: 'שם חדש' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(repo.renameLinkedPersonnel(viewer, DEMO_USERS.viewer, { fullName: 'שם חדש' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(repo.renameLinkedPersonnel(tech1, DEMO_USERS.tech2, { fullName: 'שם חדש' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('renaming someone ELSE still respects the existing role ceiling -- a professional_manager cannot rename a peer professional_manager', async () => {
+      await repo.setUserRole(admin, DEMO_USERS.tech2, 'professional_manager');
+      await expect(
+        repo.renameLinkedPersonnel(manager, DEMO_USERS.tech2, { fullName: 'שם חדש' }),
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
@@ -2313,15 +2347,21 @@ describe('renaming personnel (mirrors migration 0034 rules)', () => {
       ).rejects.toMatchObject({ code: 'VALIDATION' });
     });
 
-    it('rejects a name containing digits or symbols', async () => {
+    it('rejects a name with an embedded newline or control character', async () => {
       await expect(
-        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'Tech123' }),
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'Name\nWith Newline' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'Name\tWith Tab' }),
       ).rejects.toMatchObject({ code: 'VALIDATION' });
     });
 
-    it('accepts a normal Hebrew name and a normal English name with a hyphen and apostrophe', async () => {
+    it('accepts ordinary Unicode display names: Hebrew with parentheses, plain English, and hyphen/apostrophe', async () => {
       await expect(
-        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'משה כהן' }),
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'עומר פרץ (דמו)' }),
+      ).resolves.toBeUndefined();
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'Martin Gusin' }),
       ).resolves.toBeUndefined();
       await expect(
         repo.renameLinkedPersonnel(admin, DEMO_USERS.tech2, { fullName: "Mary-Jane O'Neil" }),
@@ -2372,6 +2412,16 @@ describe('renaming personnel (mirrors migration 0034 rules)', () => {
       await expect(
         repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'a'.repeat(61) }),
       ).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(
+        repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'Broken\nName' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('accepts ordinary Unicode display names -- the character allowlist is gone', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await expect(
+        repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'עומר פרץ (דמו)' }),
+      ).resolves.toMatchObject({ fullName: 'עומר פרץ (דמו)' });
     });
 
     it('the renamed value is what claimPendingForIdentity uses -- the original name never surfaces again', async () => {

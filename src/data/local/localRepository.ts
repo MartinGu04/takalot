@@ -640,20 +640,28 @@ export class LocalDemoRepository implements Repository {
   }
 
   async renameLinkedPersonnel(session: Session, userId: string, rawInput: RenamePersonnelInput): Promise<void> {
+    // requirePersonnelManager already restricts the caller to the three
+    // personnel-manager roles -- shift_supervisor / professional_manager /
+    // system_admin -- so a technician or viewer never reaches this method
+    // at all, including to rename themselves.
     const actor = this.requirePersonnelManager(session);
-    if (userId === actor.id) {
-      throw new AppError('FORBIDDEN', 'לא ניתן לשנות את השם של עצמך.');
-    }
     const input = parseOrThrow(renamePersonnelInputSchema, rawInput);
+    const isSelf = userId === actor.id;
     const profile = this.db.profiles.find((p) => p.id === userId);
     if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
-    if (!allowedManageRoles(actor.role).includes(profile.role)) {
-      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
-    }
     // Mirrors migration 0034: a tombstoned profile's name is permanent
     // historical record, not an editable field.
     if (profile.deletedAt) {
       throw new AppError('VALIDATION', 'לא ניתן לשנות שם למשתמש שנמחק.');
+    }
+    // Self-service rename: deliberately NOT allowedManageRoles(actor.role)
+    // -- that ceiling governs managing OTHER people and excludes a
+    // caller's own peer rank (e.g. a professional_manager may not manage
+    // another professional_manager), which would wrongly block a
+    // professional_manager or shift_supervisor from renaming themselves.
+    // Renaming someone ELSE keeps the existing ceiling unchanged.
+    if (!isSelf && !allowedManageRoles(actor.role).includes(profile.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
     }
     const before = profile.fullName;
     profile.fullName = input.fullName;

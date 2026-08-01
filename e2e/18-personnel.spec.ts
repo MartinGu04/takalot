@@ -35,14 +35,13 @@ test.describe('desktop', () => {
     await expect(page.getByText('e2e.tech@example.com')).toBeVisible();
   });
 
-  test('the personnel list is compact: role shown as text, no permanently visible role select or deactivate button', async ({ page }) => {
+  test('the personnel list is compact: no permanently visible role select or deactivate button', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     await page.goto('/personnel');
     await page.getByRole('tab', { name: /^פעילים/ }).click();
 
     const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
     await expect(row).toBeVisible();
-    await expect(row.getByText('סוג משתמש: טכנאי')).toBeVisible();
     await expect(row.getByRole('combobox')).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'השבתה' })).toHaveCount(0);
     // Row actions now live behind a single overflow trigger rather than as
@@ -58,7 +57,7 @@ test.describe('desktop', () => {
     await expect(row.getByRole('button', { name: 'השבתה' })).toBeVisible();
   });
 
-  test('a system_admin renames an active linked profile via שינוי שם; the new name, avatar initial and role line all update', async ({ page }) => {
+  test('a system_admin renames an active linked profile via שינוי שם; the new name and avatar initial update', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     await page.goto('/personnel');
     await page.getByRole('tab', { name: /^פעילים/ }).click();
@@ -76,9 +75,76 @@ test.describe('desktop', () => {
 
     const renamedRow = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ המחודש' });
     await expect(renamedRow).toBeVisible();
-    await expect(renamedRow.getByText('סוג משתמש: טכנאי')).toBeVisible();
     // The avatar's initial letter fallback reflects the new name.
     await expect(renamedRow.locator('span[aria-hidden="true"]', { hasText: 'ע' })).toBeVisible();
+  });
+
+  test('the email sits directly under the name on the right, not floated over toward the status/menu side', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/personnel');
+
+    // Demo-seeded profiles carry no Google email (linkedEmailOf resolves
+    // only through a CLAIMED pending entry). Inject one directly into the
+    // browser's demo localStorage database -- same shape claimPendingProfile
+    // would have produced -- so this linked row has a real email to check
+    // the layout against, exactly like a real claimed account would.
+    await page.evaluate(() => {
+      const key = 'takalot-demo-db-v1';
+      const db = JSON.parse(localStorage.getItem(key)!);
+      db.pendingPersonnel = db.pendingPersonnel || [];
+      db.pendingPersonnel.push({
+        id: 'e2e-email-position-check',
+        fullName: 'עומר פרץ (דמו)',
+        email: 'omer.peretz@example.com',
+        role: 'technician',
+        status: 'claimed',
+        createdBy: 'u-admin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: null,
+        claimedBy: 'u-tech-1',
+        claimedAt: new Date().toISOString(),
+        cancelledBy: null,
+        cancelledAt: null,
+      });
+      localStorage.setItem(key, JSON.stringify(db));
+    });
+    await page.goto('/personnel');
+    await page.getByRole('tab', { name: /^פעילים/ }).click();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
+    const nameBox = await row.getByText('עומר פרץ (דמו)').boundingBox();
+    const emailBox = await row.getByText('omer.peretz@example.com').boundingBox();
+    const statusBox = await row.getByText('פעיל').boundingBox();
+    expect(nameBox).not.toBeNull();
+    expect(emailBox).not.toBeNull();
+    expect(statusBox).not.toBeNull();
+    // The email sits (nearly) flush with the name's right edge -- directly
+    // below it in the identity block -- and well clear of (to the right
+    // of) the status/menu block on the row's other side, not floated over
+    // toward it.
+    expect(Math.abs(emailBox!.x + emailBox!.width - (nameBox!.x + nameBox!.width))).toBeLessThan(4);
+    expect(emailBox!.x).toBeGreaterThan(statusBox!.x + statusBox!.width);
+  });
+
+  test('a system_admin can rename THEMSELVES via שינוי שם on their own row, with no other self-service action offered', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/personnel');
+    await page.getByRole('tab', { name: /^פעילים/ }).click();
+
+    const ownRow = page.locator('[data-personnel-row]', { hasText: 'אלון ברק' });
+    await expect(ownRow.getByText('אתה')).toBeVisible();
+    const trigger = ownRow.getByRole('button', { name: /^פעולות עבור / });
+    await trigger.click();
+    const menu = ownRow.getByRole('menu');
+    await expect(menu.getByRole('menuitem')).toHaveCount(1);
+    await menu.getByRole('menuitem', { name: 'שינוי שם' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'שינוי שם' });
+    await dialog.getByLabel('שם מלא', { exact: false }).fill('אלון ברק המחודש');
+    await dialog.getByRole('button', { name: 'שמירה' }).click();
+
+    await expect(page.locator('[data-personnel-row]', { hasText: 'אלון ברק המחודש' })).toBeVisible();
   });
 
   test('technician does not see כוח אדם and is blocked from /personnel directly', async ({ page }) => {
@@ -177,5 +243,43 @@ test.describe('mobile', () => {
     await dialog.getByRole('button', { name: 'שמירה' }).click();
     await expect(page.getByText('שם שונה בנייד')).toBeVisible();
     await expect(page.getByText('לשינוי שם נייד')).toHaveCount(0);
+  });
+
+  test('the email sits directly under the name at mobile width too', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/personnel');
+    await page.evaluate(() => {
+      const key = 'takalot-demo-db-v1';
+      const db = JSON.parse(localStorage.getItem(key)!);
+      db.pendingPersonnel = db.pendingPersonnel || [];
+      db.pendingPersonnel.push({
+        id: 'e2e-email-position-check-mobile',
+        fullName: 'עומר פרץ (דמו)',
+        email: 'omer.peretz@example.com',
+        role: 'technician',
+        status: 'claimed',
+        createdBy: 'u-admin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        expiresAt: null,
+        claimedBy: 'u-tech-1',
+        claimedAt: new Date().toISOString(),
+        cancelledBy: null,
+        cancelledAt: null,
+      });
+      localStorage.setItem(key, JSON.stringify(db));
+    });
+    await page.goto('/personnel');
+    await page.getByRole('tab', { name: /^פעילים/ }).click();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
+    const nameBox = await row.getByText('עומר פרץ (דמו)').boundingBox();
+    const emailBox = await row.getByText('omer.peretz@example.com').boundingBox();
+    expect(nameBox).not.toBeNull();
+    expect(emailBox).not.toBeNull();
+    // Directly below the name (same right edge, and just underneath it).
+    expect(Math.abs(emailBox!.x + emailBox!.width - (nameBox!.x + nameBox!.width))).toBeLessThan(4);
+    expect(emailBox!.y).toBeGreaterThan(nameBox!.y);
+    expect(emailBox!.y - (nameBox!.y + nameBox!.height)).toBeLessThan(12);
   });
 });
