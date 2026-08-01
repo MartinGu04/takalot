@@ -2657,6 +2657,67 @@ describe('reference-data management parity (migration 0024)', () => {
     ).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
+  describe('batch drag-and-drop reorder (reorderSystems/reorderLocations)', () => {
+    it('applies the exact submitted order in one call and persists it across a fresh instance (refresh parity)', async () => {
+      const storage = new MemoryStorage();
+      const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+      const systemIds = (await repo.listSystems()).map((s) => s.id);
+      const reversed = [...systemIds].reverse();
+
+      await repo.reorderSystems(admin, reversed);
+      expect((await repo.listSystems()).map((s) => s.id)).toEqual(reversed);
+      expect((await repo.listSystems()).map((s) => s.displayOrder)).toEqual(
+        systemIds.map((_, index) => index + 1),
+      );
+
+      // A fresh repository instance backed by the same storage (simulating a
+      // page refresh) must observe the exact same persisted order.
+      const refreshed = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+      expect((await refreshed.listSystems()).map((s) => s.id)).toEqual(reversed);
+
+      const locationIds = (await repo.listLocations()).map((l) => l.id);
+      const rotated = [...locationIds.slice(1), locationIds[0]];
+      await repo.reorderLocations(admin, rotated);
+      expect((await repo.listLocations()).map((l) => l.id)).toEqual(rotated);
+    });
+
+    it('writes an audit entry for a successful reorder', async () => {
+      const repo = newRepo({ now: FIXED_NOW });
+      const systemIds = (await repo.listSystems()).map((s) => s.id);
+      await repo.reorderSystems(admin, [...systemIds].reverse());
+      const logs = await repo.listAuditLogs(admin, {});
+      expect(logs.some((log) => log.action === 'systems_reordered')).toBe(true);
+    });
+
+    it('rejects unauthorized and inactive administrators authoritatively', async () => {
+      const repo = newRepo({ now: FIXED_NOW });
+      const systemIds = (await repo.listSystems()).map((s) => s.id);
+      await expect(repo.reorderSystems(supervisor1, systemIds)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(repo.reorderLocations(viewer, [])).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('rejects empty, duplicated, incomplete, and unknown id lists without changing any order', async () => {
+      const repo = newRepo({ now: FIXED_NOW });
+      const before = await repo.listSystems();
+      const systemIds = before.map((s) => s.id);
+
+      await expect(repo.reorderSystems(admin, [])).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(
+        repo.reorderSystems(admin, [systemIds[0], systemIds[0], ...systemIds.slice(1)]),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(repo.reorderSystems(admin, systemIds.slice(1))).rejects.toMatchObject({
+        code: 'VALIDATION',
+      });
+      await expect(repo.reorderSystems(admin, [...systemIds, 'unknown-id'])).rejects.toMatchObject({
+        code: 'VALIDATION',
+      });
+
+      expect(await repo.listSystems()).toEqual(before);
+    });
+  });
+
   it('blocks reactivation when stale demo storage contains a legacy normalized conflict', async () => {
     const storage = new MemoryStorage();
     const seeded = buildSeed(FIXED_NOW);

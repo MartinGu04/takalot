@@ -213,6 +213,39 @@ describe('SupabaseRepository reference-data RPC parity', () => {
       'delete_location',
     ]);
   });
+
+  it('sends a single batch RPC call for reorderSystems/reorderLocations with the full ordered id list', async () => {
+    const calls: { fn: string; args: Record<string, unknown> }[] = [];
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calls.push({ fn, args });
+        return { data: null, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(
+      fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0],
+    );
+
+    await repo.reorderSystems(session, ['system-3', 'system-1', 'system-2']);
+    await repo.reorderLocations(session, ['location-2', 'location-1']);
+
+    expect(calls).toEqual([
+      { fn: 'reorder_systems', args: { p_ids: ['system-3', 'system-1', 'system-2'] } },
+      { fn: 'reorder_locations', args: { p_ids: ['location-2', 'location-1'] } },
+    ]);
+  });
+
+  it('maps permission/validation errors from the reorder RPCs like every other reference-data RPC', async () => {
+    await expect(
+      repoWithRpcError('permission: אין הרשאה לנהל מערכות ומיקומים').reorderSystems(session, ['a']),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(
+      repoWithRpcError('validation: רשימת הסידור מכילה מזהים כפולים').reorderLocations(session, ['a', 'a']),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'רשימת הסידור מכילה מזהים כפולים',
+    });
+  });
 });
 
 describe('SupabaseRepository.countClosedIncidents', () => {
