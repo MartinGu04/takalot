@@ -67,6 +67,17 @@ export function IconTrash(props: IconProps) {
   );
 }
 
+export function IconLock(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="4.5" y="9" width="11" height="8" rx="1.6" />
+      <path d="M6.5 9V6.3a3.5 3.5 0 0 1 7 0V9" />
+      <circle cx="10" cy="12.6" r="1" fill="currentColor" stroke="none" />
+      <path d="M10 13.6v1.6" />
+    </svg>
+  );
+}
+
 export function IconShield(props: IconProps) {
   return (
     <svg {...base(props)}>

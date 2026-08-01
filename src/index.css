@@ -115,6 +115,23 @@
   }
 }
 
+/* One-time login-screen entrance: a small fade + upward settle, staged
+   across the shell/brand/auth content/primary action via animation-delay
+   at each call site (see LoginPage.tsx). Never loops, never re-triggers on
+   auth/loading/error state changes -- those update sibling content without
+   remounting the animated elements. The global prefers-reduced-motion rule
+   below collapses this to an near-instant fade automatically. */
+@keyframes login-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 html {
   font-family: var(--font-sans);
 }

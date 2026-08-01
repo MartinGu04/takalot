@@ -76,7 +76,7 @@ describe('branding', () => {
     expect(brandLinks.length).toBeGreaterThan(0);
     for (const link of brandLinks) {
       expect(link.textContent).toContain('AVARIA');
-      expect(link.querySelector('img')).toHaveAttribute('src', '/branding/avaria-icon-512.png');
+      expect(link.querySelector('img')).toHaveAttribute('src', '/branding/avaria-compact-micro-mark.png');
     }
     expect(screen.queryByText('מעקב תקלות', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText('Takalot', { exact: false })).not.toBeInTheDocument();

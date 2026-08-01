@@ -22,14 +22,24 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 /** Shown while the persisted session is being restored, INSTEAD of any
- *  route -- the login page must never flash for an already-signed-in user. */
+ *  route -- the login page must never flash for an already-signed-in user.
+ *  Presentation only: reuses the login screen's own full-viewport shell
+ *  (same 50/50 desktop split, outer margins, rounded container, and
+ *  compact mobile brand hero) instead of the other auth screens' smaller
+ *  floating card, so the initial check reads as part of the same
+ *  experience. Loading/redirect/session behavior is entirely unchanged. */
 export function AuthLoadingScreen() {
   return (
-    <Shell>
-      <div className="mt-6" data-testid="auth-loading">
-        <Spinner label="בודק התחברות…" />
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas p-4 sm:p-6 lg:p-10">
+      <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated lg:h-[calc(100dvh-5rem)] lg:grid-cols-2">
+        <AvariaAuthBrandPanel />
+        <div className="flex flex-col items-center justify-center p-6 text-center sm:p-10 lg:h-full lg:p-12">
+          <div data-testid="auth-loading">
+            <Spinner label="בודק התחברות…" className="text-white/70" />
+          </div>
+        </div>
       </div>
-    </Shell>
+    </div>
   );
 }
 
