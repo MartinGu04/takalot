@@ -200,6 +200,10 @@ describe('supabase mode: session restoration', () => {
     render(<App />);
     expect(await screen.findByTestId('auth-loading')).toBeInTheDocument();
     expect(screen.queryByTestId('google-login-button')).not.toBeInTheDocument();
+    // Presentation reuse from the login screen: the same AVARIA brand panel
+    // (full logo, not the old smaller floating-card treatment) is shown
+    // beside the loading state.
+    expect(screen.getByRole('heading', { name: 'AVARIA' })).toBeInTheDocument();
 
     release(ACTIVE_PROFILE);
     await screen.findByRole('heading', { name: 'מצב נוכחי' });

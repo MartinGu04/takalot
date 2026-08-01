@@ -15,9 +15,10 @@ export const AVARIA_ICON_SRC = '/branding/avaria-symbol.png';
  *  recolored, or distorted. */
 export const AVARIA_ICON_COMPACT_SRC = '/branding/avaria-symbol-compact.png';
 
-/** No default width/height utilities here on purpose: callers set the full
- * sizing themselves (this component has exactly one call site, which needs
- * different width AND height rules per breakpoint) so there is never a
+/** No default width/height/object-fit utilities here on purpose: callers set
+ * all of that themselves (this component has two call sites -- a mobile
+ * crop needing object-cover, a desktop one needing object-contain -- with
+ * different width/height rules per breakpoint too), so there is never a
  * same-property class collision to fight with. */
 export function AvariaFullLogo({
   className,
@@ -26,20 +27,22 @@ export function AvariaFullLogo({
   className?: string;
   alt?: string;
 }) {
-  return <img src={AVARIA_FULL_LOGO_SRC} alt={alt} className={`block object-contain ${className ?? ''}`} />;
+  return <img src={AVARIA_FULL_LOGO_SRC} alt={alt} className={`block ${className ?? ''}`} />;
 }
 
-/** Compact brand treatment for the authenticated shell (header/sidebar). A
- * restrained brand-tinted (violet, never flat neutral black) surface with a
- * visible border and soft brand-colored contact shadow in light mode, and a
- * softer dark-native border/shadow in dark mode -- a deliberate branded chip
- * in both themes, not an isolated black block. A CSS treatment only; the
- * flat solid-color mark itself needs no glow to stay legible on it. */
+/** Compact brand treatment for the authenticated shell (header/sidebar).
+ * The mark is a solid dark violet, so each theme gets the surface that
+ * actually contrasts with it: a pale, faintly brand-tinted surface with a
+ * subtle violet border in light mode (strong contrast against the dark
+ * mark), and a near-black/ink surface with a restrained violet border in
+ * dark mode (never purple-on-purple, never a glow standing in for real
+ * contrast). Padding is minimal so the mark itself -- not the plate --
+ * reads as the icon. */
 export function AvariaIcon({ className }: { className?: string }) {
   return (
     <span
       aria-hidden
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-brand-300 bg-gradient-to-br from-brand-950 to-brand-800 p-1 shadow-[0_2px_8px_-2px_rgba(124,58,237,0.5)] dark:border-white/15 dark:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.6)] ${className ?? ''}`}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-brand-300 bg-gradient-to-br from-[#f4f0fc] to-[#e9defa] p-0.5 shadow-[0_1px_4px_-1px_rgba(124,58,237,0.35)] dark:border-white/15 dark:from-[#0b090f] dark:to-[#141019] dark:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.6)] ${className ?? ''}`}
     >
       <img src={AVARIA_ICON_COMPACT_SRC} alt="" className="size-full object-contain" />
     </span>
@@ -126,8 +129,38 @@ export function AvariaAuthBrandPanel({
           animate ? '[animation:login-entrance_380ms_ease-out_80ms_both]' : ''
         }`}
       >
+        {/* The logo's flat purple reads weakly straight against the panel's
+            own purple atmosphere, so a soft near-black ink pool sits behind
+            it -- CSS only, the asset itself is never recolored. This is a
+            SINGLE image (one heading, one alt, one testid) whose sizing
+            responds per breakpoint, deliberately not two conditionally
+            hidden elements: a test environment without real CSS (jsdom)
+            would otherwise see two simultaneously "visible" accessible
+            images. Mobile crops to the wordmark's own band via object-cover
+            on a wide aspect box (the canvas's huge transparent margin is
+            never displayed, so the visible mark reaches ~60% of the hero
+            width without growing the hero taller); desktop shows the full
+            canvas uncropped, larger than before. */}
         <h1 data-testid={titleTestId}>
-          <AvariaFullLogo className="mx-auto h-12 w-auto sm:h-14 lg:h-auto lg:w-full lg:max-w-sm" />
+          <span className="relative mx-auto block aspect-[16/5] w-[83%] overflow-hidden rounded-2xl lg:aspect-auto lg:w-fit lg:overflow-visible lg:rounded-[2rem] lg:p-8">
+            <span
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                backgroundImage:
+                  'radial-gradient(ellipse at center, rgba(6,3,14,0.7) 0%, rgba(6,3,14,0.32) 55%, rgba(6,3,14,0) 80%)',
+              }}
+            />
+            {/* The enlarged desktop size targets the login screen's wide,
+                generously padded panel column; the narrower shared Shell
+                (compact) keeps its original, already-proven-safe cap so it
+                can never bleed into the neighboring column there. */}
+            <AvariaFullLogo
+              className={`relative h-full w-full object-cover lg:h-auto lg:w-auto lg:object-contain ${
+                compact ? 'lg:max-w-sm' : 'lg:max-w-[520px]'
+              }`}
+            />
+          </span>
         </h1>
         <span aria-hidden className="mx-auto mt-2 block h-0.5 w-8 rounded-full bg-brand-500 lg:mt-4 lg:w-12" />
         <p className="mt-2 text-xs font-medium tracking-wide text-white/50 sm:text-sm lg:mt-4 lg:text-base lg:text-white/60">

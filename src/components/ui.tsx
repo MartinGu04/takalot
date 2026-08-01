@@ -385,9 +385,9 @@ export function Dialog({
 }
 
 // ---------- Spinner / loading ----------
-export function Spinner({ label = 'טוען…' }: { label?: string }) {
+export function Spinner({ label = 'טוען…', className }: { label?: string; className?: string }) {
   return (
-    <div role="status" className="flex items-center justify-center gap-2 py-8 text-muted">
+    <div role="status" className={`flex items-center justify-center gap-2 py-8 ${className ?? 'text-muted'}`}>
       <span className="inline-block size-5 animate-spin rounded-full border-2 border-hairline-strong border-t-brand-600 dark:border-t-brand-400" />
       <span className="text-sm">{label}</span>
     </div>
