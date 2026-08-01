@@ -166,3 +166,28 @@ describe('mobile bottom-nav overflow (עוד)', () => {
     expect(within(sidebar).queryByRole('button', { name: 'עוד' })).not.toBeInTheDocument();
   });
 });
+
+describe('desktop header: department logos', () => {
+  it('renders alongside the existing header controls, which stay fully present and functional', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await login(user, 'login-u-admin');
+
+    const header = document.querySelector('header') as HTMLElement;
+    expect(within(header).getByTestId('department-logos')).toBeInTheDocument();
+    expect(within(header).getByTestId('department-logo-502')).toBeInTheDocument();
+    expect(within(header).getByTestId('department-logo-strategic-communication')).toBeInTheDocument();
+
+    // Existing controls untouched: notifications button still opens its panel.
+    const notifButton = within(header).getByTestId('notifications-button');
+    expect(notifButton).toBeInTheDocument();
+    await user.click(notifButton);
+    // The panel is portaled to document.body (FloatingPopover), not a
+    // descendant of <header> -- assert globally.
+    expect(await screen.findByText('התראות')).toBeInTheDocument();
+
+    // The live clock is still rendered (its own centering is a real-layout
+    // concern, verified in e2e/34-department-logos.spec.ts).
+    expect(within(header).getByTestId('desktop-live-clock')).toBeInTheDocument();
+  });
+});
