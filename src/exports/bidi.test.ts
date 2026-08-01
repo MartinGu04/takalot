@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { isolate, mirroredForRtl, resolveBidiRuns } from './bidi';
 
 describe('isolate', () => {
-  it('wraps a value in explicit FSI/PDI isolate marks', () => {
+  it('wraps a value containing a strong (Hebrew or Latin) letter in RLI/PDI, matching the surrounding RTL document', () => {
     expect(isolate('NET2000')).toBe('⁧NET2000⁩');
+    expect(isolate('Martin Gusin')).toBe('⁧Martin Gusin⁩');
+    expect(isolate('רועי כהן')).toBe('⁧רועי כהן⁩');
+  });
+
+  it('wraps a value with no strong letter (a formatted date/time, an incident number) in LRI/PDI instead -- otherwise its own internal punctuation (e.g. the comma in a date) resolves in the wrong order under an RTL base, confirmed empirically against poppler', () => {
+    expect(isolate('01.08.2026, 09:15')).toBe('⁦01.08.2026, 09:15⁩');
+    expect(isolate('2026-014')).toBe('⁦2026-014⁩');
   });
 });
 

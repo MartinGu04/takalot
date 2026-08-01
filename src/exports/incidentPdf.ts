@@ -67,9 +67,7 @@ export async function buildIncidentPdf(
 
   pdf.sectionTitle('ציר זמן מלא');
   const blocks = buildTimelineBlocks(events, updates, profiles);
-  for (const block of blocks) {
-    pdf.timelineBlock(block);
-  }
+  pdf.timelineBlocks(blocks);
 
   pdf.finalize();
   return pdf;

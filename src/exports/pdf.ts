@@ -18,10 +18,27 @@
 // varies. bidi.ts's resolveBidiRuns() splits a line into direction runs,
 // in logical order; drawBidiLine() below walks those runs from a
 // right-hand anchor moving leftward: a left-to-right run (English name,
-// date, NET2000-style identifier) draws as one normal left-to-right block,
-// a right-to-left run draws character-by-character, each successive
-// character placed further left -- so the content stream always matches
-// the real text, and the raster still reads correctly right-to-left.
+// date, NET2000-style identifier) draws as one normal left-to-right block.
+//
+// A right-to-left run is *not* drawn as separate per-character text
+// objects, even though each character's position still decreases right to
+// left: a real PDF text extractor (confirmed against poppler's pdftotext,
+// both -raw and its default bidi-aware mode) clusters words by how many
+// separate glyph-show operations it sees, not by geometry -- one Tj call
+// per character reliably produced an artificial space between every
+// letter ("פ ר ט י פ ת יח ה" for "פרטי פתיחה"), even when the characters
+// were pixel-adjacent. drawRtlRunMerged() instead emits the whole run as
+// one TJ array: one contiguous text-show operation, with per-glyph
+// position adjustments computed from real glyph widths (plus a tiny,
+// visually imperceptible sub-millimeter overlap margin -- empirically
+// necessary because poppler's own word-clustering is sensitive to the
+// sub-pixel rounding gap between jsPDF's own width measurement and the
+// font's embedded CID widths; without it, otherwise pixel-perfect
+// adjacency still intermittently reads as separate words). One contiguous
+// operation per run is exactly what a normal, non-RTL PDF looks like to
+// an extractor, so it is read back as one clean, correctly-ordered word or
+// phrase, exactly like the source Hebrew.
+//
 // jsPDF's own RTL mechanisms are fully disabled (setR2L(false) here,
 // isInputRtl:false on every text() call) so they never reprocess anything
 // this file already laid out.
@@ -31,6 +48,7 @@ import { ALEF_BOLD_BASE64 } from './fonts/alefBoldBase64';
 import { isolate, mirroredForRtl, resolveBidiRuns, type BidiRun } from './bidi';
 import { formatDateTime } from '../lib/time';
 import type { TimelineBlock } from './timelineNarrative';
+import { ARROW_GLYPH_HEX, patchArrowToUnicode } from './pdfArrowGlyph';
 
 const PAGE_WIDTH = 210;
 const MARGIN = 18;
@@ -68,6 +86,10 @@ export class HebrewPdf {
    *  incident this is) survives pagination without repeating the logos --
    *  see incidentHeader's own comment. */
   private continuationTitle: string | null = null;
+  /** Set when the ← transition separator was drawn -- see pdfArrowGlyph.ts.
+   *  Only then is it worth post-processing the output bytes to add its
+   *  ToUnicode entry. */
+  private usesArrowGlyph = false;
 
   constructor() {
     this.doc = new jsPDF({ unit: 'mm', format: 'a4' });
@@ -79,15 +101,142 @@ export class HebrewPdf {
     this.doc.setR2L(false);
   }
 
-  private runWidths(runs: BidiRun[]): number[] {
-    return runs.map((run) => this.doc.getTextWidth(run.text));
+  /** Width a run will occupy once drawn, without actually drawing it --
+   *  measured on the glyphs that will really be shown (mirrored, for an
+   *  RTL run), so it agrees exactly with drawBidiLine()/drawRtlRunMerged(). */
+  private measureRun(run: BidiRun): number {
+    if (!run.rtl) return this.doc.getTextWidth(run.text);
+    let width = 0;
+    for (const ch of run.text) width += this.doc.getTextWidth(mirroredForRtl(ch));
+    return width;
   }
 
   /** Total rendered width of `text` at the currently set font/size --
    *  needed to position/size anything (a badge box, a centered line)
    *  before actually drawing it. */
   private measureBidiLine(text: string): number {
-    return this.runWidths(resolveBidiRuns(text)).reduce((a, b) => a + b, 0);
+    return resolveBidiRuns(text).reduce((sum, run) => sum + this.measureRun(run), 0);
+  }
+
+  /** The raw ops array for the page currently being drawn on -- jsPDF
+   *  exposes this on `internal` but doesn't type it publicly. */
+  private currentPageOps(): string[] {
+    const internal = this.doc.internal as unknown as {
+      pages: string[][];
+      getCurrentPageInfo(): { pageNumber: number };
+    };
+    return internal.pages[internal.getCurrentPageInfo().pageNumber];
+  }
+
+  /** jsPDF's own correct glyph-id encoding for one character in the
+   *  current font/size -- obtained by letting jsPDF draw it (a throwaway,
+   *  off-page draw we immediately remove) rather than reimplementing TTF
+   *  cmap lookup ourselves. The Alef font has no glyph at all for ← (see
+   *  pdfArrowGlyph.ts): jsPDF itself would emit an empty, unmapped glyph
+   *  for it, so it's special-cased to the reserved stand-in CID instead,
+   *  which patchArrowToUnicode() (applied in blob()/outputBytes()) maps
+   *  back to the real arrow for extraction. */
+  private glyphHex(ch: string): string {
+    if (ch === '←') {
+      this.usesArrowGlyph = true;
+      return ARROW_GLYPH_HEX;
+    }
+    const ops = this.currentPageOps();
+    this.doc.text(ch, 0, 0, { align: 'left', isInputRtl: false });
+    const entry = ops.pop() as string;
+    return entry.match(/(<[0-9a-fA-F]+>) Tj/)?.[1] ?? '<0000>';
+  }
+
+  /**
+   * Draws one right-to-left run as a single contiguous TJ text-show
+   * operation -- see this file's header comment for why per-character Tj
+   * calls break text extraction. `chars` are already the glyphs to draw
+   * (mirrored where applicable); `rightEdge` is where the first (logically
+   * first, visually rightmost) character's right edge sits. Returns the
+   * run's total width.
+   */
+  private drawRtlRunMerged(chars: string[], rightEdge: number, y: number): number {
+    const fontSizePt = this.doc.getFontSize();
+    const scale = (this.doc.internal as unknown as { scaleFactor: number }).scaleFactor;
+    // The ← stand-in glyph (see glyphHex/pdfArrowGlyph.ts) is a
+    // deliberately out-of-range CID, absent from the embedded font
+    // subset's own /W width table -- so every PDF consumer (this
+    // includes poppler's own text-extraction gap/clustering heuristic,
+    // not just renderers) falls back to the CIDFont's /DW default width,
+    // which jsPDF sets to a full em (1000/1000 units), not the ordinary
+    // Alef glyph width getTextWidth('←') measures. Using the wrong
+    // (narrower) width here to cancel that glyph's real on-page advance
+    // under-cancels it by the difference, silently compressing the
+    // adjacent space -- confirmed empirically (via poppler) to be exactly
+    // why "חדשה ← בטיפול" extracted with its surrounding spaces missing
+    // even though the raster looked fine (a sub-millimeter-scale
+    // compression is not visually obvious at normal viewing/print sizes).
+    const emMm = fontSizePt / scale;
+    const widths = chars.map((ch) => (ch === '←' ? emMm : this.doc.getTextWidth(ch)));
+    const hexes = chars.map((ch) => this.glyphHex(ch));
+    // A tiny, sub-millimeter, font-size-relative overlap -- invisible at
+    // any normal viewing/print scale -- that makes adjacent glyphs read as
+    // one continuous word instead of intermittently splitting; see header
+    // comment.
+    const marginMm = fontSizePt * 0.003;
+
+    const tjParts: string[] = [];
+    chars.forEach((_, i) => {
+      tjParts.push(hexes[i]);
+      if (i < chars.length - 1) {
+        const adjustmentMm = widths[i] + widths[i + 1] + marginMm;
+        const adjustmentThousandths = (adjustmentMm * scale * 1000) / fontSizePt;
+        tjParts.push(adjustmentThousandths.toFixed(3));
+      }
+    });
+
+    // Reuse a real jsPDF draw of the first glyph purely to steal this
+    // run's exact preamble (font resource, leading, color) and correctly
+    // unit-converted Y/starting-X -- avoids re-deriving jsPDF's own
+    // mm-to-PDF-point conversion rules by hand.
+    const ops = this.currentPageOps();
+    this.doc.text(chars[0], rightEdge, y, { align: 'right', isInputRtl: false });
+    const refEntry = ops.pop() as string;
+    const refLines = refEntry.split('\n');
+    const preamble = refLines.slice(1, -3);
+    const [refX, refY] = refLines[refLines.length - 3].split(' ');
+
+    ops.push(['BT', ...preamble, `${refX} ${refY} Td`, `[${tjParts.join(' ')}] TJ`, 'ET'].join('\n'));
+
+    // The Alef font maps U+2190 (←, used as the timeline's "old → new"
+    // transition separator) to a glyph with a real advance width but an
+    // empty outline -- it draws nothing. The character stays in the text
+    // layer above (so extraction/search/copy still see the real arrow,
+    // per the exact required string "סטטוס שונה: חדשה ← בטיפול"); a small
+    // vector arrow is drawn on top, in its slot, purely for visibility.
+    let slotRight = rightEdge;
+    chars.forEach((ch, i) => {
+      const slotLeft = slotRight - widths[i];
+      if (ch === '←') this.drawArrowGlyph(slotLeft, slotRight, y, fontSizePt);
+      slotRight = slotLeft - marginMm;
+    });
+
+    return widths.reduce((a, b) => a + b, 0);
+  }
+
+  /** A small left-pointing arrow (shaft + solid head), drawn as vector
+   *  shapes in the current text color, filling in for the Alef font's
+   *  empty ← outline -- see drawRtlRunMerged's comment. */
+  private drawArrowGlyph(slotLeft: number, slotRight: number, baselineY: number, fontSizePt: number) {
+    const scale = (this.doc.internal as unknown as { scaleFactor: number }).scaleFactor;
+    const emMm = fontSizePt / scale;
+    const midY = baselineY - emMm * 0.32;
+    const halfHeight = emMm * 0.09;
+    const inset = (slotRight - slotLeft) * 0.12;
+    const left = slotLeft + inset;
+    const right = slotRight - inset;
+    const headLength = Math.min((right - left) * 0.5, emMm * 0.22);
+    const color = this.doc.getTextColor();
+    this.doc.setDrawColor(color);
+    this.doc.setFillColor(color);
+    this.doc.setLineWidth(Math.max(emMm * 0.045, 0.12));
+    this.doc.line(right, midY, left, midY);
+    this.doc.triangle(left, midY, left + headLength, midY - halfHeight, left + headLength, midY + halfHeight, 'F');
   }
 
   /**
@@ -98,20 +247,44 @@ export class HebrewPdf {
    */
   private drawBidiLine(text: string, anchorX: number, y: number, align: 'right' | 'center' = 'right'): number {
     const runs = resolveBidiRuns(text);
-    const widths = this.runWidths(runs);
+    const widths = runs.map((run) => this.measureRun(run));
     const totalWidth = widths.reduce((a, b) => a + b, 0);
     let cursor = align === 'center' ? anchorX + totalWidth / 2 : anchorX;
     runs.forEach((run, i) => {
       if (run.rtl) {
-        for (const ch of run.text) {
-          const w = this.doc.getTextWidth(ch);
-          this.doc.text(mirroredForRtl(ch), cursor, y, { align: 'right', isInputRtl: false });
-          cursor -= w;
-        }
+        // A ":", "," or "/" inside a Hebrew run -- e.g. "מערכת / עמדה: "
+        // right before "NET2000", or even a colon with plain Hebrew on
+        // both sides -- gets pulled out of place (and its surrounding
+        // space dropped or duplicated) on extraction, even though it is
+        // drawn in exactly the right place -- confirmed directly against
+        // poppler's pdftotext for every one of these separators, not just
+        // at a run boundary. A zero-width RLM (U+200F, a real character
+        // in the Alef font with a genuine 0-width advance -- verified,
+        // not assumed) inserted right after each one gives the
+        // extractor's own bidi reconstruction the same strong-RTL anchor
+        // there that the surrounding Hebrew already provides visibly,
+        // fixing the extracted order without moving anything on the page.
+        const runText = run.text.replace(/([:,/])/g, '$1‏');
+        this.drawRtlRunMerged([...runText].map(mirroredForRtl), cursor, y);
       } else {
-        this.doc.text(run.text, cursor, y, { align: 'right', isInputRtl: false });
-        cursor -= widths[i];
+        // The mirror case: an LTR run naming a real letter (an English
+        // name) immediately followed by an RTL run starting with a
+        // neutral separator (e.g. "Elad Levi · איש קשר") loses that
+        // separator's surrounding spacing the same way, for the same
+        // reason -- confirmed the same way. A trailing zero-width RLM
+        // fixes it from this side, since the separator itself belongs to
+        // the *following* run's text. Restricted to runs with a real
+        // letter -- a pure-digit LTR run (a date/time value, already
+        // isolated LTR for its own internal comma ordering, see bidi.ts)
+        // must never sit directly next to a strong-RTL character:
+        // confirmed empirically that doing so re-breaks exactly the
+        // comma-ordering bug the LTR isolation was fixing, even though
+        // the RLM itself is zero-width and otherwise inert.
+        const nextRun = runs[i + 1];
+        const runText = nextRun && nextRun.rtl && /\p{L}/u.test(run.text) ? `${run.text}‏` : run.text;
+        this.doc.text(runText, cursor, y, { align: 'right', isInputRtl: false });
       }
+      cursor -= widths[i];
     });
     return totalWidth;
   }
@@ -318,35 +491,35 @@ export class HebrewPdf {
     return this.doc.splitTextToSize(text, width) as string[];
   }
 
-  /**
-   * One timeline event as a distinct, bordered block (event time, title,
-   * performer, structured details) -- never split across pages when it can
-   * be avoided: its height is measured up front, and a page break happens
-   * *before* the block (not mid-block) if it would not otherwise fit. A
-   * block taller than a full page's content area is drawn as-is (nothing
-   * to avoid there -- it will not fit on any single page).
-   */
-  timelineBlock(block: TimelineBlock) {
+  /** Wraps and measures one timeline block without drawing it -- shared by
+   *  timelineBlock() (single-block orphan avoidance) and timelineBlocks()
+   *  (whole-section balanced pagination), so both use exactly the same
+   *  height a block will actually occupy. */
+  private layoutBlock(block: TimelineBlock): {
+    titleLines: string[];
+    metaLines: string[];
+    detailLines: string[];
+    height: number;
+  } {
     const innerWidth = CONTENT_WIDTH - BLOCK_PADDING * 2;
     const titleLines = this.wrapAt(block.title, innerWidth, TITLE_SIZE, 'bold');
     const metaText = `${isolate(formatDateTime(block.eventTime))} · בוצע על ידי ${isolate(block.performer)}`;
     const metaLines = this.wrapAt(metaText, innerWidth, META_SIZE, 'normal');
     const detailLineGroups = block.details.map((detail) => this.wrapAt(`–  ${detail}`, innerWidth, DETAIL_SIZE, 'normal'));
     const detailLines = detailLineGroups.flat();
-
     const height =
       BLOCK_PADDING * 2 +
       titleLines.length * 5.4 +
       metaLines.length * 4.2 +
       (detailLines.length > 0 ? 2 + detailLines.length * 4.3 : 0);
+    return { titleLines, metaLines, detailLines, height };
+  }
 
-    const availableOnPage = CONTENT_BOTTOM - this.y;
-    const fullPageCapacity = CONTENT_BOTTOM - this.pageContentTop;
-    const isMidPage = this.y > this.pageContentTop;
-    if (height > availableOnPage && height <= fullPageCapacity && isMidPage) {
-      this.addPage();
-    }
-
+  /** Draws one already-laid-out block at the current y -- pure drawing, no
+   *  pagination decisions (those are made by timelineBlock()/timelineBlocks()
+   *  before calling this). */
+  private drawLaidOutBlock(block: TimelineBlock, layout: ReturnType<typeof this.layoutBlock>) {
+    const { titleLines, metaLines, detailLines, height } = layout;
     const top = this.y;
     const fillShade = block.tier === 'strong' ? 250 : 252;
     this.doc.setDrawColor(215);
@@ -380,6 +553,89 @@ export class HebrewPdf {
     this.y = top + height + BLOCK_GAP;
   }
 
+  /** The content-area top a *fresh* continuation page will have -- without
+   *  actually starting one -- used to plan pagination ahead of time. */
+  private freshPageContentTop(): number {
+    return this.continuationTitle ? MARGIN + 12 : MARGIN;
+  }
+
+  /**
+   * One timeline event as a distinct, bordered block (event time, title,
+   * performer, structured details) -- never split across pages when it can
+   * be avoided: its height is measured up front, and a page break happens
+   * *before* the block (not mid-block) if it would not otherwise fit. A
+   * block taller than a full page's content area is drawn as-is (nothing
+   * to avoid there -- it will not fit on any single page).
+   */
+  timelineBlock(block: TimelineBlock) {
+    const layout = this.layoutBlock(block);
+    const availableOnPage = CONTENT_BOTTOM - this.y;
+    const fullPageCapacity = CONTENT_BOTTOM - this.pageContentTop;
+    const isMidPage = this.y > this.pageContentTop;
+    if (layout.height > availableOnPage && layout.height <= fullPageCapacity && isMidPage) {
+      this.addPage();
+    }
+    this.drawLaidOutBlock(block, layout);
+  }
+
+  /**
+   * The whole timeline section, laid out together instead of one block at
+   * a time: whatever already fits on the current page is placed exactly
+   * as timelineBlock() would place it, but once the remaining blocks need
+   * more than one further page, they are spread evenly across exactly as
+   * many pages as they measure out to need, rather than each page being
+   * packed to the brim until the last leftover blocks are stranded alone
+   * on a near-empty trailing page -- confirmed against representative
+   * fixture data to otherwise produce a page with barely a third of a
+   * normal page's content. Never shrinks text, padding, or gaps below
+   * their normal size, and never splits a block across pages -- it only
+   * chooses *where* the same fixed-size blocks break across pages.
+   */
+  timelineBlocks(blocks: TimelineBlock[]) {
+    const layouts = blocks.map((block) => this.layoutBlock(block));
+    let i = 0;
+    while (i < blocks.length) {
+      const availableOnPage = CONTENT_BOTTOM - this.y;
+      if (layouts[i].height > availableOnPage && this.y > this.pageContentTop) break;
+      this.drawLaidOutBlock(blocks[i], layouts[i]);
+      i += 1;
+    }
+    if (i >= blocks.length) return;
+
+    const freshPageCapacity = CONTENT_BOTTOM - this.freshPageContentTop();
+    const remainingHeight = layouts.slice(i).reduce((sum, l) => sum + l.height + BLOCK_GAP, 0);
+    const pagesNeeded = Math.max(1, Math.ceil(remainingHeight / freshPageCapacity));
+
+    // Each non-final page targets a *cumulative* boundary
+    // (pageIndex/pagesNeeded of the total remaining height), not a fixed
+    // per-page amount recomputed from zero each time -- a fixed target
+    // lets small per-page leftovers silently compound into an extra,
+    // near-empty page by the end (confirmed: it did, on this exact
+    // fixture). The final page always takes everything left (bounded only
+    // by its real capacity), so rounding never strands a small remainder
+    // on a page of its own.
+    let cumulative = 0;
+    let pageIndex = 1;
+    while (i < blocks.length) {
+      this.addPage();
+      const pageCapacity = CONTENT_BOTTOM - this.pageContentTop;
+      const boundary = (pageIndex / pagesNeeded) * remainingHeight;
+      const isFinalPage = pageIndex >= pagesNeeded;
+      let pageHeight = 0;
+      while (i < blocks.length) {
+        const withGap = layouts[i].height + BLOCK_GAP;
+        const wouldOverflowPage = pageHeight + layouts[i].height > pageCapacity;
+        const wouldPassBoundary = !isFinalPage && cumulative + withGap > boundary;
+        if (pageHeight > 0 && (wouldOverflowPage || wouldPassBoundary)) break;
+        this.drawLaidOutBlock(blocks[i], layouts[i]);
+        pageHeight += withGap;
+        cumulative += withGap;
+        i += 1;
+      }
+      pageIndex += 1;
+    }
+  }
+
   /** Stamps the footer (page number + attribution line -- no AVARIA logo
    *  or symbol) on every page. Call once, after all content has been
    *  added, so the total page count is known. */
@@ -402,8 +658,16 @@ export class HebrewPdf {
     }
   }
 
+  /** The final PDF bytes -- always use this (or blob(), which wraps it)
+   *  instead of calling `doc.output()` directly, so the ← ToUnicode patch
+   *  (when the arrow was actually used) is never skipped. */
+  outputBytes(): Uint8Array {
+    const raw = new Uint8Array(this.doc.output('arraybuffer') as ArrayBuffer);
+    return this.usesArrowGlyph ? patchArrowToUnicode(raw) : raw;
+  }
+
   blob(): Blob {
-    return this.doc.output('blob');
+    return new Blob([this.outputBytes() as BlobPart], { type: 'application/pdf' });
   }
 }
 

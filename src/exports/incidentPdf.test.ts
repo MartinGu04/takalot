@@ -41,7 +41,7 @@ describe('buildIncidentPdf', () => {
     vi.unstubAllGlobals();
   });
 
-  it('produces a valid, multi-page PDF from representative fixture data', async () => {
+  it('produces a valid, multi-page PDF from representative fixture data, balanced so the trailing page is not near-empty', async () => {
     const pdf = await buildFixturePdf();
     const buf = new Uint8Array(pdf.doc.output('arraybuffer') as ArrayBuffer);
     expect(String.fromCharCode(...buf.slice(0, 5))).toBe('%PDF-');
@@ -49,11 +49,18 @@ describe('buildIncidentPdf', () => {
     // page, and must not end on a near-empty trailing page either.
     const totalPages = pdf.doc.getNumberOfPages();
     expect(totalPages).toBeGreaterThan(1);
-    const lastPageOps = pageOps(pdf, totalPages);
-    // Every timeline block draws a filled rounded rect ("...h\nB\n" for
-    // the fill, followed by the stroke); a near-empty trailing page would
-    // have essentially none.
-    expect((lastPageOps.match(/h\nB\n/g) ?? []).length).toBeGreaterThan(0);
+    // Every timeline block draws a filled rounded rect ("...h\nB\n" for the
+    // fill, followed by the stroke) -- count them per page to check the
+    // *balance*, not just that the last page has at least one: the
+    // unbalanced greedy pagination this replaced put 10 of this fixture's
+    // 14 timeline blocks on page 2 and stranded only 3 alone on page 3.
+    const perPageBlockCounts = Array.from({ length: totalPages }, (_, i) =>
+      (pageOps(pdf, i + 1).match(/h\nB\n/g) ?? []).length,
+    );
+    const lastPageCount = perPageBlockCounts[totalPages - 1];
+    expect(lastPageCount).toBeGreaterThan(0);
+    const maxOtherPageCount = Math.max(...perPageBlockCounts.slice(0, -1));
+    expect(lastPageCount).toBeGreaterThanOrEqual(Math.ceil(maxOtherPageCount / 2));
   });
 
   it('embeds both approved department logos as their exact, byte-for-byte original files', async () => {

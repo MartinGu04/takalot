@@ -26,27 +26,50 @@ import bidiFactory from 'bidi-js';
 
 const bidi = bidiFactory();
 
-// Right-to-Left Isolate / Pop Directional Isolate: wrap a dynamic value so
-// the bidi algorithm resolves its run boundaries independently of, and
-// never lets them bleed into, the surrounding label/punctuation text.
-// Deliberately RLI, not the auto-detecting FSI: every value this export
-// isolates -- a name, a date, an identifier, or a composite snapshot like
-// "Name · איש קשר: ... · פרטי קשר: ..." -- lives inside a fundamentally
-// Hebrew (RTL) document, and FSI's first-strong-character guess flips the
-// isolate's own base direction to LTR whenever such a value happens to
-// *start* with a Latin character (e.g. an external handler's English
-// name), which then misplaces neutral punctuation (colons, the "·"
-// separator) inside it relative to the Hebrew fragments alongside it --
-// confirmed empirically while fixing this. RLI keeps the isolate's base
-// direction RTL, matching the surrounding document, while any genuinely
-// left-to-right run inside it (the English name, the email) still gets
-// its own correctly nested embedded LTR run regardless. Both marks are
-// zero-width (no visible glyph, no ToUnicode entry) and are dropped from
-// every run's text -- they only steer where run boundaries fall, see
-// resolveBidiRuns below.
+// Right-to-Left Isolate / Left-to-Right Isolate / Pop Directional Isolate:
+// wrap a dynamic value so the bidi algorithm resolves its run boundaries
+// independently of, and never lets them bleed into, the surrounding
+// label/punctuation text. Deliberately RLI/LRI, never the auto-detecting
+// FSI: every value this export isolates -- a name, a date, an identifier,
+// or a composite snapshot like "Name · איש קשר: ... · פרטי קשר: ..." --
+// lives inside a fundamentally Hebrew (RTL) document, and FSI's
+// first-strong-character guess flips the isolate's own base direction to
+// LTR whenever such a value happens to *start* with a Latin character
+// (e.g. an external handler's English name), which then misplaces neutral
+// punctuation (colons, the "·" separator) inside it relative to the
+// Hebrew fragments alongside it -- confirmed empirically while fixing
+// this.
+//
+// Which of RLI/LRI is correct depends on whether the value itself
+// contains any strongly-directional character at all. A value with a real
+// letter (Hebrew, English, whatever script) anchors its own run(s)
+// regardless of the isolate's base direction, so RLI -- matching the
+// surrounding document -- is correct: any genuinely left-to-right run
+// inside it (an English name, an email) still gets its own correctly
+// nested embedded LTR run. But a value made *only* of digits/punctuation
+// -- a formatted date/time ("01.08.2026, 09:15"), a duration, an incident
+// number ("2026-014") -- has no strong character to anchor it: under an
+// RTL base (RLI, or no isolation at all, since it then inherits the
+// document's own RTL base) the UBA's neutral-resolution rules for such
+// runs misplace separators like the comma in a date/time value, moving it
+// to the *start* of the value instead of directly after the date --
+// confirmed empirically while fixing this. Forcing an LTR base (LRI) for
+// exactly these no-strong-character values resolves them in their own,
+// correct left-to-right reading order.
+//
+// Both isolate marks are zero-width (no visible glyph, no ToUnicode
+// entry) and are dropped from every run's text -- they only steer where
+// run boundaries fall, see resolveBidiRuns below.
 const RLI = '⁧';
+const LRI = '⁦';
 const PDI = '⁩';
-const ISOLATE_MARKS = new Set([RLI, PDI]);
+const ISOLATE_MARKS = new Set([RLI, LRI, PDI]);
+
+// Matches any letter in any script. A value containing one gets RTL
+// isolation (RLI); a value with none (pure digits/punctuation, e.g. a
+// formatted date or an incident number) gets LTR isolation (LRI) -- see
+// the comment above.
+const STRONG_LETTER_RE = /\p{L}/u;
 
 /**
  * Wrap a dynamic value -- an English name, a date/time, an email, an
@@ -54,10 +77,13 @@ const ISOLATE_MARKS = new Set([RLI, PDI]);
  * splicing it into a Hebrew label/sentence template. This is the explicit
  * RTL/LTR isolation the export requires: correctness must not depend on
  * the bidi algorithm's implicit first-strong-character guess at the exact
- * point a value is interpolated into surrounding text.
+ * point a value is interpolated into surrounding text. Which isolate
+ * direction is used is chosen automatically per value -- see the comment
+ * above RLI/LRI.
  */
 export function isolate(value: string): string {
-  return `${RLI}${value}${PDI}`;
+  const mark = STRONG_LETTER_RE.test(value) ? RLI : LRI;
+  return `${mark}${value}${PDI}`;
 }
 
 export interface BidiRun {

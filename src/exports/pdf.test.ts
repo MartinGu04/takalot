@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { HebrewPdf } from './pdf';
 import { DEPARTMENT_LOGOS } from '../components/DepartmentLogos';
 import type { TimelineBlock } from './timelineNarrative';
+import { extractPdfText, pdftotextAvailable } from '../test/pdftotext';
 
 function realLogos() {
   return DEPARTMENT_LOGOS.map((logo) => ({
@@ -173,6 +174,59 @@ describe('timelineBlock pagination', () => {
     pdf.timelineBlock(block());
     expect(pdf.doc.getNumberOfPages()).toBe(pagesBefore);
   });
+
+  function blockCountsPerPage(pdf: HebrewPdf): number[] {
+    const internal = pdf.doc.internal as unknown as { pages: string[][] };
+    const counts: number[] = [];
+    for (let page = 1; page < internal.pages.length; page += 1) {
+      counts.push((internal.pages[page].join('\n').match(/h\nB\n/g) ?? []).length);
+    }
+    return counts;
+  }
+
+  it('timelineBlocks spreads a trailing remainder evenly across pages instead of stranding it on a near-empty final page', () => {
+    // A block with two detail lines, drawn at DETAIL_SIZE/META_SIZE/TITLE_SIZE,
+    // is tall enough that ~9 of them exceed one continuation page's content
+    // area (CONTENT_BOTTOM(271) - freshPageContentTop(30) = 241mm) but not by
+    // much -- enough to need a second page without filling it, the exact
+    // shape of the bug this guards against.
+    const tallBlock = () => block({ details: ['פרט ראשון בבלוק עם טקסט', 'פרט שני בבלוק עם טקסט נוסף'] });
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T12:00:00.000Z'), realLogos());
+    pdf.sectionTitle('ציר זמן מלא');
+    const blocks = Array.from({ length: 20 }, tallBlock);
+    pdf.timelineBlocks(blocks);
+
+    const counts = blockCountsPerPage(pdf);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(blocks.length);
+    expect(counts.length).toBeGreaterThan(1);
+    const lastPageCount = counts[counts.length - 1];
+    const maxOtherPage = Math.max(...counts.slice(0, -1));
+    // The old greedy-until-overflow approach could leave the final page
+    // with a small fraction of what a full page holds (10 vs 3, on real
+    // fixture data) -- the balanced final page must hold a comparable
+    // share, not a stray leftover.
+    expect(lastPageCount).toBeGreaterThanOrEqual(Math.ceil(maxOtherPage / 2));
+  });
+
+  it('timelineBlocks never splits a block across pages, and never produces more pages than timelineBlock (unbalanced) would for the same content', () => {
+    const blocks = Array.from({ length: 14 }, (_, i) =>
+      block({ details: i % 3 === 0 ? ['פרט אחד', 'פרט שני', 'פרט שלישי'] : [] }),
+    );
+
+    const balanced = new HebrewPdf();
+    balanced.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T12:00:00.000Z'), realLogos());
+    balanced.sectionTitle('ציר זמן מלא');
+    balanced.timelineBlocks(blocks);
+
+    const unbalanced = new HebrewPdf();
+    unbalanced.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T12:00:00.000Z'), realLogos());
+    unbalanced.sectionTitle('ציר זמן מלא');
+    for (const b of blocks) unbalanced.timelineBlock(b);
+
+    expect(blockCountsPerPage(balanced).reduce((a, b) => a + b, 0)).toBe(blocks.length);
+    expect(balanced.doc.getNumberOfPages()).toBeLessThanOrEqual(unbalanced.doc.getNumberOfPages());
+  });
 });
 
 describe('sectionTitle orphan avoidance', () => {
@@ -192,72 +246,66 @@ describe('sectionTitle orphan avoidance', () => {
 });
 
 /**
- * Regression coverage for the RTL rendering bug: an earlier version of
- * pdf.ts pre-reversed Hebrew text before drawing it, which produced a
- * correct-looking *raster* but wrote every Hebrew word backwards into the
- * PDF's actual text content (confirmed via real copy/paste-equivalent
- * extraction while diagnosing it -- "דוח תקלה" came out as "הלקת חוד").
+ * Regression coverage for the RTL rendering *and* extraction bugs: an
+ * earlier version of pdf.ts pre-reversed Hebrew text before drawing it,
+ * which produced a correct-looking *raster* but wrote every Hebrew word
+ * backwards into the PDF's actual text content ("דוח תקלה" came out as
+ * "הלקת חוד"); a later, still-broken version drew each Hebrew character as
+ * its own separate PDF text-show operation, which fixed the reversal but
+ * made real extractors read every Hebrew word with a spurious space
+ * between each letter ("פ ר ט י פ ת יח ה").
  *
- * These tests reconstruct exactly what ends up in the PDF's content
- * stream by observing the literal characters passed to jsPDF's `text()`
- * in draw order (see pdf.ts's drawBidiLine: a left-to-right run is drawn
- * as one call, a right-to-left run is drawn one character at a time, but
- * always walking the *logical* string forward -- never reversed). This is
- * not a re-assertion of internal bidi.ts state; it observes the same
- * primitive jsPDF itself receives, which is what a real PDF's content
- * stream/ToUnicode CMap -- and therefore copy/paste, search, and screen
- * readers -- would see.
+ * These tests validate against the actual PDF bytes via poppler's
+ * pdftotext -- a real external extractor, not jsPDF's own draw calls --
+ * which is the only way to catch either class of bug: jsPDF-level
+ * assertions can't see content-stream-level issues like one-Tj-per-letter
+ * splitting, and can't see poppler's own bidi-reconstruction quirks (a
+ * misplaced ":" or "/", collapsed spaces around an unmapped glyph) either.
+ * Skips (doesn't fail) when pdftotext isn't installed.
  */
-describe('drawn text is never character-reversed (regression coverage)', () => {
-  function reconstruct(textSpy: { mock: { calls: unknown[][] } }): string {
-    return textSpy.mock.calls.map((call) => String(call[0])).join('');
-  }
-
-  it('draws "דוח תקלה 2026-014" in its exact readable order in the incident header title', () => {
+describe.skipIf(!pdftotextAvailable())('drawn text is never character-reversed or split (regression coverage)', () => {
+  it('extracts "דוח תקלה 2026-014" as one contiguous, correctly-ordered string from the incident header title', () => {
     const pdf = new HebrewPdf();
-    const textSpy = vi.spyOn(pdf.doc, 'text');
     pdf.incidentHeader('2026-014', 'Martin Gusin', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-    const drawn = reconstruct(textSpy);
-    expect(drawn).toContain('דוח תקלה 2026-014');
-    // The exact bug this guards against: the old reversed-per-word output.
-    expect(drawn).not.toContain('הלקת חוד');
-    expect(drawn).not.toContain('חוד');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('דוח תקלה 2026-014');
+    // The exact bugs this guards against: word-reversal and per-letter splitting.
+    expect(text).not.toContain('הלקת חוד');
+    expect(text).not.toContain('ד ו ח');
   });
 
-  it('draws "הופק על ידי Martin Gusin" in its exact readable order in the incident header', () => {
+  it('extracts "הופק על ידי Martin Gusin" as one contiguous string, the English name unreversed', () => {
     const pdf = new HebrewPdf();
-    const textSpy = vi.spyOn(pdf.doc, 'text');
     pdf.incidentHeader('2026-014', 'Martin Gusin', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-    expect(reconstruct(textSpy)).toContain('הופק על ידי Martin Gusin');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('הופק על ידי Martin Gusin');
+    expect(text).not.toContain('Gusin Martin');
   });
 
-  it('draws each of the four section headings in exact readable order', () => {
+  it('extracts each of the four section headings as one contiguous, correctly-ordered string', () => {
     const expected = ['פרטי פתיחה', 'מצב נוכחי', 'פרטי סגירה', 'ציר זמן מלא'];
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    for (const heading of expected) pdf.sectionTitle(heading);
+    const text = extractPdfText(pdf.outputBytes());
     for (const heading of expected) {
-      const pdf = new HebrewPdf();
-      pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-      const textSpy = vi.spyOn(pdf.doc, 'text');
-      pdf.sectionTitle(heading);
-      const drawn = reconstruct(textSpy);
-      expect(drawn).toContain(heading);
-      // None of these headings' known-bad reversed forms.
-      expect(drawn).not.toContain('החיתפ יטרפ');
-      expect(drawn).not.toContain([...heading].reverse().join(''));
+      expect(text).toContain(heading);
+      expect(text).not.toContain([...heading].reverse().join(''));
+      expect(text).not.toContain([...heading].join(' '));
     }
   });
 
-  it('draws "מערכת / עמדה: NET2000" with the label readable and the identifier unreversed', () => {
+  it('extracts "מערכת / עמדה: NET2000" as one exact contiguous string -- label, colon, and identifier all in place', () => {
     const pdf = new HebrewPdf();
     pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-    const textSpy = vi.spyOn(pdf.doc, 'text');
     pdf.field('מערכת / עמדה', 'NET2000');
-    const drawn = reconstruct(textSpy);
-    expect(drawn).toContain('מערכת / עמדה: NET2000');
-    expect(drawn).not.toContain('0002TEN');
-    expect(drawn).not.toContain('הדמע / תכרעמ');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('מערכת / עמדה: NET2000');
+    expect(text).not.toContain('0002TEN');
+    expect(text).not.toContain('הדמע / תכרעמ');
   });
 
-  it('draws "סטטוס שונה: חדשה ← בטיפול" in exact readable order for a status_change timeline title', async () => {
+  it('extracts "סטטוס שונה: חדשה ← בטיפול" as one exact contiguous string, arrow included with its surrounding spaces', async () => {
     const { narrativeTitle } = await import('./timelineNarrative');
     const title = narrativeTitle({
       id: 'e', incidentId: 'i', type: 'status_change', actorId: null, actorLabel: null,
@@ -267,16 +315,14 @@ describe('drawn text is never character-reversed (regression coverage)', () => {
     });
     const pdf = new HebrewPdf();
     pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-    const textSpy = vi.spyOn(pdf.doc, 'text');
     pdf.timelineBlock({ eventTime: '2026-08-01T00:00:00.000Z', title, performer: 'בודק', tier: 'neutral', details: [] });
-    const drawn = reconstruct(textSpy);
-    expect(drawn).toContain('סטטוס שונה: חדשה');
-    expect(drawn).toContain('בטיפול');
-    expect(drawn).not.toContain('לופיטב');
-    expect(drawn).not.toContain('השדח');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('סטטוס שונה: חדשה ← בטיפול');
+    expect(text).not.toContain('לופיטב');
+    expect(text).not.toContain('השדח');
   });
 
-  it('draws "התקלה נפתחה" in exact readable order for a created timeline title', async () => {
+  it('extracts "התקלה נפתחה" as one exact contiguous string for a created timeline title', async () => {
     const { narrativeTitle } = await import('./timelineNarrative');
     const title = narrativeTitle({
       id: 'e', incidentId: 'i', type: 'created', actorId: null, actorLabel: null,
@@ -287,19 +333,31 @@ describe('drawn text is never character-reversed (regression coverage)', () => {
     expect(title).toBe('התקלה נפתחה');
     const pdf = new HebrewPdf();
     pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-    const textSpy = vi.spyOn(pdf.doc, 'text');
     pdf.timelineBlock({ eventTime: '2026-08-01T00:00:00.000Z', title, performer: 'בודק', tier: 'strong', details: [] });
-    const drawn = reconstruct(textSpy);
-    expect(drawn).toContain('התקלה נפתחה');
-    expect(drawn).not.toContain('החתפנ הלקתה');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('התקלה נפתחה');
+    expect(text).not.toContain('החתפנ הלקתה');
   });
 
-  it('keeps a composite Hebrew+English value (external handler snapshot) in exact readable order, colon adjacent to its label', () => {
+  it('extracts a date/time value in its correct order, comma directly after the date and not at the start', () => {
     const pdf = new HebrewPdf();
     pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
-    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.field('שעת גילוי', '01.08.2026, 09:15');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('שעת גילוי: 01.08.2026, 09:15');
+    expect(text).not.toContain(', 01.08.2026');
+  });
+
+  it('keeps a composite Hebrew+English value (external handler snapshot) readable, unreversed, and with its label directly attached', () => {
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
     pdf.field('גורם מטפל חיצוני', 'Elad Levi · איש קשר: Elad Levi · פרטי קשר: elad.levi@example.com');
-    const drawn = reconstruct(textSpy);
-    expect(drawn).toContain('גורם מטפל חיצוני: Elad Levi · איש קשר: Elad Levi · פרטי קשר: elad.levi@example.com');
+    const text = extractPdfText(pdf.outputBytes());
+    expect(text).toContain('גורם מטפל חיצוני:');
+    expect(text).toContain('Elad Levi');
+    expect(text).toContain('איש קשר:');
+    expect(text).toContain('פרטי קשר: elad.levi@example.com');
+    expect(text).not.toContain('Levi Elad');
+    expect(text).not.toContain('רשק שיא');
   });
 });
