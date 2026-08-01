@@ -56,6 +56,17 @@ export function IconArchive(props: IconProps) {
   );
 }
 
+export function IconChartBar(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 16.5h14" />
+      <rect x="4.5" y="11" width="3" height="5.2" rx="0.6" />
+      <rect x="8.5" y="7.3" width="3" height="9" rx="0.6" />
+      <rect x="12.5" y="3.8" width="3" height="12.5" rx="0.6" />
+    </svg>
+  );
+}
+
 export function IconTrash(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -165,6 +176,16 @@ export function IconDotsVertical(props: IconProps) {
       <circle cx="10" cy="4" r="1.25" fill="currentColor" stroke="none" />
       <circle cx="10" cy="10" r="1.25" fill="currentColor" stroke="none" />
       <circle cx="10" cy="16" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconDotsHorizontal(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="4" cy="10" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="10" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="10" r="1.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }

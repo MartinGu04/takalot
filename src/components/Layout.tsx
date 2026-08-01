@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { isDemoMode } from '../data';
 import { useNotifications, useProfiles, useAppMutation, repo } from '../data/hooks';
@@ -8,13 +8,67 @@ import { APP_NAME, roleLabels, notificationTypeLabels } from '../domain/labels';
 import { formatRelative } from '../lib/time';
 import { useSession } from '../auth/AuthContext';
 import { Sidebar } from './Sidebar';
-import { Avatar } from './ui';
+import { Avatar, Dialog } from './ui';
 import { ThemeToggle } from './ThemeToggle';
-import { navItems } from './navItems';
-import { IconBell, IconLogOut, IconPlus, IconUsers } from './icons';
+import { navItems, type NavItem } from './navItems';
+import { IconBell, IconDotsHorizontal, IconLogOut, IconPlus, IconUsers } from './icons';
 import { AvariaIcon } from './AvariaBrand';
 import { FloatingPopover } from './FloatingPopover';
 import { LiveClock } from './LiveClock';
+
+/** Fixed number of direct destination slots in the mobile bottom nav (see
+ *  the nav itself, below). When a role has more destinations than this, the
+ *  last slot becomes the "עוד" overflow trigger instead of a 4th direct link. */
+const MOBILE_NAV_DIRECT_SLOTS = 4;
+
+/** The remaining destinations' sheet opened from the mobile bottom nav's
+ *  "עוד" slot -- a plain list of links, reusing the same bottom-sheet-on-mobile
+ *  Dialog every other mobile sheet in this app uses (accessible modal,
+ *  Escape + outside-click + focus trap already built in). */
+function MobileMoreSheet({
+  items,
+  open,
+  onClose,
+}: {
+  items: NavItem[];
+  open: boolean;
+  onClose: () => void;
+}) {
+  const location = useLocation();
+  return (
+    <Dialog open={open} onClose={onClose} title="עוד">
+      <nav aria-label="יעדים נוספים" className="flex flex-col gap-1">
+        {items.map((item) => {
+          const active = location.pathname === item.to;
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={onClose}
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-12 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors ${
+                active
+                  ? 'bg-brand-50 font-semibold text-brand-900 ring-1 ring-inset ring-brand-200/70 dark:bg-brand-950/60 dark:text-brand-100 dark:ring-brand-800/60'
+                  : 'font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+              }`}
+            >
+              <span
+                className={`flex size-9 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  active
+                    ? 'bg-brand-600 text-white shadow-[0_2px_8px_-1px] shadow-brand-600/50 dark:bg-brand-500'
+                    : 'bg-surface-active text-text-muted'
+                }`}
+              >
+                <item.icon className="size-5" />
+              </span>
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </Dialog>
+  );
+}
 
 function DemoBanner() {
   if (!isDemoMode()) return null;
@@ -232,9 +286,23 @@ function MobileUserMenu() {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const location = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
   if (!user) return <>{children}</>;
   const items = navItems(user.role);
   const canCreate = hasCapability(user.role, 'create_incident');
+
+  // Keep the fixed 4-slot mobile bottom nav: when a role has more
+  // destinations than that, the 4th slot becomes the "עוד" overflow trigger
+  // (holding everything from the 4th destination onward) instead of a 5th+
+  // direct link that would never fit. Roles with 4 or fewer destinations
+  // (technician, viewer) keep all of them as direct links, unchanged.
+  const hasMobileOverflow = items.length > MOBILE_NAV_DIRECT_SLOTS;
+  const mobileDirectItems = hasMobileOverflow
+    ? items.slice(0, MOBILE_NAV_DIRECT_SLOTS - 1)
+    : items;
+  const mobileOverflowItems = hasMobileOverflow ? items.slice(MOBILE_NAV_DIRECT_SLOTS - 1) : [];
+  const isOverflowActive = mobileOverflowItems.some((item) => location.pathname === item.to);
 
   return (
     <div className="flex min-h-dvh">
@@ -262,13 +330,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-28 pt-4 md:pb-8">{children}</main>
 
-        {/* Mobile bottom navigation (max 4 destinations) + prominent create action */}
+        {/* Mobile bottom navigation (fixed 4 slots) + prominent create action */}
         <nav
           aria-label="ניווט תחתון"
           className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-surface/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)] md:hidden"
         >
           <div className="relative flex">
-            {items.slice(0, 4).map((item) => (
+            {mobileDirectItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -291,6 +359,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 )}
               </NavLink>
             ))}
+            {hasMobileOverflow && (
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded={moreOpen}
+                aria-current={isOverflowActive ? 'page' : undefined}
+                onClick={() => setMoreOpen(true)}
+                className={`flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[11px] font-medium transition-colors ${
+                  isOverflowActive ? 'text-brand-700 dark:text-brand-400' : 'text-muted'
+                }`}
+              >
+                <span
+                  className={`flex size-7 items-center justify-center rounded-lg ${isOverflowActive ? 'bg-brand-50 dark:bg-brand-950' : ''}`}
+                >
+                  <IconDotsHorizontal className={`size-5 ${isOverflowActive ? 'text-brand-600 dark:text-brand-400' : ''}`} />
+                </span>
+                עוד
+              </button>
+            )}
             {canCreate && (
               <Link
                 to="/incidents/new"
@@ -302,6 +389,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </nav>
+        {hasMobileOverflow && (
+          <MobileMoreSheet
+            items={mobileOverflowItems}
+            open={moreOpen}
+            onClose={() => setMoreOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

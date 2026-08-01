@@ -25,6 +25,49 @@ async function dragHandleBy(page: Page, handleName: string, deltaY: number) {
   await page.mouse.up();
 }
 
+/** Waits for one rendered animation frame -- dnd-kit's keyboard sensor
+ *  measures collision rects via requestAnimationFrame after pickup and after
+ *  each arrow-key move, so firing the next key event immediately (with no
+ *  gap) can race that measurement under CPU load and silently drop the
+ *  move. A double rAF round-trip (the second one only scheduled once the
+ *  first has actually painted) is a deterministic way to wait "until the
+ *  browser has settled the last frame", instead of a fixed sleep duration. */
+async function waitForAnimationFrame(page: Page) {
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  );
+}
+
+/**
+ * Keyboard-driven drag via the sortable handle's own dnd-kit contract:
+ * focus -> Space (pick up, confirmed by aria-pressed) -> arrow key (move,
+ * with a settle frame before and after) -> Space to drop or Escape to
+ * cancel (confirmed by aria-pressed clearing). Asserting each intermediate
+ * state, rather than firing all four key events back-to-back, is what makes
+ * this reliable under load: a key sent before dnd-kit has finished
+ * processing the previous one is not guaranteed to register.
+ */
+async function keyboardDragHandle(
+  page: Page,
+  handleName: string,
+  direction: 'ArrowDown' | 'ArrowUp',
+  end: 'drop' | 'cancel',
+) {
+  const handle = page.getByRole('button', { name: handleName });
+  await handle.focus();
+  await expect(handle).toBeFocused();
+
+  await page.keyboard.press('Space');
+  await expect(handle).toHaveAttribute('aria-pressed', 'true');
+
+  await waitForAnimationFrame(page);
+  await page.keyboard.press(direction);
+  await waitForAnimationFrame(page);
+
+  await page.keyboard.press(end === 'drop' ? 'Space' : 'Escape');
+  await expect(handle).not.toHaveAttribute('aria-pressed', 'true');
+}
+
 test.describe('reference-data drag-and-drop reordering', () => {
   test('desktop: dragging a system row by its handle reorders it and survives a reload', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
@@ -54,11 +97,7 @@ test.describe('reference-data drag-and-drop reordering', () => {
     const before = await cardNames(page);
     expect(before.indexOf('אתר 1')).toBeLessThan(before.indexOf('אתר 2'));
 
-    const handle = page.getByRole('button', { name: 'גרירה לשינוי סדר עבור אתר 1' });
-    await handle.focus();
-    await page.keyboard.press('Space');
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Space');
+    await keyboardDragHandle(page, 'גרירה לשינוי סדר עבור אתר 1', 'ArrowDown', 'drop');
 
     await expect(async () => {
       const order = await cardNames(page);
@@ -78,11 +117,7 @@ test.describe('reference-data drag-and-drop reordering', () => {
 
     const before = await cardNames(page);
 
-    const handle = page.getByRole('button', { name: 'גרירה לשינוי סדר עבור אתר 1' });
-    await handle.focus();
-    await page.keyboard.press('Space');
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Escape');
+    await keyboardDragHandle(page, 'גרירה לשינוי סדר עבור אתר 1', 'ArrowDown', 'cancel');
 
     const after = await cardNames(page);
     expect(after).toEqual(before);
