@@ -317,7 +317,7 @@ describe('linked user management and safety rules', () => {
     await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
     await within(main()).findByText('עומר פרץ (דמו)');
     const row = rowFor('עומר פרץ (דמו)');
-    expect(within(row).getByText('טכנאי')).toBeInTheDocument();
+    expect(within(row).getByText('סוג משתמש: טכנאי')).toBeInTheDocument();
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(row).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
     // The row's actions are collapsed behind the overflow trigger and are
@@ -406,6 +406,130 @@ describe('linked user management and safety rules', () => {
   });
 });
 
+describe('renaming personnel', () => {
+  it('renaming a pending entry from שינוי שם updates the displayed name', async () => {
+    const user = await openPersonnel('login-u-supervisor-1');
+    await addPending(user);
+
+    await clickRowAction(user, 'ממתין לבדיקה', 'שינוי שם');
+    const dialog = await screen.findByRole('dialog', { name: 'שינוי שם' });
+    const nameField = within(dialog).getByLabelText(/^שם מלא/) as HTMLInputElement;
+    expect(nameField).toHaveValue('ממתין לבדיקה');
+    await user.clear(nameField);
+    await user.type(nameField, 'שם ממתין חדש');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
+
+    expect(await within(main()).findByText('שם ממתין חדש')).toBeInTheDocument();
+    expect(within(main()).queryByText('ממתין לבדיקה')).not.toBeInTheDocument();
+  });
+
+  it('renaming an active linked profile from שינוי שם updates the displayed name', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+
+    await clickRowAction(user, 'עומר פרץ (דמו)', 'שינוי שם');
+    const dialog = await screen.findByRole('dialog', { name: 'שינוי שם' });
+    expect(within(dialog).getByLabelText(/^שם מלא/)).toHaveValue('עומר פרץ (דמו)');
+    await user.clear(within(dialog).getByLabelText(/^שם מלא/));
+    await user.type(within(dialog).getByLabelText(/^שם מלא/), 'עומר פרץ החדש');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
+
+    expect(await within(main()).findByText('עומר פרץ החדש')).toBeInTheDocument();
+    expect(within(rowFor('עומר פרץ החדש')).getByText('סוג משתמש: טכנאי')).toBeInTheDocument();
+  });
+
+  it('renaming an inactive linked profile from שינוי שם updates the displayed name', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+    await clickRowAction(user, 'עומר פרץ (דמו)', 'עריכה');
+    await user.click(within(rowFor('עומר פרץ (דמו)')).getByRole('button', { name: 'השבתה' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'השבתת משתמש' })).getByRole('button', { name: 'השבתה' }));
+    await user.click(screen.getByRole('tab', { name: /^לא פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+
+    await clickRowAction(user, 'עומר פרץ (דמו)', 'שינוי שם');
+    const dialog = await screen.findByRole('dialog', { name: 'שינוי שם' });
+    await user.clear(within(dialog).getByLabelText(/^שם מלא/));
+    await user.type(within(dialog).getByLabelText(/^שם מלא/), 'עומר לא פעיל חדש');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
+
+    expect(await within(main()).findByText('עומר לא פעיל חדש')).toBeInTheDocument();
+  });
+
+  it('shows a live character count and rejects an invalid name without submitting', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+    await clickRowAction(user, 'עומר פרץ (דמו)', 'שינוי שם');
+
+    const dialog = await screen.findByRole('dialog', { name: 'שינוי שם' });
+    expect(within(dialog).getByText(/^\d+\/60 תווים$/)).toBeInTheDocument();
+
+    const nameField = within(dialog).getByLabelText(/^שם מלא/);
+    await user.clear(nameField);
+    await user.type(nameField, 'Tech123');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
+
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('אותיות');
+    // Rejected client-side: the dialog stays open and no change reached the list.
+    expect(screen.getByRole('dialog', { name: 'שינוי שם' })).toBeInTheDocument();
+    expect(within(main()).getByText('עומר פרץ (דמו)')).toBeInTheDocument();
+  });
+
+  it('the ActionMenu offers שינוי שם alongside the existing actions, without removing them', async () => {
+    const user = await openPersonnel('login-u-admin');
+    await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+    await within(main()).findByText('עומר פרץ (דמו)');
+    const menu = await openRowMenu(user, 'עומר פרץ (דמו)');
+    expect(within(menu).getByRole('menuitem', { name: 'עריכה' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'שינוי שם' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'מחיקה' })).toBeInTheDocument();
+  });
+
+  it("shows the stored avatar image for a linked profile that has one, and the initials fallback for one that doesn't", async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const spy = vi.spyOn(LocalDemoRepository.prototype, 'listPersonnel').mockResolvedValue([
+      {
+        kind: 'linked',
+        id: 'avatar-user',
+        fullName: 'בעל תמונה',
+        email: 'avatar.user@example.com',
+        role: 'technician',
+        state: 'active',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        avatarUrl: 'https://example.test/avatar.png',
+      },
+      {
+        kind: 'linked',
+        id: 'no-avatar-user',
+        fullName: 'ללא תמונה',
+        email: 'no.avatar@example.com',
+        role: 'technician',
+        state: 'active',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        avatarUrl: null,
+      },
+    ]);
+    try {
+      const user = await openPersonnel('login-u-admin');
+      await user.click(screen.getByRole('tab', { name: /^פעילים/ }));
+      const withAvatar = await within(main()).findByText('בעל תמונה');
+      const withAvatarRow = withAvatar.closest('[data-personnel-row]') as HTMLElement;
+      const img = withAvatarRow.querySelector('img');
+      expect(img).not.toBeNull();
+      expect(img).toHaveAttribute('src', 'https://example.test/avatar.png');
+
+      const withoutAvatarRow = (within(main()).getByText('ללא תמונה')).closest('[data-personnel-row]') as HTMLElement;
+      expect(withoutAvatarRow.querySelector('img')).toBeNull();
+      expect(within(withoutAvatarRow).getByText('ל')).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('search', () => {
   it('filters by name or Google email within the active tab', async () => {
     const user = await openPersonnel('login-u-admin');
@@ -482,7 +606,7 @@ describe('permanent deletion', () => {
     const row = await within(main()).findByText('מאיה רוזן (דמו)');
     const rowEl = row.closest('[data-personnel-row]') as HTMLElement;
     expect(within(rowEl).getByText('נמחק')).toBeInTheDocument();
-    expect(within(rowEl).getByText('אחמ״ש')).toBeInTheDocument(); // historical role preserved
+    expect(within(rowEl).getByText('סוג משתמש: אחמ״ש')).toBeInTheDocument(); // historical role preserved
     expect(menuTriggerIn(rowEl)).not.toBeInTheDocument();
     expect(within(rowEl).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
     expect(within(rowEl).queryByRole('button', { name: 'הפעלה' })).not.toBeInTheDocument();
@@ -702,9 +826,12 @@ describe('row action menu', () => {
 
     const menu = await within(rowFor('עומר פרץ (דמו)')).findByRole('menu');
     const edit = within(menu).getByRole('menuitem', { name: 'עריכה' });
+    const rename = within(menu).getByRole('menuitem', { name: 'שינוי שם' });
     const remove = within(menu).getByRole('menuitem', { name: 'מחיקה' });
     await waitFor(() => expect(edit).toHaveFocus());
 
+    await user.keyboard('{ArrowDown}');
+    expect(rename).toHaveFocus();
     await user.keyboard('{ArrowDown}');
     expect(remove).toHaveFocus();
     // Roving focus wraps rather than dead-ending.

@@ -63,6 +63,7 @@ vi.mock('../data', () => ({
     getProfile: (...args: unknown[]) => state.getProfile(...args),
     claimPendingProfile: (...args: unknown[]) => state.claimPending(...args),
     bootstrapFirstAdmin: (...args: unknown[]) => state.bootstrapAdmin(...args),
+    setOwnAvatarUrl: async () => {},
     listProfiles: async () => [],
     listSystems: async () => [],
     listLocations: async () => [],

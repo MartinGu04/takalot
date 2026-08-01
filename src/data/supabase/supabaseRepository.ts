@@ -26,6 +26,7 @@ import type {
   CreateHandoverInput,
   CreateIncidentInput,
   PendingPersonnelInput,
+  RenamePersonnelInput,
   ReopenIncidentInput,
   TechnicianUpdateInput,
   UpdateIncidentInput,
@@ -231,6 +232,7 @@ export class SupabaseRepository implements Repository {
       role: r.role,
       active: r.active,
       createdAt: r.created_at,
+      avatarUrl: r.avatar_url ?? null,
     }));
   }
 
@@ -238,7 +240,14 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.client.from('profiles').select('*').eq('id', userId).maybeSingle();
     wrap(error);
     return data
-      ? { id: data.id, fullName: data.full_name, role: data.role, active: data.active, createdAt: data.created_at }
+      ? {
+          id: data.id,
+          fullName: data.full_name,
+          role: data.role,
+          active: data.active,
+          createdAt: data.created_at,
+          avatarUrl: data.avatar_url ?? null,
+        }
       : null;
   }
 
@@ -312,6 +321,14 @@ export class SupabaseRepository implements Repository {
     await this.rpc('admin_set_user_active', { p_user_id: userId, p_active: active });
   }
 
+  async renameLinkedPersonnel(_s: Session, userId: string, input: RenamePersonnelInput): Promise<void> {
+    await this.rpc('admin_set_user_name', { p_user_id: userId, p_full_name: input.fullName });
+  }
+
+  async setOwnAvatarUrl(avatarUrl: string | null): Promise<void> {
+    await this.rpc('set_own_avatar_url', { p_avatar_url: avatarUrl });
+  }
+
   async deleteUser(_s: Session, userId: string): Promise<void> {
     // The shared client (src/data/supabase/client.ts) automatically attaches
     // the current session's access token to every function invocation --
@@ -343,6 +360,14 @@ export class SupabaseRepository implements Repository {
     const data = await this.rpc<Record<string, unknown>>('update_pending_personnel', {
       p_id: id,
       p_input: input,
+    });
+    return mapPendingPersonnel(data);
+  }
+
+  async renamePendingPersonnel(_s: Session, id: string, input: RenamePersonnelInput): Promise<PendingPersonnel> {
+    const data = await this.rpc<Record<string, unknown>>('rename_pending_personnel', {
+      p_id: id,
+      p_full_name: input.fullName,
     });
     return mapPendingPersonnel(data);
   }
@@ -404,6 +429,7 @@ export class SupabaseRepository implements Repository {
       role: r.role as Role,
       state: r.state as PersonnelEntry['state'],
       createdAt: r.created_at as string,
+      avatarUrl: (r.avatar_url as string | null) ?? null,
     }));
 
     // list_personnel() predates the tombstone model (migration 0012) and

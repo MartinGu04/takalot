@@ -27,6 +27,7 @@ import type {
   CreateHandoverInput,
   CreateIncidentInput,
   PendingPersonnelInput,
+  RenamePersonnelInput,
   ReopenIncidentInput,
   TechnicianUpdateInput,
   UpdateIncidentInput,
@@ -138,11 +139,25 @@ export interface Repository {
    * action when it already knows it would be rejected.
    */
   deleteUser(session: Session, userId: string): Promise<void>;
+  /**
+   * Renames an already-linked profile (active or inactive). Same role
+   * ceilings and self-exclusion as setUserRole/setUserActive; a
+   * tombstoned ('deleted') profile is rejected. Never touches role,
+   * active state, or anything else -- name only.
+   */
+  renameLinkedPersonnel(session: Session, userId: string, input: RenamePersonnelInput): Promise<void>;
 
   // --- pre-provisioned personnel (supabase-mode onboarding) ---
   listPendingPersonnel(session: Session): Promise<PendingPersonnel[]>;
   createPendingPersonnel(session: Session, input: PendingPersonnelInput): Promise<PendingPersonnel>;
   updatePendingPersonnel(session: Session, id: string, input: PendingPersonnelInput): Promise<PendingPersonnel>;
+  /**
+   * Renames a pending entry only -- the same role ceiling as
+   * createPendingPersonnel/updatePendingPersonnel, but touches only the
+   * name. The renamed value is what claimPendingProfile() later uses when
+   * the person signs in for the first time.
+   */
+  renamePendingPersonnel(session: Session, id: string, input: RenamePersonnelInput): Promise<PendingPersonnel>;
   cancelPendingPersonnel(session: Session, id: string): Promise<void>;
   /**
    * Attempts to claim the authenticated identity's matching pending entry.
@@ -168,6 +183,15 @@ export interface Repository {
    * later user goes through pending_personnel.
    */
   bootstrapFirstAdmin(): Promise<Profile | null>;
+  /**
+   * Best-effort persistence of the CALLER's OWN avatar image URL, from
+   * data their own already-authenticated session already holds -- never
+   * reads or exposes auth.users, and never touches any field but
+   * avatar_url on the caller's own row. Safe to call whenever a fresher
+   * value is available (e.g. every sign-in); never blocks or fails the
+   * surrounding auth flow.
+   */
+  setOwnAvatarUrl(avatarUrl: string | null): Promise<void>;
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;

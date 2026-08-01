@@ -2254,6 +2254,159 @@ describe('linked-personnel management (mirrors migration 0010 rules)', () => {
   });
 });
 
+describe('renaming personnel (mirrors migration 0034 rules)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  describe('already-linked profiles (active or inactive)', () => {
+    it('shift_supervisor renames an active technician within ceiling', async () => {
+      await repo.renameLinkedPersonnel(supervisor1, DEMO_USERS.tech1, { fullName: 'שם חדש' });
+      const profile = await repo.getProfile(DEMO_USERS.tech1);
+      expect(profile).toMatchObject({ fullName: 'שם חדש' });
+    });
+
+    it('renames an INACTIVE profile just as well as an active one', async () => {
+      await repo.setUserActive(admin, DEMO_USERS.tech2, false);
+      await repo.renameLinkedPersonnel(admin, DEMO_USERS.tech2, { fullName: 'טכנאי לא פעיל חדש' });
+      const profile = await repo.getProfile(DEMO_USERS.tech2);
+      expect(profile).toMatchObject({ fullName: 'טכנאי לא פעיל חדש', active: false });
+    });
+
+    it('rejects renaming a permanently deleted (tombstoned) profile', async () => {
+      // supervisor2 owns no open incidents in the seed data, so it can be
+      // tombstoned cleanly to set up this case.
+      await repo.deleteUser(admin, DEMO_USERS.supervisor2);
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.supervisor2, { fullName: 'שם אחרי מחיקה' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('role-ceiling rejection: shift_supervisor cannot rename a professional_manager', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(supervisor1, DEMO_USERS.manager, { fullName: 'שם חדש' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('no user may rename themselves, even system_admin', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.admin, { fullName: 'שם עצמי חדש' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('rejects a blank name', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: '   ' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('rejects a 1-character name (below the 2-character minimum)', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'א' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('rejects a name over 60 characters', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'א'.repeat(61) }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('rejects a name containing digits or symbols', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'Tech123' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('accepts a normal Hebrew name and a normal English name with a hyphen and apostrophe', async () => {
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'משה כהן' }),
+      ).resolves.toBeUndefined();
+      await expect(
+        repo.renameLinkedPersonnel(admin, DEMO_USERS.tech2, { fullName: "Mary-Jane O'Neil" }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('is audited as user_renamed', async () => {
+      await repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'שם חדש' });
+      const logs = await repo.listAuditLogs(admin, {});
+      expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['user_renamed']));
+    });
+  });
+
+  describe('pending entries', () => {
+    const input = (over: Partial<{ fullName: string; email: string; role: Session['role'] }> = {}) => ({
+      fullName: 'ממתין לבדיקה',
+      email: 'pending.rename@example.com',
+      role: 'technician' as Session['role'],
+      ...over,
+    });
+
+    it('shift_supervisor renames a pending technician entry within ceiling', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      const renamed = await repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'שם עודכן' });
+      expect(renamed).toMatchObject({ fullName: 'שם עודכן', email: 'pending.rename@example.com' });
+    });
+
+    it('role-ceiling rejection: shift_supervisor cannot rename a pending professional_manager entry', async () => {
+      const entry = await repo.createPendingPersonnel(admin, input({ role: 'professional_manager' }));
+      await expect(
+        repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'שם חדש' }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('only a still-pending entry can be renamed -- a cancelled entry is rejected', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.cancelPendingPersonnel(supervisor1, entry.id);
+      await expect(
+        repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'שם חדש' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('rejects invalid names the same way as a linked-profile rename', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await expect(
+        repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: '  ' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+      await expect(
+        repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'a'.repeat(61) }),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+    });
+
+    it('the renamed value is what claimPendingForIdentity uses -- the original name never surfaces again', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'שם אחרי שינוי' });
+      const profile = repo.claimPendingForIdentity({ authUserId: 'auth-rename-1', email: 'pending.rename@example.com' });
+      expect(profile).toMatchObject({ fullName: 'שם אחרי שינוי' });
+    });
+
+    it('a manually admin-renamed profile is never reverted by a later claim (re-login)', async () => {
+      await repo.createPendingPersonnel(supervisor1, input());
+      const claimed = repo.claimPendingForIdentity({ authUserId: 'auth-rename-2', email: 'pending.rename@example.com' });
+      expect(claimed).toMatchObject({ fullName: 'ממתין לבדיקה' });
+
+      await repo.renameLinkedPersonnel(admin, 'auth-rename-2', { fullName: 'שם שונה ידנית על ידי מנהל' });
+
+      // A second "login" for the SAME identity must return the existing
+      // profile untouched -- never re-reading (or reverting to) the
+      // pending row's original name.
+      const reclaimed = repo.claimPendingForIdentity({ authUserId: 'auth-rename-2', email: 'pending.rename@example.com' });
+      expect(reclaimed).toMatchObject({ fullName: 'שם שונה ידנית על ידי מנהל' });
+    });
+
+    it('is audited as personnel_pending_renamed', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'שם עודכן' });
+      // view_audit_full (not just view_audit_incidents) is required to see
+      // non-incident audit entries -- use admin, mirroring the linked-
+      // profile audit assertion above.
+      const logs = await repo.listAuditLogs(admin, {});
+      expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['personnel_pending_renamed']));
+    });
+  });
+});
+
 describe('unified personnel listing across pending + linked (list_personnel mirror, end to end)', () => {
   it('reflects pending, active and inactive personnel together for a manager', async () => {
     const repo = newRepo({ now: FIXED_NOW });

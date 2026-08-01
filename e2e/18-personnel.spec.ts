@@ -42,7 +42,7 @@ test.describe('desktop', () => {
 
     const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
     await expect(row).toBeVisible();
-    await expect(row.getByText('טכנאי')).toBeVisible();
+    await expect(row.getByText('סוג משתמש: טכנאי')).toBeVisible();
     await expect(row.getByRole('combobox')).toHaveCount(0);
     await expect(row.getByRole('button', { name: 'השבתה' })).toHaveCount(0);
     // Row actions now live behind a single overflow trigger rather than as
@@ -56,6 +56,29 @@ test.describe('desktop', () => {
     await row.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
     await expect(row.getByRole('combobox')).toBeVisible();
     await expect(row.getByRole('button', { name: 'השבתה' })).toBeVisible();
+  });
+
+  test('a system_admin renames an active linked profile via שינוי שם; the new name, avatar initial and role line all update', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/personnel');
+    await page.getByRole('tab', { name: /^פעילים/ }).click();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
+    await row.getByRole('button', { name: /^פעולות עבור / }).click();
+    await row.getByRole('menu').getByRole('menuitem', { name: 'שינוי שם' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'שינוי שם' });
+    await expect(dialog).toBeVisible();
+    const nameField = dialog.getByLabel('שם מלא', { exact: false });
+    await expect(nameField).toHaveValue('עומר פרץ (דמו)');
+    await nameField.fill('עומר פרץ המחודש');
+    await dialog.getByRole('button', { name: 'שמירה' }).click();
+
+    const renamedRow = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ המחודש' });
+    await expect(renamedRow).toBeVisible();
+    await expect(renamedRow.getByText('סוג משתמש: טכנאי')).toBeVisible();
+    // The avatar's initial letter fallback reflects the new name.
+    await expect(renamedRow.locator('span[aria-hidden="true"]', { hasText: 'ע' })).toBeVisible();
   });
 
   test('technician does not see כוח אדם and is blocked from /personnel directly', async ({ page }) => {
@@ -126,5 +149,33 @@ test.describe('mobile', () => {
     await expect(confirm).toBeVisible();
     await confirm.getByRole('button', { name: 'ביטול הרישום' }).click();
     await expect(page.getByText('שם עודכן נייד')).toHaveCount(0);
+  });
+
+  test('renaming a pending entry via שינוי שם works at mobile width, as a bottom sheet', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.supervisor1);
+    await page.goto('/personnel');
+
+    await page.getByRole('button', { name: 'הוספת איש צוות' }).click();
+    let dialog = page.getByRole('dialog', { name: 'הוספת איש צוות' });
+    await dialog.getByLabel('שם מלא', { exact: false }).fill('לשינוי שם נייד');
+    await dialog.getByLabel('כתובת חשבון Google', { exact: false }).fill('mobile.rename@example.com');
+    await dialog.getByRole('button', { name: 'הוספה' }).click();
+    await expect(page.getByText('לשינוי שם נייד')).toBeVisible();
+
+    const row = page.locator('[data-personnel-row]', { hasText: 'לשינוי שם נייד' });
+    await row.getByRole('button', { name: /^פעולות עבור / }).click();
+    await row.getByRole('menu').getByRole('menuitem', { name: 'שינוי שם' }).click();
+
+    dialog = page.getByRole('dialog', { name: 'שינוי שם' });
+    await expect(dialog).toBeVisible();
+    // Bottom sheet on mobile, same as every other Dialog-based flow.
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y + box!.height).toBeGreaterThanOrEqual(844 - 4);
+
+    await dialog.getByLabel('שם מלא', { exact: false }).fill('שם שונה בנייד');
+    await dialog.getByRole('button', { name: 'שמירה' }).click();
+    await expect(page.getByText('שם שונה בנייד')).toBeVisible();
+    await expect(page.getByText('לשינוי שם נייד')).toHaveCount(0);
   });
 });

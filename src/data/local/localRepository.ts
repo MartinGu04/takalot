@@ -32,6 +32,7 @@ import {
   createHandoverSchema,
   createIncidentSchema,
   pendingPersonnelInputSchema,
+  renamePersonnelInputSchema,
   reopenIncidentSchema,
   technicianUpdateSchema,
   updateIncidentSchema,
@@ -42,6 +43,7 @@ import {
   type CreateHandoverInput,
   type CreateIncidentInput,
   type PendingPersonnelInput,
+  type RenamePersonnelInput,
   type ReopenIncidentInput,
   type TechnicianUpdateInput,
   type UpdateIncidentInput,
@@ -637,6 +639,31 @@ export class LocalDemoRepository implements Repository {
     this.persist();
   }
 
+  async renameLinkedPersonnel(session: Session, userId: string, rawInput: RenamePersonnelInput): Promise<void> {
+    const actor = this.requirePersonnelManager(session);
+    if (userId === actor.id) {
+      throw new AppError('FORBIDDEN', 'לא ניתן לשנות את השם של עצמך.');
+    }
+    const input = parseOrThrow(renamePersonnelInputSchema, rawInput);
+    const profile = this.db.profiles.find((p) => p.id === userId);
+    if (!profile) throw new AppError('NOT_FOUND', 'המשתמש לא נמצא.');
+    if (!allowedManageRoles(actor.role).includes(profile.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לנהל משתמש בתפקיד זה.');
+    }
+    // Mirrors migration 0034: a tombstoned profile's name is permanent
+    // historical record, not an editable field.
+    if (profile.deletedAt) {
+      throw new AppError('VALIDATION', 'לא ניתן לשנות שם למשתמש שנמחק.');
+    }
+    const before = profile.fullName;
+    profile.fullName = input.fullName;
+    this.audit(actor.id, 'user_renamed', 'profile', userId, {
+      before: JSON.stringify({ fullName: before }),
+      after: JSON.stringify({ fullName: profile.fullName }),
+    });
+    this.persist();
+  }
+
   async deleteUser(session: Session, userId: string): Promise<void> {
     // Mirrors migration 0013's admin_delete_user(): same authorization
     // shape as setUserRole/setUserActive above, plus the open-incident
@@ -746,6 +773,7 @@ export class LocalDemoRepository implements Repository {
         role: r.role,
         state: 'pending' as const,
         createdAt: r.createdAt,
+        avatarUrl: null,
       }));
     const linked: PersonnelEntry[] = this.db.profiles.map((p) => ({
       kind: 'linked' as const,
@@ -755,6 +783,7 @@ export class LocalDemoRepository implements Repository {
       role: p.role,
       state: p.deletedAt ? ('deleted' as const) : p.active ? ('active' as const) : ('inactive' as const),
       createdAt: p.createdAt,
+      avatarUrl: p.avatarUrl ?? null,
     }));
     const byCreatedDesc = (a: PersonnelEntry, b: PersonnelEntry) => b.createdAt.localeCompare(a.createdAt);
     return [...linked.sort(byCreatedDesc), ...pending.sort(byCreatedDesc)];
@@ -857,6 +886,26 @@ export class LocalDemoRepository implements Repository {
     return { ...row };
   }
 
+  async renamePendingPersonnel(session: Session, id: string, rawInput: RenamePersonnelInput): Promise<PendingPersonnel> {
+    const actor = this.requirePersonnelManager(session);
+    const input = parseOrThrow(renamePersonnelInputSchema, rawInput);
+    const row = this.pendingRows().find((r) => r.id === id);
+    if (!row) throw new AppError('NOT_FOUND', 'הרישום לא נמצא.');
+    if (row.status !== 'pending') throw new AppError('VALIDATION', 'ניתן לשנות שם רק לרישום ממתין.');
+    if (!allowedAssignRoles(actor.role).includes(row.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לשנות את שמו של רישום זה.');
+    }
+    const before = row.fullName;
+    row.fullName = input.fullName;
+    row.updatedAt = this.now().toISOString();
+    this.audit(actor.id, 'personnel_pending_renamed', 'pending_personnel', row.id, {
+      before: JSON.stringify({ fullName: before }),
+      after: JSON.stringify({ fullName: row.fullName }),
+    });
+    this.persist();
+    return { ...row };
+  }
+
   async cancelPendingPersonnel(session: Session, id: string): Promise<void> {
     const actor = this.requirePersonnelManager(session);
     const row = this.pendingRows().find((r) => r.id === id);
@@ -880,6 +929,11 @@ export class LocalDemoRepository implements Repository {
     // Demo sessions have no external identity provider, so there is never
     // anything to claim through the production interface method.
     return null;
+  }
+
+  async setOwnAvatarUrl(_avatarUrl: string | null): Promise<void> {
+    // Demo mode has no OAuth session and therefore no provider image to
+    // persist -- AuthContext's DemoAuthProvider never calls this method.
   }
 
   async bootstrapFirstAdmin(): Promise<Profile | null> {

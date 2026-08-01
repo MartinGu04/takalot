@@ -438,3 +438,21 @@ export const pendingPersonnelInputSchema = z.object({
 });
 
 export type PendingPersonnelInput = z.infer<typeof pendingPersonnelInputSchema>;
+
+/** Renaming only -- pending entry or already-linked profile. Deliberately
+ *  narrower than pendingPersonnelInputSchema's fullName rule (1-120 chars,
+ *  no charset restriction): 2-60 characters after trimming, and restricted
+ *  to letters (any script -- Hebrew, English or otherwise; never
+ *  ASCII-only), spaces, hyphens, apostrophes and periods. Mirrors the SQL
+ *  charset check in admin_set_user_name/rename_pending_personnel
+ *  (migration 0034) exactly. */
+export const renamePersonnelInputSchema = z.object({
+  fullName: z
+    .string()
+    .trim()
+    .min(2, 'שם: לפחות 2 תווים')
+    .max(60, 'שם: עד 60 תווים')
+    .regex(/^[\p{L}\s'’.-]+$/u, 'השם יכול להכיל אותיות, רווחים, מקפים וגרשים בלבד'),
+});
+
+export type RenamePersonnelInput = z.infer<typeof renamePersonnelInputSchema>;
