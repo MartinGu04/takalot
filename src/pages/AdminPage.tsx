@@ -1,12 +1,31 @@
 // System administrator screen: systems/positions, locations, audit log.
 // User/personnel management lives on the dedicated כוח אדם page (/personnel).
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type Announcements,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useSession } from '../auth/AuthContext';
 import { useProfiles, useSystems, useLocations, useAuditLogs, useAppMutation, repo } from '../data/hooks';
+import { hasCapability } from '../domain/permissions';
 import { Badge, Button, Dialog, EmptyState, ErrorState, Field, Input, Spinner, useToast } from '../components/ui';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { FloatingPopover } from '../components/FloatingPopover';
-import { IconChevronDown, IconTrash } from '../components/icons';
+import { IconTrash } from '../components/icons';
 import type { LocationRecord, SystemRecord } from '../domain/types';
 import { formatDateTime } from '../lib/time';
 
@@ -34,180 +53,130 @@ const CONFIG_COPY = {
   },
 } as const;
 
-function MoveMenu({
+const DRAG_SCREEN_READER_INSTRUCTIONS = {
+  draggable:
+    'לחצו על מקש הרווח כדי להתחיל בגרירה של הפריט. השתמשו בחצים למעלה ולמטה כדי להעביר את הפריט למיקום אחר ברשימה, לחצו שוב על הרווח כדי לשמור את המיקום החדש, או על מקש Escape כדי לבטל את הגרירה ולחזור למיקום הקודם.',
+};
+
+function usePrefersReducedMotion(): boolean {
+  return useMemo(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
+}
+
+function DragHandle({
   recordName,
-  canMoveUp,
-  canMoveDown,
   disabled,
-  onMove,
+  attributes,
+  listeners,
 }: {
   recordName: string;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
   disabled: boolean;
-  onMove: (direction: 'up' | 'down') => void;
+  attributes: ReturnType<typeof useSortable>['attributes'];
+  listeners: ReturnType<typeof useSortable>['listeners'];
 }) {
-  const [open, setOpen] = useState(false);
-  const menuId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const focusOnOpen = useRef<'first' | 'last'>('first');
+  return (
+    <button
+      type="button"
+      {...attributes}
+      {...listeners}
+      disabled={disabled}
+      aria-label={`גרירה לשינוי סדר עבור ${recordName}`}
+      title="גרירה לשינוי סדר"
+      className="inline-flex min-h-11 w-11 shrink-0 touch-none items-center justify-center self-start rounded-lg border border-hairline-strong bg-surface text-lg leading-none text-text-secondary shadow-soft hover:bg-surface-hover active:cursor-grabbing lg:self-center disabled:cursor-not-allowed disabled:opacity-40"
+      style={{ cursor: disabled ? undefined : 'grab' }}
+    >
+      <span aria-hidden="true">⠿</span>
+    </button>
+  );
+}
 
-  const menuItems = () =>
-    Array.from(
-      panelRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [],
-    );
-
-  const openMenu = (focus: 'first' | 'last') => {
-    focusOnOpen.current = focus;
-    setOpen(true);
-  };
-
-  const closeAndFocusTrigger = () => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
-
-  const selectDirection = (direction: 'up' | 'down') => {
-    setOpen(false);
-    triggerRef.current?.focus();
-    onMove(direction);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const timer = window.setTimeout(() => {
-      const items = menuItems();
-      const target = focusOnOpen.current === 'last' ? items.at(-1) : items[0];
-      target?.focus();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target)) {
-        setOpen(false);
-      }
-    };
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeAndFocusTrigger();
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onEscape);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onEscape);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  const focusAdjacentPageControl = (backwards: boolean) => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const controls = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    ).filter((element) => !panelRef.current?.contains(element));
-    const currentIndex = controls.indexOf(trigger);
-    controls[currentIndex + (backwards ? -1 : 1)]?.focus();
-  };
-
-  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      setOpen(false);
-      focusAdjacentPageControl(event.shiftKey);
-      return;
-    }
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    const items = menuItems();
-    if (items.length === 0) return;
-    event.preventDefault();
-    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-    if (event.key === 'Home') {
-      items[0].focus();
-    } else if (event.key === 'End') {
-      items.at(-1)?.focus();
-    } else {
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + step + items.length) % items.length;
-      items[nextIndex].focus();
-    }
-  };
+function ConfigRow({
+  record,
+  canReorder,
+  busy,
+  onOpenRename,
+  onReactivate,
+  onDeactivateRequest,
+  onDeleteRequest,
+}: {
+  record: ConfigRecord;
+  canReorder: boolean;
+  busy: boolean;
+  onOpenRename: () => void;
+  onReactivate: () => void;
+  onDeactivateRequest: () => void;
+  onDeleteRequest: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: record.id,
+    disabled: !canReorder || busy,
+  });
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={disabled || (!canMoveUp && !canMoveDown)}
-        aria-label={`שינוי סדר עבור ${recordName}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={menuId}
-        onClick={() => (open ? setOpen(false) : openMenu('first'))}
-        onKeyDown={(event) => {
-          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            openMenu(event.key === 'ArrowUp' ? 'last' : 'first');
-          }
-        }}
-        className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-hairline-strong bg-surface px-2.5 py-2 text-sm font-medium text-text-primary shadow-soft hover:bg-surface-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
-      >
-        שינוי סדר
-        <IconChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      <FloatingPopover
-        anchorRef={triggerRef}
-        panelRef={panelRef}
-        open={open}
-        width={156}
-        align="start"
-        className="popover-panel z-50 animate-scale-in p-1.5"
-      >
-        <div
-          id={menuId}
-          role="menu"
-          aria-label={`אפשרויות שינוי סדר עבור ${recordName}`}
-          onKeyDown={handleMenuKeyDown}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            disabled={!canMoveUp || disabled}
-            onClick={() => selectDirection('up')}
-            className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-right text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <span aria-hidden="true">↑</span>
-            למעלה
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            disabled={!canMoveDown || disabled}
-            onClick={() => selectDirection('down')}
-            className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-right text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <span aria-hidden="true">↓</span>
-            למטה
-          </button>
+    <article
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: prefersReducedMotion ? undefined : transition,
+      }}
+      className={`surface p-4 ${isDragging ? 'relative z-10 shadow-lg ring-2 ring-brand-500 dark:ring-brand-400' : ''}`}
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        {canReorder && (
+          <DragHandle
+            recordName={record.name}
+            disabled={busy}
+            attributes={attributes}
+            listeners={listeners}
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className={`break-words font-semibold ${record.archived ? 'text-muted' : ''}`}>
+              {record.name}
+            </h2>
+            <Badge color={record.archived ? 'neutral' : 'green'}>
+              {record.archived ? 'לא פעיל' : 'פעיל'}
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted">סדר תצוגה: {record.displayOrder}</p>
         </div>
-      </FloatingPopover>
-    </>
+
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:justify-end">
+          <Button variant="accent" className="px-2.5!" disabled={busy} onClick={onOpenRename}>
+            שינוי שם
+          </Button>
+          {record.archived ? (
+            <Button variant="success" className="px-2!" disabled={busy} onClick={onReactivate}>
+              הפעלה מחדש
+            </Button>
+          ) : (
+            <Button variant="warning" className="px-2!" disabled={busy} onClick={onDeactivateRequest}>
+              השבתה
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            className="size-11 shrink-0 border border-transparent bg-transparent p-0! text-red-700! shadow-none hover:border-red-300! hover:bg-red-50! hover:text-red-800! focus-visible:border-red-300! focus-visible:bg-red-50! focus-visible:outline-red-600 dark:text-red-400! dark:hover:border-red-900! dark:hover:bg-red-950/40! dark:hover:text-red-300! dark:focus-visible:border-red-900! dark:focus-visible:bg-red-950/40! dark:focus-visible:outline-red-400"
+            disabled={busy}
+            aria-label={`מחיקת ${record.name}`}
+            title={`מחיקת ${record.name}`}
+            onClick={onDeleteRequest}
+          >
+            <IconTrash className="size-5" />
+          </Button>
+        </div>
+      </div>
+    </article>
   );
 }
 
 function ConfigTab({ kind }: { kind: ConfigKind }) {
   const session = useSession();
+  const canReorder = hasCapability(session.role, 'manage_config');
   const systemsQ = useSystems();
   const locationsQ = useLocations();
   const query = kind === 'systems' ? systemsQ : locationsQ;
@@ -220,6 +189,8 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
   const [confirming, setConfirming] = useState<
     { type: 'deactivate' | 'delete'; record: ConfigRecord } | null
   >(null);
+  const [orderedRecords, setOrderedRecords] = useState<ConfigRecord[]>([]);
+  const previousOrderRef = useRef<ConfigRecord[]>([]);
 
   const create = useAppMutation(
     (n: string) => (kind === 'systems' ? repo().createSystem(session, n) : repo().createLocation(session, n)),
@@ -239,13 +210,6 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
       invalidate: [[kind]],
       onSuccess: () => setRenaming(null),
     },
-  );
-  const move = useAppMutation(
-    (vars: { id: string; direction: 'up' | 'down' }) =>
-      kind === 'systems'
-        ? repo().moveSystem(session, vars.id, vars.direction)
-        : repo().moveLocation(session, vars.id, vars.direction),
-    { successText: 'סדר התצוגה עודכן.', invalidate: [[kind]] },
   );
   const setArchived = useAppMutation(
     (vars: { id: string; archived: boolean }) =>
@@ -272,6 +236,28 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
       },
     },
   );
+  const reorder = useAppMutation(
+    (orderedIds: string[]) =>
+      kind === 'systems'
+        ? repo().reorderSystems(session, orderedIds)
+        : repo().reorderLocations(session, orderedIds),
+    {
+      invalidate: [[kind]],
+      onError: (error) => {
+        setOrderedRecords(previousOrderRef.current);
+        toast(error.message, 'error');
+      },
+    },
+  );
+
+  useEffect(() => {
+    if (reorder.isPending) return;
+    setOrderedRecords(data ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, reorder.isPending]);
+
+  const busy =
+    create.isPending || rename.isPending || setArchived.isPending || remove.isPending || reorder.isPending;
 
   const submitCreate = (event: FormEvent) => {
     event.preventDefault();
@@ -283,8 +269,61 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
     setRenameValue(record.name);
   };
 
-  const busy =
-    create.isPending || rename.isPending || move.isPending || setArchived.isPending || remove.isPending;
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const recordName = (id: string) => orderedRecords.find((record) => record.id === String(id))?.name ?? '';
+
+  const announcements: Announcements = {
+    onDragStart({ active }) {
+      return `הוחל בגרירת ${recordName(String(active.id))}.`;
+    },
+    onDragOver({ active, over }) {
+      if (!over) return `${recordName(String(active.id))} אינו ממוקם מעל פריט אחר כרגע.`;
+      if (over.id === active.id) return `${recordName(String(active.id))} חזר למיקומו המקורי.`;
+      return `${recordName(String(active.id))} ממוקם כעת במקום ${recordName(String(over.id))}.`;
+    },
+    onDragEnd({ active, over }) {
+      if (!over || over.id === active.id) return `הגרירה של ${recordName(String(active.id))} בוטלה.`;
+      return `הסדר עודכן: ${recordName(String(active.id))} הועבר למיקום חדש.`;
+    },
+    onDragCancel({ active }) {
+      return `הגרירה של ${recordName(String(active.id))} בוטלה, הסדר הקודם נשמר.`;
+    },
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    if (reorder.isPending) return;
+    const oldIndex = orderedRecords.findIndex((record) => record.id === active.id);
+    const newIndex = orderedRecords.findIndex((record) => record.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    previousOrderRef.current = orderedRecords;
+    const next = arrayMove(orderedRecords, oldIndex, newIndex);
+    setOrderedRecords(next);
+    reorder.mutate(next.map((record) => record.id));
+  };
+
+  const rows = (): ReactNode => {
+    const items = orderedRecords;
+    if (items.length === 0) return null;
+    return items.map((record) => (
+      <ConfigRow
+        key={record.id}
+        record={record}
+        canReorder={canReorder}
+        busy={busy}
+        onOpenRename={() => openRename(record)}
+        onReactivate={() => setArchived.mutate({ id: record.id, archived: false })}
+        onDeactivateRequest={() => setConfirming({ type: 'deactivate', record })}
+        onDeleteRequest={() => setConfirming({ type: 'delete', record })}
+      />
+    ));
+  };
 
   return (
     <div>
@@ -319,72 +358,21 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
       ) : (data ?? []).length === 0 ? (
         <EmptyState title={copy.empty} subtitle="ניתן להוסיף את הפריט הראשון בטופס למעלה." />
       ) : (
-        <div className="flex flex-col gap-3" aria-label={`רשימת ${copy.plural}`}>
-          {(data ?? []).map((record, index) => (
-            <article key={record.id} className="surface p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className={`break-words font-semibold ${record.archived ? 'text-muted' : ''}`}>
-                      {record.name}
-                    </h2>
-                    <Badge color={record.archived ? 'neutral' : 'green'}>
-                      {record.archived ? 'לא פעיל' : 'פעיל'}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted">סדר תצוגה: {record.displayOrder}</p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:justify-end">
-                  <MoveMenu
-                    recordName={record.name}
-                    canMoveUp={index > 0}
-                    canMoveDown={index < (data?.length ?? 0) - 1}
-                    disabled={busy}
-                    onMove={(direction) => move.mutate({ id: record.id, direction })}
-                  />
-                  <Button
-                    variant="accent"
-                    className="px-2.5!"
-                    disabled={busy}
-                    onClick={() => openRename(record)}
-                  >
-                    שינוי שם
-                  </Button>
-                  {record.archived ? (
-                    <Button
-                      variant="success"
-                      className="px-2!"
-                      disabled={busy}
-                      onClick={() => setArchived.mutate({ id: record.id, archived: false })}
-                    >
-                      הפעלה מחדש
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="warning"
-                      className="px-2!"
-                      disabled={busy}
-                      onClick={() => setConfirming({ type: 'deactivate', record })}
-                    >
-                      השבתה
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    className="size-11 shrink-0 border border-transparent bg-transparent p-0! text-red-700! shadow-none hover:border-red-300! hover:bg-red-50! hover:text-red-800! focus-visible:border-red-300! focus-visible:bg-red-50! focus-visible:outline-red-600 dark:text-red-400! dark:hover:border-red-900! dark:hover:bg-red-950/40! dark:hover:text-red-300! dark:focus-visible:border-red-900! dark:focus-visible:bg-red-950/40! dark:focus-visible:outline-red-400"
-                    disabled={busy}
-                    aria-label={`מחיקת ${record.name}`}
-                    title={`מחיקת ${record.name}`}
-                    onClick={() => setConfirming({ type: 'delete', record })}
-                  >
-                    <IconTrash className="size-5" />
-                  </Button>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          accessibility={{ announcements, screenReaderInstructions: DRAG_SCREEN_READER_INSTRUCTIONS }}
+        >
+          <SortableContext
+            items={orderedRecords.map((record) => record.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex flex-col gap-3" aria-label={`רשימת ${copy.plural}`}>
+              {rows()}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <Dialog open={!!renaming} onClose={() => !rename.isPending && setRenaming(null)} title={`שינוי שם ${copy.singular}`}>

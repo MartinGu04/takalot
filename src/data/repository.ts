@@ -117,11 +117,21 @@ export interface Repository {
   setSystemArchived(session: Session, id: string, archived: boolean): Promise<void>;
   moveSystem(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void>;
   deleteSystem(session: Session, id: string): Promise<ReferenceDataDeleteOutcome>;
+  /**
+   * Persists a complete drag-and-drop reorder in one call: orderedIds must be
+   * exactly the full set of existing system ids (no fewer, no more, no
+   * duplicates), in their new display order. Replaces a sequence of
+   * move_system calls, which only ever swap one adjacent pair at a time and
+   * so cannot safely commit an arbitrary final order atomically.
+   */
+  reorderSystems(session: Session, orderedIds: string[]): Promise<void>;
   createLocation(session: Session, name: string): Promise<LocationRecord>;
   renameLocation(session: Session, id: string, name: string): Promise<void>;
   setLocationArchived(session: Session, id: string, archived: boolean): Promise<void>;
   moveLocation(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void>;
   deleteLocation(session: Session, id: string): Promise<ReferenceDataDeleteOutcome>;
+  /** Same contract as reorderSystems, for locations. */
+  reorderLocations(session: Session, orderedIds: string[]): Promise<void>;
 
   // --- linked-personnel management (role ceilings enforced in the database) ---
   setUserRole(session: Session, userId: string, role: Role): Promise<void>;

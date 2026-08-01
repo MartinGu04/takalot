@@ -293,6 +293,10 @@ export class SupabaseRepository implements Repository {
     return this.referenceDataRpc<ReferenceDataDeleteOutcome>('delete_system', { p_system_id: id });
   }
 
+  async reorderSystems(_s: Session, orderedIds: string[]): Promise<void> {
+    await this.referenceDataRpc('reorder_systems', { p_ids: orderedIds });
+  }
+
   async createLocation(_s: Session, name: string): Promise<LocationRecord> {
     return mapLocation(await this.referenceDataRpc<Record<string, unknown>>('create_location', { p_name: name }));
   }
@@ -311,6 +315,10 @@ export class SupabaseRepository implements Repository {
 
   async deleteLocation(_s: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
     return this.referenceDataRpc<ReferenceDataDeleteOutcome>('delete_location', { p_location_id: id });
+  }
+
+  async reorderLocations(_s: Session, orderedIds: string[]): Promise<void> {
+    await this.referenceDataRpc('reorder_locations', { p_ids: orderedIds });
   }
 
   async setUserRole(_s: Session, userId: string, role: Role): Promise<void> {

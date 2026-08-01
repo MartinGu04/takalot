@@ -422,6 +422,46 @@ export class LocalDemoRepository implements Repository {
     this.persist();
   }
 
+  /**
+   * Batch reorder mirroring the reorder_systems/reorder_locations RPCs
+   * (migration 0035): orderedIds must be exactly the full, duplicate-free
+   * set of existing ids for this entity type, in their new order. Rejects
+   * anything malformed before touching any displayOrder, so a rejected
+   * attempt never leaves a partial reorder behind.
+   */
+  private reorderReferenceData<T extends ReferenceRecord>(
+    records: T[],
+    orderedIds: string[],
+    actorId: string,
+    entityType: 'system' | 'location',
+  ): void {
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+      throw new AppError('VALIDATION', 'יש לספק רשימת מזהים לסידור.');
+    }
+    const uniqueIds = new Set(orderedIds);
+    if (uniqueIds.size !== orderedIds.length) {
+      throw new AppError('VALIDATION', 'רשימת הסידור מכילה מזהים כפולים.');
+    }
+    const recordIds = new Set(records.map((record) => record.id));
+    if (uniqueIds.size !== recordIds.size || orderedIds.some((id) => !recordIds.has(id))) {
+      throw new AppError(
+        'VALIDATION',
+        entityType === 'system'
+          ? 'רשימת הסידור אינה תואמת את המערכות / העמדות הקיימות.'
+          : 'רשימת הסידור אינה תואמת את המיקומים הקיימים.',
+      );
+    }
+
+    orderedIds.forEach((id, index) => {
+      const record = records.find((r) => r.id === id)!;
+      record.displayOrder = index + 1;
+    });
+    this.audit(actorId, `${entityType}s_reordered`, entityType, 'bulk', {
+      after: JSON.stringify({ order: orderedIds }),
+    });
+    this.persist();
+  }
+
   async createSystem(session: Session, name: string): Promise<SystemRecord> {
     const actor = this.requireCap(session, 'manage_config');
     const validName = this.requireName(name);
@@ -471,6 +511,11 @@ export class LocalDemoRepository implements Repository {
   async moveSystem(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void> {
     const actor = this.requireCap(session, 'manage_config');
     this.moveReferenceData(this.db.systems, id, direction, actor.id, 'system', 'המערכת לא נמצאה.');
+  }
+
+  async reorderSystems(session: Session, orderedIds: string[]): Promise<void> {
+    const actor = this.requireCap(session, 'manage_config');
+    this.reorderReferenceData(this.db.systems, orderedIds, actor.id, 'system');
   }
 
   async deleteSystem(session: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
@@ -546,6 +591,11 @@ export class LocalDemoRepository implements Repository {
   async moveLocation(session: Session, id: string, direction: ReferenceDataMoveDirection): Promise<void> {
     const actor = this.requireCap(session, 'manage_config');
     this.moveReferenceData(this.db.locations, id, direction, actor.id, 'location', 'המיקום לא נמצא.');
+  }
+
+  async reorderLocations(session: Session, orderedIds: string[]): Promise<void> {
+    const actor = this.requireCap(session, 'manage_config');
+    this.reorderReferenceData(this.db.locations, orderedIds, actor.id, 'location');
   }
 
   async deleteLocation(session: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
