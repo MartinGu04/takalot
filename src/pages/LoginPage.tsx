@@ -84,11 +84,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas px-4 py-6 sm:px-6 sm:py-10">
-      <div className="grid w-full max-w-6xl overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated lg:min-h-[40rem] lg:grid-cols-[minmax(0,1.08fr)_minmax(22rem,0.92fr)]">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas p-4 sm:p-6 lg:p-10">
+      <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated lg:h-[calc(100dvh-5rem)] lg:grid-cols-2">
         <AvariaAuthBrandPanel titleTestId="brand-name" />
-        <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-12">
-          <div className="mx-auto w-full max-w-md">
+        <div className="flex flex-col justify-center overflow-y-auto p-6 sm:p-10 lg:h-full lg:p-12">
+          <div className="mx-auto w-full max-w-md py-2">
             <span className="inline-flex items-center rounded-full border border-brand-400/30 bg-brand-500/10 px-3 py-1 text-xs font-semibold text-brand-200">
               ברוכים הבאים
             </span>
@@ -195,7 +195,11 @@ export default function LoginPage() {
         </div>
       </div>
       {demo && (
-        <p className="mt-4 max-w-2xl text-center text-xs text-muted">
+        // At lg the shell already fills the viewport height budget exactly
+        // (card height = 100dvh - outer padding); this caption is pinned as
+        // an overlay there instead of adding flow height that would push
+        // the page into vertical scroll. Below lg it sits in normal flow.
+        <p className="mt-4 max-w-2xl text-center text-xs text-muted lg:fixed lg:inset-x-0 lg:bottom-2 lg:mx-auto lg:mt-0">
           אב־טיפוס להדגמה בלבד. נתונים פיקטיביים. פריסה מבצעית מחייבת אישור ובדיקת אבטחה נפרדים.
         </p>
       )}

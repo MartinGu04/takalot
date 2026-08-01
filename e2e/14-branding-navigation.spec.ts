@@ -37,7 +37,7 @@ test.describe('desktop sidebar', () => {
     const brand = page.getByTestId('brand-name');
     await expect(brand.locator('img')).toHaveAttribute(
       'src',
-      '/branding/avaria-symbol.png',
+      '/branding/avaria-symbol-compact.png',
     );
     await expect(brand).toContainText('AVARIA');
 
@@ -84,7 +84,7 @@ test('desktop sidebar is hidden at mobile width and the bottom nav takes over', 
   await expect(page.getByTestId('desktop-live-clock')).toBeHidden();
   await expect(page.getByTestId('brand-name-mobile').locator('img')).toHaveAttribute(
     'src',
-    '/branding/avaria-symbol.png',
+    '/branding/avaria-symbol-compact.png',
   );
 });
 

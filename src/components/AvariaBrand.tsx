@@ -2,8 +2,21 @@ import { APP_NAME, APP_TAGLINE } from '../domain/labels';
 import { IconAlertTriangle, IconClock } from './icons';
 
 export const AVARIA_FULL_LOGO_SRC = '/branding/avaria-logo-full.png';
+/** The approved symbol, kept byte-for-byte as supplied -- not rendered
+ *  directly anywhere (its large transparent safe-area makes it unsuitable
+ *  for small chrome), but preserved as the canonical brand asset. */
 export const AVARIA_ICON_SRC = '/branding/avaria-symbol.png';
+/** A technical derivative of the symbol for small surfaces (header,
+ *  sidebar, favicons): only the fully-transparent outer margin is trimmed
+ *  (a bounding-box crop around the visible glow/artwork), so the same
+ *  artwork reads clearly at compact sizes. Nothing inside the artwork's
+ *  visible extent is cropped, redrawn, recolored, or distorted. */
+export const AVARIA_ICON_COMPACT_SRC = '/branding/avaria-symbol-compact.png';
 
+/** No default width/height utilities here on purpose: callers set the full
+ * sizing themselves (this component has exactly one call site, which needs
+ * different width AND height rules per breakpoint) so there is never a
+ * same-property class collision to fight with. */
 export function AvariaFullLogo({
   className,
   alt = APP_NAME,
@@ -11,26 +24,22 @@ export function AvariaFullLogo({
   className?: string;
   alt?: string;
 }) {
-  return (
-    <img
-      src={AVARIA_FULL_LOGO_SRC}
-      alt={alt}
-      className={`block h-auto max-w-full object-contain ${className ?? ''}`}
-    />
-  );
+  return <img src={AVARIA_FULL_LOGO_SRC} alt={alt} className={`block object-contain ${className ?? ''}`} />;
 }
 
-/** Compact brand treatment for the authenticated shell (header/sidebar). The
- * approved symbol's glow/highlight artwork is designed for a dark backdrop,
- * so it sits on a small fixed-dark plate regardless of the app's light/dark
- * mode -- a CSS backing, never a modification of the asset itself. */
+/** Compact brand treatment for the authenticated shell (header/sidebar). A
+ * restrained brand-tinted (violet, never flat neutral black) surface with a
+ * visible border and soft brand-colored contact shadow in light mode, and a
+ * softer dark-native border/shadow in dark mode -- a deliberate branded chip
+ * in both themes, not an isolated black block. A CSS treatment only; the
+ * asset itself is untouched. */
 export function AvariaIcon({ className }: { className?: string }) {
   return (
     <span
       aria-hidden
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#0d0a17] p-1 ${className ?? ''}`}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-brand-300 bg-gradient-to-br from-brand-950 to-brand-800 p-1 shadow-[0_2px_8px_-2px_rgba(124,58,237,0.5)] dark:border-white/15 dark:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.6)] ${className ?? ''}`}
     >
-      <img src={AVARIA_ICON_SRC} alt="" className="size-full object-contain" />
+      <img src={AVARIA_ICON_COMPACT_SRC} alt="" className="size-full object-contain" />
     </span>
   );
 }
@@ -49,22 +58,27 @@ export function AvariaAuthBrandPanel({
 }) {
   return (
     <section
-      className={`relative isolate flex overflow-hidden bg-[#0a0716] ${
-        compact ? 'min-h-44 p-6 sm:p-8 lg:min-h-full' : 'min-h-64 p-6 sm:p-10 lg:min-h-full lg:p-12'
+      className={`relative isolate flex overflow-hidden bg-[#0c0918] ${
+        compact ? 'min-h-44 p-6 sm:p-8 lg:min-h-full' : 'h-[180px] px-6 py-4 lg:h-auto lg:min-h-full lg:p-12'
       }`}
       aria-label="AVARIA"
     >
+      {/* Atmosphere stays restrained on mobile (one small soft glow, no
+          grid/band) so the hero reads as part of one continuous surface
+          with the auth content below it, not a separate boxed panel; the
+          fuller decoration only earns its keep once the lg split gives it
+          real room. */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-32 -right-20 size-96 rounded-full bg-brand-600/25 blur-3xl" />
-        <div className="absolute -bottom-40 -left-24 size-96 rounded-full bg-brand-900/40 blur-3xl" />
+        <div className="absolute -top-16 -right-10 size-40 rounded-full bg-brand-600/20 blur-2xl lg:-top-32 lg:-right-20 lg:size-96 lg:bg-brand-600/25 lg:blur-3xl" />
+        <div className="absolute -bottom-40 -left-24 hidden size-96 rounded-full bg-brand-900/40 blur-3xl lg:block" />
         <div
-          className="absolute inset-0 opacity-[0.12]"
+          className="absolute inset-0 hidden opacity-[0.12] lg:block"
           style={{
             backgroundImage: 'radial-gradient(rgba(216,203,255,0.7) 1px, transparent 1px)',
             backgroundSize: '22px 22px',
           }}
         />
-        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-brand-950/60 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 hidden h-1/2 bg-gradient-to-t from-brand-950/60 to-transparent lg:block" />
       </div>
 
       {!compact && (
@@ -103,10 +117,12 @@ export function AvariaAuthBrandPanel({
 
       <div className="relative z-10 m-auto w-full max-w-xl text-center">
         <h1 data-testid={titleTestId}>
-          <AvariaFullLogo className="mx-auto w-full max-w-sm" />
+          <AvariaFullLogo className="mx-auto h-12 w-auto sm:h-14 lg:h-auto lg:w-full lg:max-w-sm" />
         </h1>
-        <span aria-hidden className="mx-auto mt-4 block h-0.5 w-12 rounded-full bg-brand-500" />
-        <p className="mt-4 text-sm font-medium tracking-wide text-white/60 sm:text-base">{APP_TAGLINE}</p>
+        <span aria-hidden className="mx-auto mt-2 block h-0.5 w-8 rounded-full bg-brand-500 lg:mt-4 lg:w-12" />
+        <p className="mt-2 text-xs font-medium tracking-wide text-white/50 sm:text-sm lg:mt-4 lg:text-base lg:text-white/60">
+          {APP_TAGLINE}
+        </p>
       </div>
     </section>
   );
