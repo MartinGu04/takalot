@@ -180,6 +180,16 @@ export function IconDotsVertical(props: IconProps) {
   );
 }
 
+export function IconDotsHorizontal(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="4" cy="10" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="10" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="10" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconChevronLeft(props: IconProps) {
   return (
     <svg {...base(props)}>

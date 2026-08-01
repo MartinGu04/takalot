@@ -18,7 +18,7 @@ describe('RTL layout', () => {
     expect(document.documentElement.getAttribute('lang')).toBe('he');
   });
 
-  it('shows a mobile bottom navigation with at most four primary destinations after login', async () => {
+  it('shows a mobile bottom navigation with a fixed 4-slot layout, overflowing extra destinations into עוד', async () => {
     const user = userEvent.setup();
     render(<App />);
     const loginButton = await screen.findByTestId('login-u-supervisor-1');
@@ -26,16 +26,16 @@ describe('RTL layout', () => {
 
     const bottomNav = await screen.findByRole('navigation', { name: 'ניווט תחתון' });
     const links = within(bottomNav).getAllByRole('link');
-    // "פתיחת תקלה" is an extra floating action, not a primary destination link with text nav item styling —
-    // it is still an <a>, so assert the four labeled destinations are present and total stays small.
-    // supervisor1 is authorized for כוח אדם, which fills the slot freed by removing העברת משמרת from
-    // primary navigation (the handover page/route are untouched, just not linked from here).
+    // supervisor1 now has 5 destinations (מצב נוכחי/תקלות/ארכיון/כוח אדם/דוחות)
+    // -- see src/components/Layout.test.tsx for the full overflow-sheet
+    // coverage. Here: only the first 3 are direct links; the 4th slot is the
+    // "עוד" overflow button (not an <a>), so כוח אדם is not a direct link.
     const destinationLabels = links.map((l) => l.textContent);
-    expect(destinationLabels).toEqual(
-      expect.arrayContaining(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם']),
-    );
+    expect(destinationLabels).toEqual(expect.arrayContaining(['מצב נוכחי', 'תקלות', 'ארכיון']));
+    expect(destinationLabels).not.toContain('כוח אדם');
     expect(destinationLabels).not.toContain('העברת משמרת');
-    expect(links.length).toBeLessThanOrEqual(5); // 4 destinations + prominent create action
+    expect(within(bottomNav).getByRole('button', { name: 'עוד' })).toBeInTheDocument();
+    expect(links.length).toBeLessThanOrEqual(4); // 3 direct destinations + prominent create action
   });
 
   it('exposes the desktop sidebar as a "ניווט ראשי" navigation landmark with all destinations', async () => {

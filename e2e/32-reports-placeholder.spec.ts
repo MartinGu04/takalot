@@ -69,13 +69,20 @@ test.describe('mobile navigation', () => {
     expect(scrollWidth).toBeLessThanOrEqual(391);
   });
 
-  test('a role with Personnel access keeps its existing 4 bottom-nav destinations unchanged (דוחות still reachable via URL)', async ({ page }) => {
+  test('a role with Personnel access reaches דוחות through the עוד overflow sheet, not direct URL access alone', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
     const bottomNav = page.getByRole('navigation', { name: 'ניווט תחתון' });
     const links = bottomNav.getByRole('link').filter({ hasText: /\S/ });
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם']);
+    // Direct destinations unaffected; דוחות (and כוח אדם) move into עוד --
+    // see e2e/33-mobile-nav-overflow.spec.ts for full coverage.
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון']);
 
-    await page.goto('/reports');
+    const moreButton = bottomNav.getByRole('button', { name: 'עוד' });
+    await expect(moreButton).toBeVisible();
+    await moreButton.click();
+    const sheet = page.getByRole('dialog', { name: 'עוד' });
+    await sheet.getByRole('link', { name: 'דוחות' }).click();
+    await expect(page).toHaveURL(/\/reports$/);
     await expect(page.getByRole('heading', { name: 'דוחות' })).toBeVisible();
   });
 });

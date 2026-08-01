@@ -53,16 +53,23 @@ test.describe('mobile navigation', () => {
     return bottomNav.getByRole('link').filter({ hasText: /\S/ });
   }
 
-  test('role with Personnel access: bottom nav gains כוח אדם in the freed slot, no העברת משמרת', async ({ page }) => {
+  test('role with Personnel access: כוח אדם is reachable via the עוד overflow slot, no העברת משמרת', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
     const bottomNav = page.getByRole('navigation', { name: 'ניווט תחתון' });
     await expect(bottomNav).toBeVisible();
+    // supervisor1 now has 5 destinations (מצב נוכחי/תקלות/ארכיון/כוח אדם/דוחות),
+    // so the bottom nav shows only the first 3 as direct links; כוח אדם and
+    // דוחות live in the עוד overflow sheet (see e2e/33-mobile-nav-overflow.spec.ts
+    // for full overflow-sheet coverage across every role).
     const links = destinationLinks(bottomNav);
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון']);
     await expect(bottomNav.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
+    await expect(bottomNav.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
 
-    // Reachable and functional: navigating to כוח אדם from the bottom nav works.
-    await bottomNav.getByRole('link', { name: 'כוח אדם' }).click();
+    // Reachable and functional: navigating to כוח אדם via עוד works.
+    await bottomNav.getByRole('button', { name: 'עוד' }).click();
+    const sheet = page.getByRole('dialog', { name: 'עוד' });
+    await sheet.getByRole('link', { name: 'כוח אדם' }).click();
     await expect(page).toHaveURL(/\/personnel$/);
     await expect(page.getByRole('heading', { name: 'כוח אדם' })).toBeVisible();
   });
@@ -84,7 +91,7 @@ test.describe('mobile navigation', () => {
     await expect(page.getByRole('heading', { name: 'פתיחת תקלה' })).toBeVisible();
   });
 
-  test('no horizontal overflow and no overlap in the bottom nav with 4 items', async ({ page }) => {
+  test('no horizontal overflow and no overlap in the bottom nav with 4 slots (3 direct + עוד)', async ({ page }) => {
     await loginAs(page, DEMO_USERS.supervisor1);
     const overflowX = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(overflowX).toBe(false);
@@ -97,12 +104,15 @@ test.describe('mobile navigation', () => {
       expect(navBox.x + navBox.width).toBeLessThanOrEqual(390 + 1);
     }
 
-    // The 4 destination links themselves don't overlap -- each has a distinct,
-    // non-overlapping x-range. (The floating פתיחת תקלה action is excluded: it is
-    // deliberately centered and overlapping above the row, by design.)
+    // The 3 direct destination links plus the עוד button don't overlap --
+    // each has a distinct, non-overlapping x-range. (The floating פתיחת תקלה
+    // action is excluded: it is deliberately centered and overlapping above
+    // the row, by design.)
     const links = destinationLinks(bottomNav);
-    const boxes = await links.evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
-    const sorted = boxes.slice().sort((a, b) => a.x - b.x);
+    const moreButton = bottomNav.getByRole('button', { name: 'עוד' });
+    const linkBoxes = await links.evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+    const moreBox = await moreButton.evaluate((el) => el.getBoundingClientRect());
+    const sorted = [...linkBoxes, moreBox].sort((a, b) => a.x - b.x);
     for (let i = 1; i < sorted.length; i++) {
       expect(sorted[i].x).toBeGreaterThanOrEqual(sorted[i - 1].x + sorted[i - 1].width - 1);
     }
