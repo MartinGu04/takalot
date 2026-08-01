@@ -11,7 +11,7 @@ test.describe('desktop navigation', () => {
     await loginAs(page, DEMO_USERS.admin);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'דוחות']);
     await expect(sidebar.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
   });
 
@@ -19,7 +19,7 @@ test.describe('desktop navigation', () => {
     await loginAs(page, DEMO_USERS.tech1);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
     await expect(sidebar.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
   });
@@ -28,7 +28,7 @@ test.describe('desktop navigation', () => {
     await loginAs(page, DEMO_USERS.viewer);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
     await expect(sidebar.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
   });
@@ -67,12 +67,12 @@ test.describe('mobile navigation', () => {
     await expect(page.getByRole('heading', { name: 'כוח אדם' })).toBeVisible();
   });
 
-  test('role without Personnel access: bottom nav has exactly 3 destinations, no filler, no העברת משמרת', async ({ page }) => {
+  test('role without Personnel access: bottom nav shows the 3 core destinations plus דוחות, no filler, no העברת משמרת', async ({ page }) => {
     await loginAs(page, DEMO_USERS.tech1);
     const bottomNav = page.getByRole('navigation', { name: 'ניווט תחתון' });
     await expect(bottomNav).toBeVisible();
     const links = destinationLinks(bottomNav);
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
     await expect(bottomNav.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
     await expect(bottomNav.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
   });

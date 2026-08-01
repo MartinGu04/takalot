@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react';
 import type { Role } from '../domain/types';
-import { IconAlertTriangle, IconArchive, IconPulse, IconShield, IconUsers } from './icons';
+import { IconAlertTriangle, IconArchive, IconChartBar, IconPulse, IconShield, IconUsers } from './icons';
 
 export interface NavItem {
   to: string;
@@ -26,5 +26,9 @@ export function navItems(role: Role): NavItem[] {
     items.push({ to: '/personnel', label: 'כוח אדם', icon: IconUsers });
   }
   if (role === 'system_admin') items.push({ to: '/admin', label: 'ניהול', icon: IconShield });
+  // Every authenticated role gets דוחות -- appended last (not alongside the
+  // unconditional items above) so it never displaces כוח אדם/ניהול from the
+  // mobile bottom nav's fixed 4-item slice for roles that already fill it.
+  items.push({ to: '/reports', label: 'דוחות', icon: IconChartBar });
   return items;
 }

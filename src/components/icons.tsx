@@ -56,6 +56,17 @@ export function IconArchive(props: IconProps) {
   );
 }
 
+export function IconChartBar(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 16.5h14" />
+      <rect x="4.5" y="11" width="3" height="5.2" rx="0.6" />
+      <rect x="8.5" y="7.3" width="3" height="9" rx="0.6" />
+      <rect x="12.5" y="3.8" width="3" height="12.5" rx="0.6" />
+    </svg>
+  );
+}
+
 export function IconTrash(props: IconProps) {
   return (
     <svg {...base(props)}>
