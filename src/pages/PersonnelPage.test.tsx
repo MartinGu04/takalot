@@ -311,6 +311,58 @@ describe('editing and cancelling a pending entry', () => {
   });
 });
 
+describe('pending row layout matches the active/inactive row hierarchy', () => {
+  it('shows an initials avatar (never a Google photo) beside a prominent name, with the email directly below', async () => {
+    const user = await openPersonnel('login-u-supervisor-1');
+    await addPending(user);
+    const row = rowFor('ממתין לבדיקה');
+
+    // entry.avatarUrl is always null before first login, so this must be
+    // the initials fallback -- never an <img>.
+    const avatar = row.querySelector('span[aria-hidden="true"]') as HTMLElement;
+    expect(avatar).toBeInTheDocument();
+    expect(avatar).toHaveTextContent('מ');
+    expect(avatar.querySelector('img')).not.toBeInTheDocument();
+
+    const name = within(row).getByText('ממתין לבדיקה');
+    expect(name.tagName).toBe('P');
+    const email = within(row).getByText('pending.check@example.com');
+    expect(email.tagName).toBe('P');
+    expect(email).toHaveAttribute('dir', 'ltr');
+    // Email sits directly under the name -- no role label or other
+    // element wedged between them.
+    expect(name.nextElementSibling).toBe(email);
+  });
+
+  it('keeps the ממתין להתחברות badge and the three-dot actions on the opposite side from the avatar/name/email', async () => {
+    const user = await openPersonnel('login-u-supervisor-1');
+    await addPending(user);
+    const row = rowFor('ממתין לבדיקה');
+
+    expect(within(row).getByText('ממתין להתחברות')).toBeInTheDocument();
+    expect(menuTriggerIn(row)).toBeInTheDocument();
+
+    // Same two-group row shape as an active/inactive row: an
+    // avatar+name/email group, then a status+actions group.
+    expect(row.children).toHaveLength(2);
+    expect(row.children[0].querySelector('span[aria-hidden="true"]')).toBe(
+      row.querySelector('span[aria-hidden="true"]'),
+    );
+    expect(within(row.children[1] as HTMLElement).getByText('ממתין להתחברות')).toBeInTheDocument();
+  });
+
+  it('does not repeat the role as an inline label on the row -- it is shown once, on the group heading', async () => {
+    const user = await openPersonnel('login-u-supervisor-1');
+    await addPending(user);
+    const row = rowFor('ממתין לבדיקה');
+
+    // The technician role group heading (outside the row) still shows the
+    // role; the row itself must not repeat it.
+    expect(screen.getByRole('heading', { name: /^טכנאי/ })).toBeInTheDocument();
+    expect(within(row).queryByText('טכנאי')).not.toBeInTheDocument();
+  });
+});
+
 describe('linked user management and safety rules', () => {
   it('the role select and deactivate button are hidden by default; an עריכה action is offered in the menu', async () => {
     const user = await openPersonnel('login-u-admin');

@@ -236,20 +236,38 @@ export default function PersonnelPage() {
   function renderRow(entry: PersonnelEntry) {
     if (entry.kind === 'pending') {
       const canManage = assignRoles.includes(entry.role);
+      // Same visual hierarchy as an active/inactive row (avatar + name/email
+      // block on the right, status/menu on the left) -- see the comment on
+      // that row below for the RTL source-order reasoning. No inline role
+      // label here: a pending row already sits under its role's group
+      // heading, so repeating the role on every row would be redundant.
+      // entry.avatarUrl is always null before first login (see
+      // domain/types.ts), so this renders the same initials fallback the
+      // active/inactive row would show for someone with no photo yet --
+      // never a Google avatar for an unclaimed entry.
       return (
         <div
           key={entry.id}
           data-personnel-row={entry.id}
           className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
         >
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
-            <p className="truncate text-xs text-muted" dir="ltr">
-              {entry.email}
-            </p>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Avatar
+              aria-hidden
+              src={entry.avatarUrl}
+              name={entry.fullName}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+              {entry.email && (
+                <p className="truncate text-right text-xs text-muted" dir="ltr">
+                  {entry.email}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <span className="text-sm text-text-secondary">{personnelRoleLabels[entry.role]}</span>
             <Badge color="orange">{personnelStatusLabels.pending}</Badge>
             {canManage && (
               <ActionMenu
