@@ -85,10 +85,10 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas p-4 sm:p-6 lg:p-10">
-      <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated lg:h-[calc(100dvh-5rem)] lg:grid-cols-2">
-        <AvariaAuthBrandPanel titleTestId="brand-name" />
+      <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated [animation:login-entrance_380ms_ease-out_both] lg:h-[calc(100dvh-5rem)] lg:grid-cols-2">
+        <AvariaAuthBrandPanel titleTestId="brand-name" animate />
         <div className="flex flex-col justify-center overflow-y-auto p-6 sm:p-10 lg:h-full lg:p-12">
-          <div className="mx-auto w-full max-w-md py-2">
+          <div className="mx-auto w-full max-w-md py-2 [animation:login-entrance_380ms_ease-out_140ms_both]">
             <span className="inline-flex items-center rounded-full border border-brand-400/30 bg-brand-500/10 px-3 py-1 text-xs font-semibold text-brand-200">
               ברוכים הבאים
             </span>
@@ -119,7 +119,7 @@ export default function LoginPage() {
                     <Spinner />
                   </div>
                 ) : (
-                  <ul className="mt-4 flex flex-col gap-2">
+                  <ul className="mt-4 flex flex-col gap-2 [animation:login-entrance_320ms_ease-out_260ms_both]">
                     {(profiles ?? []).filter((p) => p.active).map((p) => (
                       <li key={p.id}>
                         <button
@@ -146,7 +146,7 @@ export default function LoginPage() {
               <div className="mt-6">
                 <button
                   type="button"
-                  className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] transition-colors hover:bg-gray-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100"
+                  className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] transition-colors [animation:login-entrance_320ms_ease-out_260ms_both] hover:bg-gray-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100"
                   onClick={handleGoogleLogin}
                   disabled={redirecting}
                   data-testid="google-login-button"

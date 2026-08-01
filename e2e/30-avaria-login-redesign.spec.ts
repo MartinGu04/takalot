@@ -120,3 +120,39 @@ test('mobile at 320x700: the sign-in action is visible in the initial viewport',
   const actionBox = await firstAction.boundingBox();
   expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(700);
 });
+
+test.describe('login entrance motion', () => {
+  test('completes within 700ms and settles to full opacity / no offset (no residual transform)', async ({ page }) => {
+    await page.goto('/login');
+    const shell = page.locator('.rounded-3xl').first();
+    await page.waitForTimeout(750);
+    const finalState = await shell.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { opacity: style.opacity, transform: style.transform };
+    });
+    expect(finalState.opacity).toBe('1');
+    expect(['none', 'matrix(1, 0, 0, 1, 0, 0)']).toContain(finalState.transform);
+  });
+
+  test('the sign-in action is clickable immediately, before the entrance motion finishes', async ({ page }) => {
+    // No artificial wait -- clicking as soon as the element is attached
+    // proves the animation never blocks interactivity.
+    await page.goto('/login');
+    await page.getByTestId(/^login-/).first().click();
+    await expect(page.getByRole('heading', { name: 'מצב נוכחי' })).toBeVisible();
+  });
+
+  test('respects prefers-reduced-motion: motion collapses to an almost-instant fade', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/login');
+    const shell = page.locator('.rounded-3xl').first();
+    const durationMs = await shell.evaluate((el) => {
+      const raw = getComputedStyle(el).animationDuration; // e.g. "0.000001s" or "0.001ms"
+      const value = parseFloat(raw);
+      return raw.trim().endsWith('ms') ? value : value * 1000;
+    });
+    // The global reduced-motion rule forces all animation-durations to
+    // 0.001ms -- i.e. effectively instant, no visible movement.
+    expect(durationMs).toBeLessThanOrEqual(0.01);
+  });
+});

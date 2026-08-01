@@ -3,14 +3,16 @@ import { IconAlertTriangle, IconClock } from './icons';
 
 export const AVARIA_FULL_LOGO_SRC = '/branding/avaria-logo-full.png';
 /** The approved symbol, kept byte-for-byte as supplied -- not rendered
- *  directly anywhere (its large transparent safe-area makes it unsuitable
- *  for small chrome), but preserved as the canonical brand asset. */
+ *  directly anywhere (its generous transparent safe-area makes it
+ *  unsuitable for small chrome), but preserved as the canonical brand
+ *  asset. */
 export const AVARIA_ICON_SRC = '/branding/avaria-symbol.png';
 /** A technical derivative of the symbol for small surfaces (header,
- *  sidebar, favicons): only the fully-transparent outer margin is trimmed
- *  (a bounding-box crop around the visible glow/artwork), so the same
- *  artwork reads clearly at compact sizes. Nothing inside the artwork's
- *  visible extent is cropped, redrawn, recolored, or distorted. */
+ *  sidebar, favicons): only the practically-transparent outer margin is
+ *  trimmed (a bounding-box crop around the visible mark), so it fills the
+ *  compact surface instead of sitting tiny in a mostly-empty square.
+ *  Nothing inside the artwork's visible extent is cropped, redrawn,
+ *  recolored, or distorted. */
 export const AVARIA_ICON_COMPACT_SRC = '/branding/avaria-symbol-compact.png';
 
 /** No default width/height utilities here on purpose: callers set the full
@@ -32,7 +34,7 @@ export function AvariaFullLogo({
  * visible border and soft brand-colored contact shadow in light mode, and a
  * softer dark-native border/shadow in dark mode -- a deliberate branded chip
  * in both themes, not an isolated black block. A CSS treatment only; the
- * asset itself is untouched. */
+ * flat solid-color mark itself needs no glow to stay legible on it. */
 export function AvariaIcon({ className }: { className?: string }) {
   return (
     <span
@@ -52,9 +54,13 @@ export function AvariaIcon({ className }: { className?: string }) {
 export function AvariaAuthBrandPanel({
   titleTestId,
   compact = false,
+  animate = false,
 }: {
   titleTestId?: string;
   compact?: boolean;
+  /** One-time entrance fade/settle for the login screen only (never the
+   * shared loading/unauthorized/error auth screens). */
+  animate?: boolean;
 }) {
   return (
     <section
@@ -115,7 +121,11 @@ export function AvariaAuthBrandPanel({
         </>
       )}
 
-      <div className="relative z-10 m-auto w-full max-w-xl text-center">
+      <div
+        className={`relative z-10 m-auto w-full max-w-xl text-center ${
+          animate ? '[animation:login-entrance_380ms_ease-out_80ms_both]' : ''
+        }`}
+      >
         <h1 data-testid={titleTestId}>
           <AvariaFullLogo className="mx-auto h-12 w-auto sm:h-14 lg:h-auto lg:w-full lg:max-w-sm" />
         </h1>
