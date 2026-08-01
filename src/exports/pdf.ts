@@ -3,26 +3,32 @@
 //
 // RTL/bidi handling: jsPDF ships two different, uncoordinated RTL
 // mechanisms (a legacy setR2L/R2L full-string reversal, and a separate
-// isInputRtl-driven "BidiEngine"). Enabling both together -- as this file
-// used to, via setR2L(true) + isInputRtl:true on every call -- works only
-// for simple single-script lines; for anything mixing Hebrew with an
-// embedded LTR run (an English name, a date, an identifier like NET2000),
-// passing a string through jsPDF's own bidi handling reorders it, and
-// passing that already-reordered string through a *second* jsPDF call
-// (or the wrong flag combination) reorders it again, corrupting the
-// result. This was confirmed empirically while building this file: feeding
-// jsPDF a pre-resolved string with isInputRtl left at its default silently
-// re-reversed embedded digits (see bidi.ts's module comment).
+// isInputRtl-driven "BidiEngine"), and both of them -- and an earlier
+// version of this file -- work by physically reversing the Hebrew
+// character array before drawing it as a plain left-to-right run. That
+// makes the *raster* look right when eyeballed, but corrupts the PDF's
+// actual text content: every glyph gets its own ToUnicode entry, so a
+// reversed draw order writes each Hebrew word backwards into the content
+// stream. Copy-pasting, searching, or reading the document with assistive
+// technology then sees "חוד" where it should read "דוח" -- confirmed
+// empirically while fixing this.
 //
-// The fix: do bidi resolution exactly once, ourselves, with the
-// spec-conformant bidi-js implementation (src/exports/bidi.ts), and then
-// hand jsPDF the already-correct left-to-right glyph sequence with BOTH of
-// its own RTL mechanisms turned off (setR2L(false) here, isInputRtl:false
-// on every text() call below) so it never reprocesses it.
+// The fix (see src/exports/bidi.ts): every character is drawn in its
+// ordinary logical order -- never reversed -- and only its *position*
+// varies. bidi.ts's resolveBidiRuns() splits a line into direction runs,
+// in logical order; drawBidiLine() below walks those runs from a
+// right-hand anchor moving leftward: a left-to-right run (English name,
+// date, NET2000-style identifier) draws as one normal left-to-right block,
+// a right-to-left run draws character-by-character, each successive
+// character placed further left -- so the content stream always matches
+// the real text, and the raster still reads correctly right-to-left.
+// jsPDF's own RTL mechanisms are fully disabled (setR2L(false) here,
+// isInputRtl:false on every text() call) so they never reprocess anything
+// this file already laid out.
 import { jsPDF } from 'jspdf';
 import { ALEF_REGULAR_BASE64 } from './fonts/alefRegularBase64';
 import { ALEF_BOLD_BASE64 } from './fonts/alefBoldBase64';
-import { isolate, resolveBidiVisual } from './bidi';
+import { isolate, mirroredForRtl, resolveBidiRuns, type BidiRun } from './bidi';
 import { formatDateTime } from '../lib/time';
 import type { TimelineBlock } from './timelineNarrative';
 
@@ -73,12 +79,41 @@ export class HebrewPdf {
     this.doc.setR2L(false);
   }
 
-  /** The single choke point every piece of dynamic/mixed-language text
-   *  must go through: resolves true bidi visual order, then draws with
-   *  jsPDF's own RTL handling fully disabled (see file header comment). */
-  private drawRtl(text: string, x: number, y: number, opts: { fontSize: number; align?: 'right' | 'center' } = { fontSize: 10 }) {
-    this.doc.setFontSize(opts.fontSize);
-    this.doc.text(resolveBidiVisual(text), x, y, { align: opts.align ?? 'right', isInputRtl: false });
+  private runWidths(runs: BidiRun[]): number[] {
+    return runs.map((run) => this.doc.getTextWidth(run.text));
+  }
+
+  /** Total rendered width of `text` at the currently set font/size --
+   *  needed to position/size anything (a badge box, a centered line)
+   *  before actually drawing it. */
+  private measureBidiLine(text: string): number {
+    return this.runWidths(resolveBidiRuns(text)).reduce((a, b) => a + b, 0);
+  }
+
+  /**
+   * The single choke point every piece of dynamic/mixed-language text
+   * draws through. `text` is ordinary logical Hebrew/English -- it is
+   * never reversed here or anywhere upstream (see this file's header
+   * comment and bidi.ts). Returns the line's total width.
+   */
+  private drawBidiLine(text: string, anchorX: number, y: number, align: 'right' | 'center' = 'right'): number {
+    const runs = resolveBidiRuns(text);
+    const widths = this.runWidths(runs);
+    const totalWidth = widths.reduce((a, b) => a + b, 0);
+    let cursor = align === 'center' ? anchorX + totalWidth / 2 : anchorX;
+    runs.forEach((run, i) => {
+      if (run.rtl) {
+        for (const ch of run.text) {
+          const w = this.doc.getTextWidth(ch);
+          this.doc.text(mirroredForRtl(ch), cursor, y, { align: 'right', isInputRtl: false });
+          cursor -= w;
+        }
+      } else {
+        this.doc.text(run.text, cursor, y, { align: 'right', isInputRtl: false });
+        cursor -= widths[i];
+      }
+    });
+    return totalWidth;
   }
 
   private addPage() {
@@ -86,8 +121,9 @@ export class HebrewPdf {
     this.y = MARGIN;
     if (this.continuationTitle) {
       this.doc.setFont('Alef', 'normal');
+      this.doc.setFontSize(9);
       this.doc.setTextColor(130);
-      this.drawRtl(this.continuationTitle, PAGE_WIDTH - MARGIN, this.y + 4, { fontSize: 9 });
+      this.drawBidiLine(this.continuationTitle, PAGE_WIDTH - MARGIN, this.y + 4);
       this.doc.setTextColor(0);
       this.doc.setDrawColor(220);
       this.doc.line(MARGIN, this.y + 7, PAGE_WIDTH - MARGIN, this.y + 7);
@@ -108,17 +144,19 @@ export class HebrewPdf {
    *  incidentHeader() instead. */
   header(title: string, exportedBy: string) {
     this.doc.setFont('Alef', 'bold');
-    this.drawRtl('AVARIA', PAGE_WIDTH - MARGIN, this.y, { fontSize: 16 });
+    this.doc.setFontSize(16);
+    this.drawBidiLine('AVARIA', PAGE_WIDTH - MARGIN, this.y);
     this.y += 8;
-    this.drawRtl(title, PAGE_WIDTH - MARGIN, this.y, { fontSize: 13 });
+    this.doc.setFontSize(13);
+    this.drawBidiLine(title, PAGE_WIDTH - MARGIN, this.y);
     this.y += 6;
     this.doc.setFont('Alef', 'normal');
+    this.doc.setFontSize(9);
     this.doc.setTextColor(110);
-    this.drawRtl(
+    this.drawBidiLine(
       `הופק על ידי ${isolate(exportedBy)} · ${isolate(formatDateTime(new Date().toISOString()))}`,
       PAGE_WIDTH - MARGIN,
       this.y,
-      { fontSize: 9 },
     );
     this.doc.setTextColor(0);
     this.y += 4;
@@ -168,16 +206,18 @@ export class HebrewPdf {
     this.y += LOGO_DIAMETER + 8;
 
     this.doc.setFont('Alef', 'bold');
-    this.drawRtl(`דוח תקלה ${isolate(incidentNumber)}`, centerX, this.y, { fontSize: 18, align: 'center' });
+    this.doc.setFontSize(18);
+    this.drawBidiLine(`דוח תקלה ${isolate(incidentNumber)}`, centerX, this.y, 'center');
     this.y += 8;
 
     this.doc.setFont('Alef', 'normal');
+    this.doc.setFontSize(10);
     this.doc.setTextColor(110);
-    this.drawRtl(
+    this.drawBidiLine(
       `יוצא ${isolate(formatDateTime(exportedAt.toISOString()))} · הופק על ידי ${isolate(exportedByName)}`,
       centerX,
       this.y,
-      { fontSize: 10, align: 'center' },
+      'center',
     );
     this.doc.setTextColor(0);
     this.y += 6;
@@ -195,7 +235,8 @@ export class HebrewPdf {
   sectionTitle(text: string) {
     this.ensureSpace(18);
     this.doc.setFont('Alef', 'bold');
-    this.drawRtl(text, PAGE_WIDTH - MARGIN, this.y, { fontSize: 12.5 });
+    this.doc.setFontSize(12.5);
+    this.drawBidiLine(text, PAGE_WIDTH - MARGIN, this.y);
     this.y += 5.5;
     this.doc.setDrawColor(210);
     this.doc.line(MARGIN, this.y, PAGE_WIDTH - MARGIN, this.y);
@@ -204,8 +245,8 @@ export class HebrewPdf {
   }
 
   /** Label: value line, wraps long values. The value is always isolated
-   *  (see bidi.ts) so its own internal order never depends on, and never
-   *  leaks into, the label/punctuation around it -- correct whether the
+   *  (see bidi.ts) so its own run boundary never depends on, and never
+   *  bleeds into, the label/punctuation around it -- correct whether the
    *  value is Hebrew, an English name, a date, or an identifier. */
   field(label: string, value: string) {
     const text = `${label}: ${value ? isolate(value) : '—'}`;
@@ -214,7 +255,7 @@ export class HebrewPdf {
     const lines = this.doc.splitTextToSize(text, CONTENT_WIDTH) as string[];
     this.ensureSpace(lines.length * 5.2);
     for (const line of lines) {
-      this.drawRtl(line, PAGE_WIDTH - MARGIN, this.y, { fontSize: 10 });
+      this.drawBidiLine(line, PAGE_WIDTH - MARGIN, this.y);
       this.y += 5.2;
     }
   }
@@ -227,20 +268,19 @@ export class HebrewPdf {
     this.doc.setFont('Alef', 'normal');
     this.doc.setFontSize(10);
     this.ensureSpace(6.5);
-    const labelWithColon = `${label}: `;
-    this.drawRtl(labelWithColon, PAGE_WIDTH - MARGIN, this.y + 3.6, { fontSize: 10 });
-    const labelWidth = this.doc.getTextWidth(resolveBidiVisual(labelWithColon));
+    const labelText = `${label}: `;
+    const labelWidth = this.drawBidiLine(labelText, PAGE_WIDTH - MARGIN, this.y + 3.6);
     this.doc.setFont('Alef', 'bold');
     this.doc.setFontSize(9);
-    const badgeText = resolveBidiVisual(isolate(value));
-    const textWidth = this.doc.getTextWidth(badgeText);
+    const badgeValue = isolate(value);
+    const textWidth = this.measureBidiLine(badgeValue);
     const paddingX = 2.6;
     const badgeWidth = textWidth + paddingX * 2;
     const badgeRight = PAGE_WIDTH - MARGIN - labelWidth - 2;
     this.doc.setDrawColor(120);
     this.doc.setLineWidth(0.25);
     this.doc.roundedRect(badgeRight - badgeWidth, this.y, badgeWidth, 5.4, 1, 1, 'S');
-    this.doc.text(badgeText, badgeRight - badgeWidth / 2, this.y + 3.7, { align: 'center', isInputRtl: false });
+    this.drawBidiLine(badgeValue, badgeRight - badgeWidth / 2, this.y + 3.7, 'center');
     this.doc.setFont('Alef', 'normal');
     this.y += 8;
   }
@@ -255,7 +295,7 @@ export class HebrewPdf {
     const lines = this.doc.splitTextToSize(text || '—', CONTENT_WIDTH) as string[];
     this.ensureSpace(lines.length * 5.2);
     for (const line of lines) {
-      this.drawRtl(line, PAGE_WIDTH - MARGIN, this.y, { fontSize: 10 });
+      this.drawBidiLine(line, PAGE_WIDTH - MARGIN, this.y);
       this.y += 5.2;
     }
     this.y += 2;
@@ -316,20 +356,23 @@ export class HebrewPdf {
 
     let cursorY = top + BLOCK_PADDING + 3.4;
     this.doc.setFont('Alef', 'bold');
+    this.doc.setFontSize(TITLE_SIZE);
     for (const line of titleLines) {
-      this.drawRtl(line, PAGE_WIDTH - MARGIN - BLOCK_PADDING, cursorY, { fontSize: TITLE_SIZE });
+      this.drawBidiLine(line, PAGE_WIDTH - MARGIN - BLOCK_PADDING, cursorY);
       cursorY += 5.4;
     }
     this.doc.setFont('Alef', 'normal');
+    this.doc.setFontSize(META_SIZE);
     this.doc.setTextColor(120);
     for (const line of metaLines) {
-      this.drawRtl(line, PAGE_WIDTH - MARGIN - BLOCK_PADDING, cursorY, { fontSize: META_SIZE });
+      this.drawBidiLine(line, PAGE_WIDTH - MARGIN - BLOCK_PADDING, cursorY);
       cursorY += 4.2;
     }
     this.doc.setTextColor(60);
+    this.doc.setFontSize(DETAIL_SIZE);
     if (detailLines.length > 0) cursorY += 2;
     for (const line of detailLines) {
-      this.drawRtl(line, PAGE_WIDTH - MARGIN - BLOCK_PADDING, cursorY, { fontSize: DETAIL_SIZE });
+      this.drawBidiLine(line, PAGE_WIDTH - MARGIN - BLOCK_PADDING, cursorY);
       cursorY += 4.3;
     }
     this.doc.setTextColor(0);
@@ -347,11 +390,14 @@ export class HebrewPdf {
       this.doc.setDrawColor(225);
       this.doc.line(MARGIN, FOOTER_RULE_Y, PAGE_WIDTH - MARGIN, FOOTER_RULE_Y);
       this.doc.setFont('Alef', 'normal');
+      this.doc.setFontSize(8);
       this.doc.setTextColor(130);
-      this.drawRtl(`עמוד ${isolate(String(page))} מתוך ${isolate(String(total))} · הופק באמצעות AVARIA`, PAGE_WIDTH / 2, FOOTER_TEXT_Y, {
-        fontSize: 8,
-        align: 'center',
-      });
+      this.drawBidiLine(
+        `עמוד ${isolate(String(page))} מתוך ${isolate(String(total))} · הופק באמצעות AVARIA`,
+        PAGE_WIDTH / 2,
+        FOOTER_TEXT_Y,
+        'center',
+      );
       this.doc.setTextColor(0);
     }
   }

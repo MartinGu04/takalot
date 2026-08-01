@@ -190,3 +190,116 @@ describe('sectionTitle orphan avoidance', () => {
     expect(headingCall).toBeTruthy();
   });
 });
+
+/**
+ * Regression coverage for the RTL rendering bug: an earlier version of
+ * pdf.ts pre-reversed Hebrew text before drawing it, which produced a
+ * correct-looking *raster* but wrote every Hebrew word backwards into the
+ * PDF's actual text content (confirmed via real copy/paste-equivalent
+ * extraction while diagnosing it -- "דוח תקלה" came out as "הלקת חוד").
+ *
+ * These tests reconstruct exactly what ends up in the PDF's content
+ * stream by observing the literal characters passed to jsPDF's `text()`
+ * in draw order (see pdf.ts's drawBidiLine: a left-to-right run is drawn
+ * as one call, a right-to-left run is drawn one character at a time, but
+ * always walking the *logical* string forward -- never reversed). This is
+ * not a re-assertion of internal bidi.ts state; it observes the same
+ * primitive jsPDF itself receives, which is what a real PDF's content
+ * stream/ToUnicode CMap -- and therefore copy/paste, search, and screen
+ * readers -- would see.
+ */
+describe('drawn text is never character-reversed (regression coverage)', () => {
+  function reconstruct(textSpy: { mock: { calls: unknown[][] } }): string {
+    return textSpy.mock.calls.map((call) => String(call[0])).join('');
+  }
+
+  it('draws "דוח תקלה 2026-014" in its exact readable order in the incident header title', () => {
+    const pdf = new HebrewPdf();
+    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.incidentHeader('2026-014', 'Martin Gusin', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    const drawn = reconstruct(textSpy);
+    expect(drawn).toContain('דוח תקלה 2026-014');
+    // The exact bug this guards against: the old reversed-per-word output.
+    expect(drawn).not.toContain('הלקת חוד');
+    expect(drawn).not.toContain('חוד');
+  });
+
+  it('draws "הופק על ידי Martin Gusin" in its exact readable order in the incident header', () => {
+    const pdf = new HebrewPdf();
+    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.incidentHeader('2026-014', 'Martin Gusin', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    expect(reconstruct(textSpy)).toContain('הופק על ידי Martin Gusin');
+  });
+
+  it('draws each of the four section headings in exact readable order', () => {
+    const expected = ['פרטי פתיחה', 'מצב נוכחי', 'פרטי סגירה', 'ציר זמן מלא'];
+    for (const heading of expected) {
+      const pdf = new HebrewPdf();
+      pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+      const textSpy = vi.spyOn(pdf.doc, 'text');
+      pdf.sectionTitle(heading);
+      const drawn = reconstruct(textSpy);
+      expect(drawn).toContain(heading);
+      // None of these headings' known-bad reversed forms.
+      expect(drawn).not.toContain('החיתפ יטרפ');
+      expect(drawn).not.toContain([...heading].reverse().join(''));
+    }
+  });
+
+  it('draws "מערכת / עמדה: NET2000" with the label readable and the identifier unreversed', () => {
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.field('מערכת / עמדה', 'NET2000');
+    const drawn = reconstruct(textSpy);
+    expect(drawn).toContain('מערכת / עמדה: NET2000');
+    expect(drawn).not.toContain('0002TEN');
+    expect(drawn).not.toContain('הדמע / תכרעמ');
+  });
+
+  it('draws "סטטוס שונה: חדשה ← בטיפול" in exact readable order for a status_change timeline title', async () => {
+    const { narrativeTitle } = await import('./timelineNarrative');
+    const title = narrativeTitle({
+      id: 'e', incidentId: 'i', type: 'status_change', actorId: null, actorLabel: null,
+      eventTime: '2026-08-01T00:00:00.000Z', serverTime: '2026-08-01T00:00:00.000Z',
+      field: 'status', oldValue: 'new', newValue: 'in_progress', note: null, refId: null,
+      createdAt: '2026-08-01T00:00:00.000Z', operationId: null,
+    });
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.timelineBlock({ eventTime: '2026-08-01T00:00:00.000Z', title, performer: 'בודק', tier: 'neutral', details: [] });
+    const drawn = reconstruct(textSpy);
+    expect(drawn).toContain('סטטוס שונה: חדשה');
+    expect(drawn).toContain('בטיפול');
+    expect(drawn).not.toContain('לופיטב');
+    expect(drawn).not.toContain('השדח');
+  });
+
+  it('draws "התקלה נפתחה" in exact readable order for a created timeline title', async () => {
+    const { narrativeTitle } = await import('./timelineNarrative');
+    const title = narrativeTitle({
+      id: 'e', incidentId: 'i', type: 'created', actorId: null, actorLabel: null,
+      eventTime: '2026-08-01T00:00:00.000Z', serverTime: '2026-08-01T00:00:00.000Z',
+      field: null, oldValue: null, newValue: null, note: null, refId: null,
+      createdAt: '2026-08-01T00:00:00.000Z', operationId: null,
+    });
+    expect(title).toBe('התקלה נפתחה');
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.timelineBlock({ eventTime: '2026-08-01T00:00:00.000Z', title, performer: 'בודק', tier: 'strong', details: [] });
+    const drawn = reconstruct(textSpy);
+    expect(drawn).toContain('התקלה נפתחה');
+    expect(drawn).not.toContain('החתפנ הלקתה');
+  });
+
+  it('keeps a composite Hebrew+English value (external handler snapshot) in exact readable order, colon adjacent to its label', () => {
+    const pdf = new HebrewPdf();
+    pdf.incidentHeader('2026-014', 'בודק', new Date('2026-08-01T18:00:00.000Z'), realLogos());
+    const textSpy = vi.spyOn(pdf.doc, 'text');
+    pdf.field('גורם מטפל חיצוני', 'Elad Levi · איש קשר: Elad Levi · פרטי קשר: elad.levi@example.com');
+    const drawn = reconstruct(textSpy);
+    expect(drawn).toContain('גורם מטפל חיצוני: Elad Levi · איש קשר: Elad Levi · פרטי קשר: elad.levi@example.com');
+  });
+});

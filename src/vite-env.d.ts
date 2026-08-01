@@ -23,6 +23,7 @@ declare module 'bidi-js' {
   export interface Bidi {
     getEmbeddingLevels(text: string, baseDirection?: 'rtl' | 'ltr'): EmbeddingLevelsResult;
     getReorderedString(text: string, embeddingLevels: EmbeddingLevelsResult, start?: number, end?: number): string;
+    getMirroredCharacter(char: string): string | null;
   }
 
   export default function bidiFactory(): Bidi;
