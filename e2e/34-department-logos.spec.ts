@@ -22,7 +22,7 @@ test.describe('desktop', () => {
     await expect(logoComms).toHaveAttribute('src', LOGO_COMMS_SRC);
   });
 
-  test('each logo sits in a circular container (border-radius 50%, overflow hidden), sized ~30-34px, with a restrained gap and a visible border', async ({ page }) => {
+  test('each logo sits in a circular container (border-radius 50%, overflow hidden), sized ~42px, with a restrained gap and a visible border', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     const circle502 = page.getByTestId('department-logo-502');
     const circleComms = page.getByTestId('department-logo-strategic-communication');
@@ -42,8 +42,9 @@ test.describe('desktop', () => {
       const box = await circle.boundingBox();
       expect(box).not.toBeNull();
       expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
-      expect(box!.width).toBeGreaterThanOrEqual(30);
-      expect(box!.width).toBeLessThanOrEqual(34);
+      // ~42px at this wide (lg:) desktop width.
+      expect(box!.width).toBeGreaterThanOrEqual(40);
+      expect(box!.width).toBeLessThanOrEqual(44);
       expect(parseFloat(style.borderWidth)).toBeGreaterThan(0);
     }
 
@@ -130,6 +131,27 @@ test.describe('narrower desktop/tablet width', () => {
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
     );
     expect(overflowX).toBe(false);
+  });
+
+  test('logos scale down to ~36px at this narrower width, preserving the gap, with no overlap with existing controls', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    const circle502 = page.getByTestId('department-logo-502');
+    const circleComms = page.getByTestId('department-logo-strategic-communication');
+
+    for (const circle of [circle502, circleComms]) {
+      const box = await circle.boundingBox();
+      expect(box).not.toBeNull();
+      expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
+      expect(box!.width).toBeGreaterThanOrEqual(34);
+      expect(box!.width).toBeLessThanOrEqual(38);
+    }
+
+    const box502 = (await circle502.boundingBox())!;
+    const boxComms = (await circleComms.boundingBox())!;
+    const [left, right] = [box502, boxComms].sort((a, b) => a.x - b.x);
+    const gap = right.x - (left.x + left.width);
+    expect(gap).toBeGreaterThanOrEqual(5);
+    expect(gap).toBeLessThanOrEqual(9);
   });
 });
 

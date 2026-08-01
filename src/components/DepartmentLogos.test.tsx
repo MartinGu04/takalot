@@ -31,8 +31,10 @@ describe('DepartmentLogos', () => {
 
     for (const circle of [logo502, logoComms]) {
       expect(circle).toHaveStyle({ borderRadius: '50%', overflow: 'hidden' });
-      // Fixed square box -- a circle, not an oval -- at the requested ~30-34px size.
-      expect(circle.className).toMatch(/size-8/);
+      // Fixed square box -- a circle, not an oval -- ~36px by default, ~42px
+      // at the wider desktop (lg:) breakpoint.
+      expect(circle.className).toMatch(/size-9/);
+      expect(circle.className).toMatch(/lg:size-\[42px\]/);
     }
 
     // object-contain (not cover/fill) preserves the source aspect ratio and

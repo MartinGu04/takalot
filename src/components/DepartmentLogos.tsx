@@ -24,7 +24,7 @@ export function DepartmentLogos() {
         <span
           key={logo.key}
           data-testid={`department-logo-${logo.key}`}
-          className="flex size-8 shrink-0 items-center justify-center border border-hairline-strong bg-surface"
+          className="flex size-9 shrink-0 items-center justify-center border border-hairline-strong bg-surface lg:size-[42px]"
           // The circular crop must remove only the source image's square
           // black outer corners -- never any part of the emblem, ring, or
           // text -- so this is an explicit 50%/hidden crop, not a
