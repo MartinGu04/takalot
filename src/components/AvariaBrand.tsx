@@ -7,13 +7,13 @@ export const AVARIA_FULL_LOGO_SRC = '/branding/avaria-logo-full.png';
  *  unsuitable for small chrome), but preserved as the canonical brand
  *  asset. */
 export const AVARIA_ICON_SRC = '/branding/avaria-symbol.png';
-/** A technical derivative of the symbol for small surfaces (header,
- *  sidebar, favicons): only the practically-transparent outer margin is
- *  trimmed (a bounding-box crop around the visible mark), so it fills the
- *  compact surface instead of sitting tiny in a mostly-empty square.
- *  Nothing inside the artwork's visible extent is cropped, redrawn,
- *  recolored, or distorted. */
-export const AVARIA_ICON_COMPACT_SRC = '/branding/avaria-symbol-compact.png';
+/** A dedicated, approved compact asset for small product surfaces (header,
+ *  sidebar, favicons): a self-contained white-on-purple rounded-square
+ *  tile, already high-contrast and ready to use in both themes with no
+ *  extra backing. Kept byte-for-byte as supplied everywhere except the
+ *  favicon/apple-touch-icon files, which are plain resizes (no recolor,
+ *  no recompression beyond what the target pixel size requires). */
+export const AVARIA_ICON_COMPACT_SRC = '/branding/avaria-compact-micro-mark.png';
 
 /** No default width/height/object-fit utilities here on purpose: callers set
  * all of that themselves (this component has two call sites -- a mobile
@@ -31,21 +31,17 @@ export function AvariaFullLogo({
 }
 
 /** Compact brand treatment for the authenticated shell (header/sidebar).
- * The mark is a solid dark violet, so each theme gets the surface that
- * actually contrasts with it: a pale, faintly brand-tinted surface with a
- * subtle violet border in light mode (strong contrast against the dark
- * mark), and a near-black/ink surface with a restrained violet border in
- * dark mode (never purple-on-purple, never a glow standing in for real
- * contrast). Padding is minimal so the mark itself -- not the plate --
- * reads as the icon. */
+ * The approved micro-mark already carries its own high-contrast
+ * purple/white tile, so it's used identically in both themes with no
+ * backing plate, border, or padding of ours layered on top. */
 export function AvariaIcon({ className }: { className?: string }) {
   return (
-    <span
+    <img
+      src={AVARIA_ICON_COMPACT_SRC}
+      alt=""
       aria-hidden
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-brand-300 bg-gradient-to-br from-[#f4f0fc] to-[#e9defa] p-0.5 shadow-[0_1px_4px_-1px_rgba(124,58,237,0.35)] dark:border-white/15 dark:from-[#0b090f] dark:to-[#141019] dark:shadow-[0_2px_8px_-2px_rgba(0,0,0,0.6)] ${className ?? ''}`}
-    >
-      <img src={AVARIA_ICON_COMPACT_SRC} alt="" className="size-full object-contain" />
-    </span>
+      className={`block shrink-0 object-contain ${className ?? ''}`}
+    />
   );
 }
 
