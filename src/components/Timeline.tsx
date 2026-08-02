@@ -14,7 +14,7 @@ import {
   readinessLabels,
   reportedToOpsLabels,
 } from '../domain/labels';
-import { formatDateTime } from '../lib/time';
+import { formatDateTime, formatDuration } from '../lib/time';
 
 function valueLabel(field: string | null, value: string | null): string {
   if (value == null) return '—';
@@ -218,6 +218,8 @@ export function Timeline({
   currentUserId,
   canCorrectAny,
   onCorrect,
+  discoveredAt,
+  closedAt,
 }: {
   events: IncidentEvent[];
   updates: IncidentUpdate[];
@@ -225,6 +227,12 @@ export function Timeline({
   currentUserId?: string;
   canCorrectAny?: boolean;
   onCorrect?: (refId: string, label: string) => void;
+  /** The incident's own discoveredAt/closedAt -- used only to show the
+   *  operational duration on the closure event below. Deliberately the
+   *  persisted effective times, never the event's own recording (server)
+   *  timestamp or the current clock. */
+  discoveredAt?: string;
+  closedAt?: string | null;
 }) {
   const updatesById = new Map(updates.map((u) => [u.id, u]));
   const actorName = (id: string | null, label: string | null) =>
@@ -342,6 +350,11 @@ export function Timeline({
               {primary.note && !update && primary.type !== 'reported_to_ops_change' && (
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-secondary">
                   {primary.note}
+                </p>
+              )}
+              {primary.type === 'closed' && discoveredAt && closedAt && (
+                <p className="mt-1 text-sm font-bold text-text-primary">
+                  משך התקלה: {formatDuration(discoveredAt, closedAt)}
                 </p>
               )}
               {primary.type === 'correction' && primary.refId && (

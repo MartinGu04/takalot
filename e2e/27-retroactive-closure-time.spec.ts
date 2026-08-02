@@ -72,6 +72,12 @@ test.describe('CloseDialog: actual closure time', () => {
     // -- server_time stays the actual recording time, independently ~now,
     // more than 60s away from the backdated event time.
     await expect(page.getByText('תועד במערכת:')).toBeVisible();
+
+    // The closure timeline entry itself also shows the bold operational
+    // duration line, matching the same discoveredAt -> backdated-closure
+    // value already confirmed above (not the recording time above it).
+    const timelineDurationText = await page.locator('p', { hasText: 'משך התקלה:' }).innerText();
+    expect(timelineDurationText).toContain(confirmedDurationText.replace('משך התקלה:', '').trim());
   });
 
   test('rejects a closure time before the incident was discovered, leaving the form open with entered values intact', async ({ page }) => {

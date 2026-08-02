@@ -226,6 +226,62 @@ describe('Timeline: grouped status-check completion', () => {
   });
 });
 
+describe('Timeline: closure event operational duration', () => {
+  // Israel is on DST (UTC+3) in July; 19.07.2026 16:05/16:06 local is
+  // 13:05/13:06 UTC. The event's own eventTime/serverTime are deliberately
+  // set to a much later recording moment (02.08.2026) to prove the
+  // duration line is computed from the incident's discoveredAt/closedAt,
+  // never from the event's recording timestamp or the current clock.
+  const DISCOVERED_AT = '2026-07-19T13:05:00.000Z';
+  const CLOSED_AT = '2026-07-19T13:06:00.000Z';
+  const RECORDED_AT = '2026-08-02T10:00:00.000Z';
+
+  it('shows "משך התקלה: דקה אחת" in bold for a closure recorded weeks after it actually happened', () => {
+    const close = ev({
+      id: 'e-closed',
+      type: 'closed',
+      operationId: 'op-1',
+      newValue: 'full',
+      note: 'סיבת התקלה: X\nהפתרון שבוצע: Y',
+      eventTime: CLOSED_AT,
+      serverTime: RECORDED_AT,
+    });
+    render(
+      <Timeline
+        events={[close]}
+        updates={[]}
+        profiles={profiles}
+        discoveredAt={DISCOVERED_AT}
+        closedAt={CLOSED_AT}
+      />,
+    );
+
+    const line = screen.getByText(/משך התקלה: דקה אחת/);
+    expect(line).toBeInTheDocument();
+    expect(line.className).toContain('font-bold');
+  });
+
+  it('does not render a duration line when discoveredAt/closedAt are not supplied', () => {
+    const close = ev({ id: 'e-closed', type: 'closed', operationId: 'op-1', newValue: 'full' });
+    render(<Timeline events={[close]} updates={[]} profiles={profiles} />);
+    expect(screen.queryByText(/משך התקלה:/)).not.toBeInTheDocument();
+  });
+
+  it('does not render a duration line for non-closure events even when discoveredAt/closedAt are supplied', () => {
+    const events = [ev({ id: 'e1', type: 'update', operationId: 'op-1' })];
+    render(
+      <Timeline
+        events={events}
+        updates={[]}
+        profiles={profiles}
+        discoveredAt={DISCOVERED_AT}
+        closedAt={CLOSED_AT}
+      />,
+    );
+    expect(screen.queryByText(/משך התקלה:/)).not.toBeInTheDocument();
+  });
+});
+
 describe('Timeline: empty state', () => {
   it('shows the empty message when there are no events', () => {
     render(<Timeline events={[]} updates={[]} profiles={profiles} />);
