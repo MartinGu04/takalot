@@ -215,6 +215,17 @@ export function IconClock(props: IconProps) {
   );
 }
 
+export function IconCalendar(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <rect x="3" y="4.2" width="14" height="12.3" rx="1.6" />
+      <path d="M3 8h14" />
+      <path d="M6.5 2.5v3" />
+      <path d="M13.5 2.5v3" />
+    </svg>
+  );
+}
+
 export function IconFlag(props: IconProps) {
   return (
     <svg {...base(props)}>

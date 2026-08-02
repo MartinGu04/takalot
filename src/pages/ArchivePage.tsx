@@ -6,6 +6,7 @@ import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
 import { EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
 import { ExportMenu } from '../components/ExportMenu';
+import { ArchiveDateFilter } from '../components/ArchiveDateFilter';
 import { useUrlState } from '../lib/useUrlState';
 import { useDebouncedField } from '../lib/useDebouncedField';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
@@ -143,20 +144,12 @@ export default function ArchivePage() {
             value={resolutionDraft}
             onChange={(e) => setResolutionDraft(e.target.value)}
           />
-          <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-1">
-            <Input
-              type="date"
-              className="min-w-0 flex-1 basis-32"
-              aria-label="מתאריך"
-              value={createdFrom ?? ''}
-              onChange={(e) => url.set('from', e.target.value)}
-            />
-            <Input
-              type="date"
-              className="min-w-0 flex-1 basis-32"
-              aria-label="עד תאריך"
-              value={createdTo ?? ''}
-              onChange={(e) => url.set('to', e.target.value)}
+          <div className="min-w-0">
+            <ArchiveDateFilter
+              from={createdFrom}
+              to={createdTo}
+              onApply={(nextFrom, nextTo) => url.setMany({ from: nextFrom, to: nextTo })}
+              onClear={() => url.setMany({ from: undefined, to: undefined })}
             />
           </div>
         </div>
