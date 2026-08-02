@@ -122,7 +122,7 @@ function renderCardWith(
 describe('IncidentCard: RTL alignment and bidirectional text', () => {
   it('aligns card content to the logical start (right, under the page\'s RTL direction)', () => {
     const container = renderCardWith(makeIncident());
-    const impact = screen.getByText('תיאור השפעה');
+    const impact = screen.getByText('תיאור השפעה').closest('p') as HTMLElement;
     expect(impact).toHaveClass('text-start');
     // The metadata column shares the same logical-start alignment as the
     // content beside it rather than mirroring away from it.
@@ -178,5 +178,49 @@ describe('IncidentCard: RTL alignment and bidirectional text', () => {
     // The Hebrew label lives outside the dir="auto" span, so it is not
     // dragged into the value's LTR run.
     expect(value.parentElement?.textContent).toMatch(/^מערכת: /);
+  });
+});
+
+describe('IncidentCard: labeled השפעה מבצעית row', () => {
+  it('shows the השפעה מבצעית: label, anchored to the RTL row, when a value exists', () => {
+    renderCardWith(makeIncident({ operationalImpact: 'תיאור השפעה' }));
+    const row = screen.getByText('תיאור השפעה').closest('p') as HTMLElement;
+    expect(row.textContent).toMatch(/^השפעה מבצעית: /);
+  });
+
+  it('keeps an English-only value inside the operational-impact row -- never drifting into the metadata column beside it', () => {
+    const container = renderCardWith(
+      makeIncident({ operationalImpact: 'Radar feed degraded, standby' }),
+    );
+    const value = screen.getByText('Radar feed degraded, standby');
+    // Bidi-isolated via <bdi>, not a block-level dir="auto" that could flip
+    // the whole row (and its text-start alignment) to LTR.
+    expect(value.tagName).toBe('BDI');
+    const row = value.closest('p') as HTMLElement;
+    expect(row.textContent).toMatch(/^השפעה מבצעית: /);
+    expect(row).toHaveClass('text-start');
+    // The metadata column (status/owner/last-updated) never contains it.
+    const metadata = container.querySelector('.sm\\:border-s') as HTMLElement;
+    expect(metadata.contains(value)).toBe(false);
+    expect(metadata.textContent).not.toContain('Radar feed degraded');
+  });
+
+  it('renders a Hebrew value correctly', () => {
+    renderCardWith(makeIncident({ operationalImpact: 'אין יכולת הפעלה מלאה של המערכת' }));
+    const value = screen.getByText('אין יכולת הפעלה מלאה של המערכת');
+    expect(value.tagName).toBe('BDI');
+    expect(value).toHaveAttribute('dir', 'auto');
+  });
+
+  it('uses bidirectional isolation (<bdi dir="auto">) for a mixed Hebrew/English value', () => {
+    renderCardWith(makeIncident({ operationalImpact: 'תקלה בשרת Server-42 בבניין A' }));
+    const value = screen.getByText('תקלה בשרת Server-42 בבניין A');
+    expect(value.tagName).toBe('BDI');
+    expect(value).toHaveAttribute('dir', 'auto');
+  });
+
+  it('shows no operational-impact row at all for an empty value -- unchanged from the existing (unlabeled) behavior', () => {
+    renderCardWith(makeIncident({ operationalImpact: '' }));
+    expect(screen.queryByText(/השפעה מבצעית/)).not.toBeInTheDocument();
   });
 });
