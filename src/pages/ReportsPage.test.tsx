@@ -93,7 +93,7 @@ describe('Analytics navigation destination', () => {
 });
 
 describe('Analytics page content', () => {
-  it('renders the subtitle, all six KPI labels, the trend chart section and the top-systems section against real seeded data', async () => {
+  it('renders the subtitle, all six KPI labels, the trend chart section and both ranking sections against real seeded data', async () => {
     const user = userEvent.setup();
     render(<App />);
     await login(user, 'login-u-viewer');
@@ -101,12 +101,16 @@ describe('Analytics page content', () => {
 
     expect(screen.getByText('מגמות, ביצועים ונקודות שדורשות תשומת לב')).toBeInTheDocument();
 
+    // "נפתחו בתקופה" and "זמן סגירה ממוצע" legitimately also label a column
+    // in each ranking panel below (RankingList) -- getAllByText, not
+    // getByText, for every label in this shared loop.
     for (const label of ['נפתחו בתקופה', 'נסגרו בתקופה', 'זמן סגירה ממוצע', 'פתוחות עכשיו', 'משך פתיחה ממוצע', 'נפתחו מחדש']) {
-      expect(screen.getByText(label)).toBeInTheDocument();
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
     }
 
     expect(screen.getByRole('heading', { name: 'פתיחת וסגירת תקלות' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' })).toBeInTheDocument();
 
     // Out-of-scope terms must never appear on this page.
     expect(screen.queryByText('עדכונים באיחור')).not.toBeInTheDocument();
@@ -155,6 +159,55 @@ describe('Analytics page content', () => {
   });
 });
 
+describe('Analytics page: system/location ranking panels', () => {
+  it('renders both panel titles and their subtitle, and lays them out in a responsive side-by-side/stacked grid', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await login(user, 'login-u-viewer');
+    await goToAnalytics(user);
+
+    const systemsHeading = screen.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' });
+    const locationsHeading = screen.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' });
+    expect(systemsHeading).toBeInTheDocument();
+    expect(locationsHeading).toBeInTheDocument();
+
+    // Same subtitle text for both panels -- one occurrence each.
+    expect(screen.getAllByText('דירוג לפי מספר התקלות שנפתחו בתקופה שנבחרה')).toHaveLength(2);
+
+    // Both panel <section>s share one responsive grid wrapper: stacked by
+    // default, side by side from lg: up -- never a separate desktop-only
+    // vs. mobile-only DOM branch.
+    const systemsSection = systemsHeading.closest('section') as HTMLElement;
+    const locationsSection = locationsHeading.closest('section') as HTMLElement;
+    const wrapper = systemsSection.parentElement as HTMLElement;
+    expect(wrapper).toContainElement(locationsSection);
+    expect(wrapper.className).toMatch(/\bgrid\b/);
+    expect(wrapper.className).toMatch(/\blg:grid-cols-2\b/);
+  });
+
+  it('changing a filter (period) refetches the same analytics query and both ranking panels stay in sync with it', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await login(user, 'login-u-viewer');
+    await goToAnalytics(user);
+
+    const systemsHeading = screen.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' });
+    const locationsHeading = screen.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' });
+
+    const periodGroup = screen.getByRole('group', { name: 'תקופה' });
+    await user.click(within(periodGroup).getByRole('button', { name: '7 ימים' }));
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('period')).toBe('7'));
+
+    // Both panels are still present and rendering (their own row content or
+    // their own independent empty state) after the SAME single analytics
+    // query re-ran for the new period -- neither panel silently disappears
+    // or breaks the other.
+    expect(screen.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' })).toBe(systemsHeading);
+    expect(screen.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' })).toBe(locationsHeading);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
 describe('Analytics page: malformed URL filter params fall back safely', () => {
   async function loginThenVisit(user: ReturnType<typeof userEvent.setup>, query: string) {
     await login(user, 'login-u-viewer');
@@ -172,7 +225,7 @@ describe('Analytics page: malformed URL filter params fall back safely', () => {
     const periodGroup = screen.getByRole('group', { name: 'תקופה' });
     expect(within(periodGroup).getByRole('button', { name: '30 ימים' })).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(new URLSearchParams(window.location.search).has('period')).toBe(false));
-    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+    expect(screen.getAllByText('נפתחו בתקופה').length).toBeGreaterThan(0);
   });
 
   it('an invalid severity value is ignored and stripped from the URL, without rendering the error state', async () => {
@@ -182,7 +235,7 @@ describe('Analytics page: malformed URL filter params fall back safely', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await waitFor(() => expect(new URLSearchParams(window.location.search).has('severity')).toBe(false));
-    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+    expect(screen.getAllByText('נפתחו בתקופה').length).toBeGreaterThan(0);
   });
 
   it('a malformed system UUID is ignored and stripped from the URL, without rendering the error state', async () => {
@@ -192,7 +245,7 @@ describe('Analytics page: malformed URL filter params fall back safely', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await waitFor(() => expect(new URLSearchParams(window.location.search).has('system')).toBe(false));
-    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+    expect(screen.getAllByText('נפתחו בתקופה').length).toBeGreaterThan(0);
   });
 
   it('a malformed location UUID is ignored and stripped from the URL, without rendering the error state', async () => {
@@ -202,7 +255,7 @@ describe('Analytics page: malformed URL filter params fall back safely', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await waitFor(() => expect(new URLSearchParams(window.location.search).has('location')).toBe(false));
-    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+    expect(screen.getAllByText('נפתחו בתקופה').length).toBeGreaterThan(0);
   });
 
   it('a valid filter alongside an invalid one is preserved while only the invalid one is stripped', async () => {

@@ -1150,7 +1150,14 @@ export class LocalDemoRepository implements Repository {
 
   async getIncidentAnalytics(session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics> {
     this.requireCap(session, 'view_all_incidents');
-    return computeIncidentAnalytics(this.db.incidents, this.db.incidentEvents, this.db.systems, filters, this.now());
+    return computeIncidentAnalytics(
+      this.db.incidents,
+      this.db.incidentEvents,
+      this.db.systems,
+      this.db.locations,
+      filters,
+      this.now(),
+    );
   }
 
   async getIncident(session: Session, id: string): Promise<Incident | null> {

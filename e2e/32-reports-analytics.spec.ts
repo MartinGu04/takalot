@@ -47,7 +47,7 @@ test.describe('desktop sidebar', () => {
     await expect(page.getByText('אין הרשאה')).toHaveCount(0);
   });
 
-  test('renders all six KPI cards, the trend chart and the top-systems section, with no out-of-scope terms', async ({ page }) => {
+  test('renders all six KPI cards, the trend chart and both ranking sections, with no out-of-scope terms', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     await page.goto('/reports');
     await expect(page.getByRole('heading', { name: 'ניתוח תקלות' })).toBeVisible();
@@ -60,17 +60,41 @@ test.describe('desktop sidebar', () => {
       'משך פתיחה ממוצע',
       'נפתחו מחדש',
     ]) {
-      // exact: true -- the top-systems rows also render short chip labels
-      // ("נפתחו" / "פתוחות" / "זמן סגירה"), which are substrings of some
-      // KPI card labels and would otherwise collide under a loose match.
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+      // "נפתחו בתקופה" and "זמן סגירה ממוצע" also label a column once in
+      // EACH ranking panel below (RankingList) -- exact:true still matches
+      // multiple elements for those two, so assert the first is visible
+      // rather than requiring single-element strictness.
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
 
     await expect(page.getByRole('heading', { name: 'פתיחת וסגירת תקלות' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' })).toBeVisible();
+    await expect(page.getByText('דירוג לפי מספר התקלות שנפתחו בתקופה שנבחרה').first()).toBeVisible();
 
     await expect(page.getByText('עדכונים באיחור')).toHaveCount(0);
     await expect(page.getByText('העברת משמרת')).toHaveCount(0);
+  });
+
+  test('the two ranking panels render as compact rows (not one large card per entity) and sit side by side at desktop width', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    await page.goto('/reports');
+
+    const systemsHeading = page.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' });
+    const locationsHeading = page.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' });
+    await expect(systemsHeading).toBeVisible();
+    await expect(locationsHeading).toBeVisible();
+
+    // Side by side at this (desktop) viewport width: the locations panel's
+    // heading sits to the LEFT of the systems panel's heading in an RTL
+    // layout (the first-in-DOM systems panel reads from the page's own
+    // right/start edge), not stacked below it.
+    const systemsBox = await systemsHeading.boundingBox();
+    const locationsBox = await locationsHeading.boundingBox();
+    expect(systemsBox).not.toBeNull();
+    expect(locationsBox).not.toBeNull();
+    expect(Math.abs((systemsBox as { y: number }).y - (locationsBox as { y: number }).y)).toBeLessThan(5);
+    expect((locationsBox as { x: number }).x).toBeLessThan((systemsBox as { x: number }).x);
   });
 
   test('changing a filter updates the URL and re-renders without a full page error', async ({ page }) => {
@@ -108,13 +132,15 @@ test.describe('mobile navigation', () => {
     expect(scrollWidth).toBeLessThanOrEqual(391);
   });
 
-  test('the six KPI cards and chart render without horizontal overflow at mobile width', async ({ page }) => {
+  test('the six KPI cards, chart and both ranking panels render without horizontal overflow at mobile width', async ({ page }) => {
     await loginAs(page, DEMO_USERS.viewer);
     await page.goto('/reports');
     await expect(page.getByRole('heading', { name: 'ניתוח תקלות' })).toBeVisible();
     for (const label of ['נפתחו בתקופה', 'נסגרו בתקופה', 'פתוחות עכשיו', 'נפתחו מחדש']) {
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+      await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
+    await expect(page.getByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' })).toBeVisible();
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(391);
   });
