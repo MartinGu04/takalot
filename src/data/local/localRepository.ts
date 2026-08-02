@@ -20,6 +20,7 @@ import type {
   EventType,
 } from '../../domain/types';
 import { isOpen } from '../../domain/types';
+import { computeIncidentAnalytics, type AnalyticsFilters, type IncidentAnalytics } from '../../domain/analyticsSummary';
 import { reportedToOpsLabels } from '../../domain/labels';
 import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
@@ -1144,6 +1145,11 @@ export class LocalDemoRepository implements Repository {
     // a view happens to be showing), and never including 'cancelled'.
     this.requireCap(session, 'view_all_incidents');
     return this.db.incidents.filter((i) => i.status === 'closed').length;
+  }
+
+  async getIncidentAnalytics(session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics> {
+    this.requireCap(session, 'view_all_incidents');
+    return computeIncidentAnalytics(this.db.incidents, this.db.incidentEvents, this.db.systems, filters, this.now());
   }
 
   async getIncident(session: Session, id: string): Promise<Incident | null> {

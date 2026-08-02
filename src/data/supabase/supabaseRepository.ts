@@ -33,8 +33,10 @@ import type {
 } from '../../domain/schemas';
 import { AppError } from '../repository';
 import type {
+  AnalyticsFilters,
   AuditFilters,
   ExportAuditInfo,
+  IncidentAnalytics,
   IncidentFilters,
   IncidentSort,
   ReferenceDataDeleteOutcome,
@@ -520,6 +522,23 @@ export class SupabaseRepository implements Repository {
       .eq('status', 'closed');
     wrap(error);
     return count ?? 0;
+  }
+
+  /**
+   * Calls get_incident_analytics (migration 0036) -- the production
+   * calculation authority for every ניתוחים KPI/chart/top-systems value.
+   * The RPC builds its jsonb payload with the same camelCase field names
+   * as IncidentAnalytics (openedInPeriod, avgCloseMinutes, buckets[].
+   * bucketStart, etc.), so no snake_case->camelCase mapping step is
+   * needed here, unlike mapIncident() below for the incidents table.
+   */
+  async getIncidentAnalytics(_session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics> {
+    return this.rpc<IncidentAnalytics>('get_incident_analytics', {
+      p_period_days: filters.periodDays,
+      p_system_id: filters.systemId ?? null,
+      p_location_id: filters.locationId ?? null,
+      p_severity: filters.severity ?? null,
+    });
   }
 
   async getIncident(_s: Session, id: string): Promise<Incident | null> {

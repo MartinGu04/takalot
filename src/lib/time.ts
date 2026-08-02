@@ -40,9 +40,11 @@ export function formatTime(iso: string | null | undefined): string {
   return timeFmt.format(new Date(iso));
 }
 
-/** Duration between two ISO timestamps as Hebrew text, e.g. "3 שעות ו־20 דקות". */
-export function formatDuration(fromIso: string, toIso: string): string {
-  let minutes = Math.max(0, Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000));
+/** Day/hour/minute breakdown + Hebrew pluralization + joining, shared by
+ *  formatDuration (two timestamps) and formatDurationMinutes (a raw
+ *  minute count, e.g. an average from the analytics RPC). */
+function formatMinutesHebrew(totalMinutes: number): string {
+  let minutes = Math.max(0, Math.round(totalMinutes));
   const days = Math.floor(minutes / 1440);
   minutes -= days * 1440;
   const hours = Math.floor(minutes / 60);
@@ -53,6 +55,20 @@ export function formatDuration(fromIso: string, toIso: string): string {
   if (minutes > 0 || parts.length === 0) parts.push(minutes === 1 ? 'דקה אחת' : `${minutes} דקות`);
   if (parts.length === 1) return parts[0];
   return parts.slice(0, -1).join(', ') + ' ו־' + parts[parts.length - 1];
+}
+
+/** Duration between two ISO timestamps as Hebrew text, e.g. "3 שעות ו־20 דקות". */
+export function formatDuration(fromIso: string, toIso: string): string {
+  return formatMinutesHebrew((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000);
+}
+
+/** Duration from a raw minute count (e.g. an analytics average) as Hebrew
+ *  text. null (no data to average, e.g. nothing closed in the selected
+ *  period) renders as '—', matching this file's existing null convention
+ *  (formatDate(null) etc.), not an invented "0 דקות". */
+export function formatDurationMinutes(minutes: number | null): string {
+  if (minutes === null) return '—';
+  return formatMinutesHebrew(minutes);
 }
 
 /** Relative Hebrew text, e.g. "לפני 18 דקות" / "בעוד שעתיים". */
