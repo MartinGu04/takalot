@@ -30,13 +30,22 @@
 --   avg_open_minutes    -- average (now() - discovered_at) over the exact
 --                           same set as currently_open, NOT period-bound.
 --                           Each row is clamped with greatest(0, ...)
---                           before averaging: discovered_at, like other
---                           validated event times in this schema, can
---                           legitimately be a few minutes ahead of the
---                           database's now() under normal clock-skew
---                           tolerance, and this must never surface as a
---                           negative duration on the page. null only when
---                           the open set itself is empty.
+--                           before averaging. This is deliberately a
+--                           general guard, not just a small clock-skew
+--                           tolerance: unlike closed_at/update event times
+--                           (which close_incident/update_incident validate
+--                           against an explicit now() + 5 minutes upper
+--                           bound), create_incident places no upper-bound
+--                           validation on discovered_at at all, so a
+--                           future-dated discovery timestamp -- whether a
+--                           few minutes of clock skew or a genuine
+--                           data-entry error placing it further out -- can
+--                           reach this query. The clamp keeps either case
+--                           from ever surfacing as a negative duration on
+--                           the page; it does not detect or exclude the
+--                           anomalous row itself, which is a data-entry
+--                           concern outside this RPC's scope. null only
+--                           when the open set itself is empty.
 --   reopened_in_period  -- count of DISTINCT incidents with an
 --                           incident_events row of type 'reopened' whose
 --                           event_time falls in the period (an incident

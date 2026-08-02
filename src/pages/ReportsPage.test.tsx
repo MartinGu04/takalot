@@ -4,7 +4,7 @@
 // (real routing/auth guard, real local/demo repository and RPC-equivalent
 // analytics computation), not a page-level unit mock.
 import { describe, expect, it, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 
@@ -152,5 +152,67 @@ describe('Analytics page content', () => {
 
     expect(window.location.search).toBe('');
     expect(within(periodGroup).getByRole('button', { name: '30 ימים' })).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('Analytics page: malformed URL filter params fall back safely', () => {
+  async function loginThenVisit(user: ReturnType<typeof userEvent.setup>, query: string) {
+    await login(user, 'login-u-viewer');
+    window.history.pushState({}, '', `/reports${query}`);
+    render(<App />);
+    await screen.findByRole('heading', { name: 'ניתוח תקלות' });
+  }
+
+  it('an invalid period value falls back to 30 days and is stripped from the URL, without rendering the error state', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginThenVisit(user, '?period=999');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    const periodGroup = screen.getByRole('group', { name: 'תקופה' });
+    expect(within(periodGroup).getByRole('button', { name: '30 ימים' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has('period')).toBe(false));
+    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+  });
+
+  it('an invalid severity value is ignored and stripped from the URL, without rendering the error state', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginThenVisit(user, '?severity=bogus');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has('severity')).toBe(false));
+    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+  });
+
+  it('a malformed system UUID is ignored and stripped from the URL, without rendering the error state', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginThenVisit(user, '?system=not-a-uuid');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has('system')).toBe(false));
+    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+  });
+
+  it('a malformed location UUID is ignored and stripped from the URL, without rendering the error state', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginThenVisit(user, '?location=not-a-uuid');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has('location')).toBe(false));
+    expect(screen.getByText('נפתחו בתקופה')).toBeInTheDocument();
+  });
+
+  it('a valid filter alongside an invalid one is preserved while only the invalid one is stripped', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginThenVisit(user, '?period=7&severity=bogus');
+
+    await waitFor(() => expect(new URLSearchParams(window.location.search).has('severity')).toBe(false));
+    expect(new URLSearchParams(window.location.search).get('period')).toBe('7');
+    const periodGroup = screen.getByRole('group', { name: 'תקופה' });
+    expect(within(periodGroup).getByRole('button', { name: '7 ימים' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

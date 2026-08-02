@@ -3,11 +3,12 @@
 // driven by a single get_incident_analytics RPC call (migration 0036) kept
 // in sync with the page's period/system/location/severity filters via the
 // URL (shareable/bookmarkable, same convention as ArchivePage/IncidentsPage).
+import { useEffect } from 'react';
 import { useIncidentAnalytics, useLocations, useSystems } from '../data/hooks';
 import { useUrlState } from '../lib/useUrlState';
 import { formatDurationMinutes } from '../lib/time';
 import type { AnalyticsFilters, AnalyticsPeriodDays } from '../domain/analyticsSummary';
-import type { Severity } from '../domain/types';
+import { SEVERITY_ORDER, type Severity } from '../domain/types';
 import { AnalyticsFilterBar } from '../components/analytics/AnalyticsFilterBar';
 import { AnalyticsKpiCard } from '../components/analytics/AnalyticsKpiCard';
 import { IncidentTrendChart } from '../components/analytics/IncidentTrendChart';
@@ -23,24 +24,94 @@ import {
 } from '../components/icons';
 
 const VALID_PERIODS: AnalyticsPeriodDays[] = [7, 30, 90];
+// RFC 4122 syntax check only -- deliberately not cross-referenced against
+// the loaded systems/locations lists, which may still be undefined on the
+// very first render (that would race against a perfectly valid id and
+// strip it before the reference data has even loaded).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function filtersFromUrl(url: ReturnType<typeof useUrlState>): AnalyticsFilters {
-  const periodRaw = Number(url.get('period'));
-  const periodDays = (VALID_PERIODS as number[]).includes(periodRaw) ? (periodRaw as AnalyticsPeriodDays) : 30;
-  return {
-    periodDays,
-    systemId: url.get('system'),
-    locationId: url.get('location'),
-    severity: url.get('severity') as Severity | undefined,
-  };
+function isValidUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
+function isValidSeverity(value: string): value is Severity {
+  return (SEVERITY_ORDER as string[]).includes(value);
+}
+
+/**
+ * Parses filters from the URL, validating every field before it can ever
+ * reach the repository/RPC -- an unrecognized period already fell back to
+ * 30 silently; system/location/severity now get the same treatment
+ * instead of being cast through unchecked, which previously let a stale
+ * or hand-edited URL (e.g. ?severity=bogus) reach PostgREST and surface as
+ * an uncontrolled Postgres enum/uuid cast error rather than a graceful
+ * fallback. `invalidParamKeys` lists exactly the raw URL keys that were
+ * rejected, so the caller can strip them from the address bar (replace
+ * semantics -- see the effect in ReportsPage) rather than leaving a
+ * malformed URL a retry or back-navigation could reuse.
+ */
+function filtersFromUrl(url: ReturnType<typeof useUrlState>): {
+  filters: AnalyticsFilters;
+  invalidParamKeys: string[];
+} {
+  const invalidParamKeys: string[] = [];
+
+  const periodRaw = url.get('period');
+  const periodNum = Number(periodRaw);
+  let periodDays: AnalyticsPeriodDays = 30;
+  if (periodRaw !== undefined) {
+    if ((VALID_PERIODS as number[]).includes(periodNum)) periodDays = periodNum as AnalyticsPeriodDays;
+    else invalidParamKeys.push('period');
+  }
+
+  const systemRaw = url.get('system');
+  let systemId: string | undefined;
+  if (systemRaw !== undefined) {
+    if (isValidUuid(systemRaw)) systemId = systemRaw;
+    else invalidParamKeys.push('system');
+  }
+
+  const locationRaw = url.get('location');
+  let locationId: string | undefined;
+  if (locationRaw !== undefined) {
+    if (isValidUuid(locationRaw)) locationId = locationRaw;
+    else invalidParamKeys.push('location');
+  }
+
+  const severityRaw = url.get('severity');
+  let severity: Severity | undefined;
+  if (severityRaw !== undefined) {
+    if (isValidSeverity(severityRaw)) severity = severityRaw;
+    else invalidParamKeys.push('severity');
+  }
+
+  return { filters: { periodDays, systemId, locationId, severity }, invalidParamKeys };
 }
 
 export default function ReportsPage() {
   const url = useUrlState();
-  const filters = filtersFromUrl(url);
+  const { filters, invalidParamKeys } = filtersFromUrl(url);
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
   const { data, isLoading, isError, refetch } = useIncidentAnalytics(filters);
+
+  // Strip any invalid filter params from the address bar (replace
+  // semantics, via useUrlState -- no new history entry, so back/forward
+  // navigation and a retry of the same link can't reproduce the malformed
+  // state or loop). Runs once per distinct set of invalid keys: after the
+  // strip, filtersFromUrl recomputes invalidParamKeys as [], the effect's
+  // dependency collapses to the same empty string, and it goes quiet.
+  const invalidParamKeysKey = invalidParamKeys.join(',');
+  useEffect(() => {
+    if (invalidParamKeys.length === 0) return;
+    const updates: Record<string, undefined> = {};
+    for (const key of invalidParamKeys) updates[key] = undefined;
+    url.setMany(updates);
+    // Depend on the stable, primitive form (invalidParamKeysKey), not the
+    // invalidParamKeys array itself -- filtersFromUrl returns a fresh array
+    // every render, which would otherwise re-run this effect on every
+    // render regardless of whether its content actually changed.
+  }, [invalidParamKeysKey, url.setMany]);
 
   const handleFilterChange = (next: AnalyticsFilters) => {
     url.setMany({
@@ -115,8 +186,8 @@ export default function ReportsPage() {
             />
           </div>
 
-          <section className="mt-6">
-            <h2 className="section-title">פתיחת וסגירת תקלות</h2>
+          <section className="mt-6" aria-labelledby="analytics-trend-heading">
+            <h2 id="analytics-trend-heading" className="section-title">פתיחת וסגירת תקלות</h2>
             <div className="surface mt-2 p-3 sm:p-4">
               <IncidentTrendChart buckets={data.buckets} />
             </div>

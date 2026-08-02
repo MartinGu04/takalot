@@ -22,9 +22,16 @@
 -- date_trunc+scaffold join (verified via a calendar-independent
 -- sum(buckets) == period-scalar invariant, since whether the natural
 -- weekly boundary is actually partial depends on which day of week the
--- suite happens to run); top-systems ordering (opened desc, currently-open
--- desc, name asc) and exclusion of a system with zero incidents opened in
--- the period; and permission enforcement (inactive member rejected, anon
+-- suite happens to run); that individual bucket LABELS are Jerusalem-local
+-- calendar dates, not UTC dates (fixtures placed in the 00:00-02:59
+-- Jerusalem window via pg_temp.jerusalem_local(), where a UTC-date bug
+-- would shift the label by exactly one day -- the earlier sum/length
+-- checks alone would not catch this, since a uniform shift preserves both);
+-- top-systems ordering (opened desc, currently-open desc, name asc),
+-- exclusion of a system with zero incidents opened in the period, and
+-- inclusion of a system/location/severity filter combination that matches
+-- on all three dimensions at once (not just the negative non-matching
+-- case); and permission enforcement (inactive member rejected, anon
 -- rejected at the grant boundary, any active role including viewer
 -- accepted) plus period-days validation.
 --
@@ -61,7 +68,8 @@ insert into systems (id, name, display_order) values
   ('00000000-0000-0000-0000-0000c000000e', 'Rank-C-System', 14),
   ('00000000-0000-0000-0000-0000c000000f', 'Zulu-Rank-D-System', 15),
   ('00000000-0000-0000-0000-0000c0000010', 'Alpha-Rank-System', 16),
-  ('00000000-0000-0000-0000-0000c0000011', 'Bravo-Rank-System', 17);
+  ('00000000-0000-0000-0000-0000c0000011', 'Bravo-Rank-System', 17),
+  ('00000000-0000-0000-0000-0000c0000012', 'G10 Bucket Date Label', 18);
 
 -- ===== Locations =====
 insert into locations (id, name, display_order) values
@@ -78,7 +86,8 @@ insert into locations (id, name, display_order) values
   ('00000000-0000-0000-0000-0000d000000b', 'G8 Loc Null', 11),
   ('00000000-0000-0000-0000-0000d000000c', 'G9 Loc Empty', 12),
   ('00000000-0000-0000-0000-0000d000000d', 'G9 Loc Boundary', 13),
-  ('00000000-0000-0000-0000-0000d000000e', 'Rank Loc', 14);
+  ('00000000-0000-0000-0000-0000d000000e', 'Rank Loc', 14),
+  ('00000000-0000-0000-0000-0000d000000f', 'G10 Loc Date Label', 15);
 
 -- ===== Helpers (same shape as chapter2_close_event_time.sql /
 -- incident_cancellation_grant.sql: as_user() stamps the JWT claims a real
@@ -99,6 +108,26 @@ create or replace function pg_temp.period_start_90() returns timestamptz languag
   select (((now() at time zone 'Asia/Jerusalem')::date - 89))::timestamp at time zone 'Asia/Jerusalem';
 $$;
 grant execute on function pg_temp.period_start_90() to authenticated, anon;
+
+-- Constructs an Asia/Jerusalem-local instant at (today + p_days_offset),
+-- p_hour:p_minute local time -- used to place bucket-date-label fixtures
+-- deliberately in the 00:00-02:59 Jerusalem window, where the UTC instant
+-- is still on the PREVIOUS UTC calendar date (Jerusalem is UTC+2/+3, so
+-- its calendar day starts before UTC's does). A bucketing bug that used
+-- the UTC date instead of converting to Jerusalem first would misfile a
+-- fixture placed here by exactly one day, while a fixture placed at
+-- Jerusalem noon would not expose that bug (noon Jerusalem and its UTC
+-- instant always share the same calendar date, given only a 2-3 hour
+-- offset). p_hour/p_minute are never 0:00 -- deliberately away from the
+-- midnight instant itself, per the review's "safely away from midnight"
+-- requirement, while staying inside the disagreement window.
+create or replace function pg_temp.jerusalem_local(p_days_offset int, p_hour int, p_minute int) returns timestamptz language sql as $$
+  select (
+    (((now() at time zone 'Asia/Jerusalem')::date + p_days_offset)::timestamp)
+    + make_interval(hours => p_hour, mins => p_minute)
+  ) at time zone 'Asia/Jerusalem';
+$$;
+grant execute on function pg_temp.jerusalem_local(int, int, int) to authenticated, anon;
 
 -- ===== Fixture incidents =====
 -- G1: discovered_at vs created_at (#1). inc_1a has a recent created_at but
@@ -228,6 +257,21 @@ values
   ('00000000-0000-0000-0000-0000e0000010', 'G9-003', '00000000-0000-0000-0000-0000c000000c', '00000000-0000-0000-0000-0000d000000d',
    'd', 'medium', 'new', 'i', '00000000-0000-0000-0000-0000b0000001',
    now(), '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a');
+
+-- G10: bucket date labels are Jerusalem-local, not UTC. Both fixtures sit
+-- at 01:30/02:15 Jerusalem local time -- inside the UTC-disagreement
+-- window described on pg_temp.jerusalem_local() above, and away from the
+-- midnight instant itself. discovered_at lands 3 days back, closed_at
+-- lands 2 days back -- distinct calendar dates, so the opened-series and
+-- closed-series bucket labels are each verified independently.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason,
+  closed_at, closed_by, root_cause, resolution, readiness_at_close)
+values
+  ('00000000-0000-0000-0000-0000e0000020', 'G10-001', '00000000-0000-0000-0000-0000c0000012', '00000000-0000-0000-0000-0000d000000f',
+   'd', 'medium', 'closed', 'i', '00000000-0000-0000-0000-0000b0000001',
+   pg_temp.jerusalem_local(-3, 1, 30), '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a',
+   pg_temp.jerusalem_local(-2, 2, 15), '00000000-0000-0000-0000-0000b0000001', 'rc', 'res', 'full');
 
 -- Top-systems ordering (#13): five systems, all at the SAME dedicated
 -- location (locRankTest) so the ordering assertion can filter to exactly
@@ -378,6 +422,13 @@ begin
   insert into results (test, result, detail) values
     ('system + location + severity filters combine as AND, matching nothing here',
       case when (v->>'openedInPeriod')::int = 0 then 'PASS' else 'FAIL' end, v->>'openedInPeriod');
+  -- Positive counterpart: a fixture matching ALL THREE filters simultaneously
+  -- (inc_6a is system=sysFilter, location=locFilterA, severity=critical) must
+  -- be included, not just correctly excluded when mismatched.
+  v := get_incident_analytics(30, '00000000-0000-0000-0000-0000c0000006', '00000000-0000-0000-0000-0000d0000006', 'critical');
+  insert into results (test, result, detail) values
+    ('system + location + severity filters combine as AND, including a fixture matching all three',
+      case when (v->>'openedInPeriod')::int = 1 then 'PASS' else 'FAIL' end, v->>'openedInPeriod');
 
   -- #8: avg close duration, exact, and null when nothing closed.
   v := get_incident_analytics(30, '00000000-0000-0000-0000-0000c0000007', null, null);
@@ -458,6 +509,40 @@ begin
         then 'PASS' else 'FAIL' end,
       'bucketSum=' || (select coalesce(sum((b->>'opened')::int), 0) from jsonb_array_elements(v->'buckets') b)
         || ' openedInPeriod=' || (v->>'openedInPeriod'));
+
+  -- Bucket date labels are Jerusalem-local, not UTC. Both fixtures are
+  -- placed by pg_temp.jerusalem_local() in the 00:00-02:59 Jerusalem
+  -- window where the UTC instant is still on the previous UTC date -- a
+  -- bug that bucketed by UTC date instead of converting to Jerusalem first
+  -- would shift these into the wrong bucket by exactly one day. The
+  -- expected dates below are derived independently via plain date
+  -- arithmetic on today's Jerusalem date, not by reusing the RPC's own
+  -- date_trunc/bucketing expression.
+  v := get_incident_analytics(7, '00000000-0000-0000-0000-0000c0000012', null, null);
+  insert into results (test, result, detail) values
+    ('opened bucket lands on the correct Jerusalem-local calendar date, not the UTC-shifted one',
+      case when v->'buckets' @> jsonb_build_array(jsonb_build_object(
+             'bucketStart', to_char(((now() at time zone 'Asia/Jerusalem')::date - 3), 'YYYY-MM-DD'),
+             'opened', 1
+           ))
+        then 'PASS' else 'FAIL' end,
+      'expected=' || to_char(((now() at time zone 'Asia/Jerusalem')::date - 3), 'YYYY-MM-DD') || ' buckets=' || (v->>'buckets'));
+  insert into results (test, result, detail) values
+    ('closed bucket lands on the correct Jerusalem-local calendar date, not the UTC-shifted one',
+      case when v->'buckets' @> jsonb_build_array(jsonb_build_object(
+             'bucketStart', to_char(((now() at time zone 'Asia/Jerusalem')::date - 2), 'YYYY-MM-DD'),
+             'closed', 1
+           ))
+        then 'PASS' else 'FAIL' end,
+      'expected=' || to_char(((now() at time zone 'Asia/Jerusalem')::date - 2), 'YYYY-MM-DD') || ' buckets=' || (v->>'buckets'));
+  insert into results (test, result, detail) values
+    ('no bucket other than the expected Jerusalem-local date shows nonzero opened (rules out a shifted, not just missing, label)',
+      case when not exists (
+        select 1 from jsonb_array_elements(v->'buckets') b
+        where b->>'bucketStart' <> to_char(((now() at time zone 'Asia/Jerusalem')::date - 3), 'YYYY-MM-DD')
+          and (b->>'opened')::int > 0
+      ) then 'PASS' else 'FAIL' end,
+      v->>'buckets');
 
   -- #13: top-systems ordering -- opened desc, currentlyOpen desc tiebreak,
   -- system name asc final tiebreak. Scoped to the shared ranking location

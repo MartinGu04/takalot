@@ -243,6 +243,41 @@ describe('computeIncidentAnalytics: zero-filled buckets', () => {
     expect(bucketSum).toBe(r.openedInPeriod);
     expect(r.openedInPeriod).toBe(1);
   });
+
+  it('buckets by the Jerusalem-local calendar date, not the UTC date', () => {
+    // NOW is 2026-08-02T10:00:00Z; Asia/Jerusalem is UTC+3 in August.
+    // '2026-07-29T22:30:00.000Z' is 2026-07-30 01:30 Jerusalem -- placed
+    // deliberately in the 00:00-02:59 Jerusalem window (away from the
+    // midnight instant itself), where the UTC calendar date (2026-07-29)
+    // still differs from the Jerusalem calendar date (2026-07-30). A
+    // bucketing bug that grouped by the UTC date instead of converting to
+    // Jerusalem first would misfile this incident into 2026-07-29.
+    // closedAt uses a second, independent instant in the same window
+    // ('2026-07-31 02:15 Jerusalem') so the closed-series label is
+    // verified separately from the opened-series label.
+    const incidents = [
+      makeIncident({
+        id: 'tz-check',
+        status: 'closed',
+        discoveredAt: '2026-07-29T22:30:00.000Z',
+        closedAt: '2026-07-30T23:15:00.000Z',
+      }),
+    ];
+    const r = computeIncidentAnalytics(incidents, [], [], { periodDays: 7 }, NOW);
+
+    const openedBucket = r.buckets.find((b) => b.bucketStart === '2026-07-30');
+    expect(openedBucket?.opened).toBe(1);
+    const closedBucket = r.buckets.find((b) => b.bucketStart === '2026-07-31');
+    expect(closedBucket?.closed).toBe(1);
+
+    // Rules out a SHIFTED label, not just a missing one: no other bucket
+    // (in particular not the UTC-shifted 2026-07-29/2026-07-30 neighbors)
+    // shows a nonzero count for either series.
+    for (const b of r.buckets) {
+      if (b.bucketStart !== '2026-07-30') expect(b.opened).toBe(0);
+      if (b.bucketStart !== '2026-07-31') expect(b.closed).toBe(0);
+    }
+  });
 });
 
 describe('computeIncidentAnalytics: top systems', () => {
