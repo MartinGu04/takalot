@@ -36,6 +36,13 @@ test.describe('CloseDialog: actual closure time', () => {
     await dialog.getByLabel('סיבת התקלה').fill('תקלת חומרה לבדיקת סגירה למפרע');
     await dialog.getByLabel('הפתרון שבוצע').fill('הוחלף הרכיב ואומתה תקינות');
     await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
+
+    // The confirmation dialog's duration must reflect the just-selected
+    // backdated closure time (discoveredAt -> backdated), not the current
+    // clock (discoveredAt -> now) -- those differ by ~2 hours here, which
+    // is exactly what regressed before this fix.
+    const confirmedDurationText = await dialog.locator('p', { hasText: 'משך התקלה:' }).innerText();
+
     await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
     await expect(dialog).toBeHidden();
 
@@ -50,10 +57,27 @@ test.describe('CloseDialog: actual closure time', () => {
     const closedAtRow = closedAtLabel.locator('xpath=..');
     await expect(closedAtRow).toContainText(backdatedHm);
 
+    // Same event-time semantics, cross-checked: the duration the
+    // confirmation dialog showed before submission must match the duration
+    // the detail page now shows from the persisted closedAt (both are
+    // discoveredAt -> the selected backdated time). Before this fix, the
+    // confirmation dialog showed discoveredAt -> now instead, which would
+    // not match.
+    const durationLabel = page.getByText('משך התקלה', { exact: true });
+    const durationRow = durationLabel.locator('xpath=..');
+    const persistedDurationText = await durationRow.innerText();
+    expect(persistedDurationText).toContain(confirmedDurationText.replace('משך התקלה:', '').trim());
+
     // Timeline: the closure event carries a distinct "תועד במערכת: …" line
     // -- server_time stays the actual recording time, independently ~now,
     // more than 60s away from the backdated event time.
     await expect(page.getByText('תועד במערכת:')).toBeVisible();
+
+    // The closure timeline entry itself also shows the bold operational
+    // duration line, matching the same discoveredAt -> backdated-closure
+    // value already confirmed above (not the recording time above it).
+    const timelineDurationText = await page.locator('p', { hasText: 'משך התקלה:' }).innerText();
+    expect(timelineDurationText).toContain(confirmedDurationText.replace('משך התקלה:', '').trim());
   });
 
   test('rejects a closure time before the incident was discovered, leaving the form open with entered values intact', async ({ page }) => {

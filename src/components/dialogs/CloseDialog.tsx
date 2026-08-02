@@ -145,7 +145,11 @@ export function CloseDialog({
     if (parsed.success) onSubmit(parsed.data);
   };
 
-  const estimatedDuration = formatDuration(incident.discoveredAt, new Date().toISOString());
+  // Derived from the selected effective closure time (eventTime), not the
+  // current clock -- this is a preview of the duration close_incident will
+  // persist into closed_at (migration 0033), which must not drift with
+  // however long the form stays open or how late the closure gets recorded.
+  const estimatedDuration = formatDuration(incident.discoveredAt, localInputToIso(eventTime));
 
   return (
     <Dialog open={open} onClose={handleClose} title="סגירת תקלה" wide>
@@ -234,7 +238,7 @@ export function CloseDialog({
               )}
             </Field>
           )}
-          <p className="text-sm text-muted">משך תקלה משוער עד כה: {estimatedDuration}</p>
+          <p className="text-sm text-muted">משך התקלה למועד הסגירה שנבחר: {estimatedDuration}</p>
           {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={handleClose}>ביטול</Button>

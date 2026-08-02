@@ -506,6 +506,8 @@ export default function IncidentDetailPage() {
           currentUserId={user.id}
           canCorrectAny={hasCapability(user.role, 'full_update')}
           onCorrect={(refId, label) => setDialog({ correction: { refId, label } })}
+          discoveredAt={incident.discoveredAt}
+          closedAt={incident.closedAt}
         />
       </section>
 
