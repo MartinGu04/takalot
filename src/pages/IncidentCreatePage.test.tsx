@@ -88,20 +88,42 @@ describe('IncidentCreatePage: access control', () => {
 });
 
 describe('IncidentCreatePage: form behavior', () => {
-  it('offers only active reference data in managed display order', async () => {
+  it('offers only active reference data, grouped by category in the fixed order', async () => {
     const user = await loginAs('login-u-admin');
     await goToCreatePage(user);
 
-    const systemValues = within(screen.getByLabelText(/^מערכת \/ עמדה/))
+    const systemSelect = screen.getByLabelText(/^מערכת \/ עמדה/);
+    const locationSelect = screen.getByLabelText(/^מיקום/);
+
+    const systemValues = within(systemSelect)
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value);
-    const locationValues = within(screen.getByLabelText(/^מיקום/))
+    const locationValues = within(locationSelect)
       .getAllByRole('option')
       .map((option) => (option as HTMLOptionElement).value);
 
-    expect(systemValues).toEqual(['', 'sys-alpha', 'sys-beta', 'sys-gamma', 'sys-pos-a']);
+    // sys-alpha=platforms, sys-beta/sys-pos-a=station_systems, sys-gamma=computing
+    // (seed.ts) -- fixed category order: platforms, station_systems, computing,
+    // infrastructure, other.
+    expect(systemValues).toEqual(['', 'sys-alpha', 'sys-beta', 'sys-pos-a', 'sys-gamma']);
     expect(systemValues).not.toContain('sys-pos-b'); // seeded inactive historical value
-    expect(locationValues).toEqual(['', 'loc-1', 'loc-2', 'loc-3', 'loc-control']);
+
+    // loc-1/loc-control=unit_internal, loc-2=field_side, loc-3=external_bases --
+    // fixed category order: unit_internal, field_side, external_bases,
+    // external_sites, other.
+    expect(locationValues).toEqual(['', 'loc-1', 'loc-control', 'loc-2', 'loc-3']);
+
+    // Options are grouped under <optgroup> headers using the exact fixed
+    // Hebrew category labels, in the fixed order -- not a flat list.
+    const systemGroupLabels = within(systemSelect)
+      .getAllByRole('group')
+      .map((group) => group.getAttribute('label'));
+    expect(systemGroupLabels).toEqual(['פלטפורמות', 'מערכות תחנה', 'מחשוב']);
+
+    const locationGroupLabels = within(locationSelect)
+      .getAllByRole('group')
+      .map((group) => group.getAttribute('label'));
+    expect(locationGroupLabels).toEqual(['פנים יחידתי', 'צד שטח', 'בסיסים חיצוניים']);
   });
 
   it('defaults the actual discovery-time field to now', async () => {

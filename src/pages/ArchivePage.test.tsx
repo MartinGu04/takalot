@@ -47,7 +47,8 @@ async function goToAdmin(user: ReturnType<typeof userEvent.setup>) {
 async function deactivateSystemBeta(user: ReturnType<typeof userEvent.setup>) {
   await goToAdmin(user);
   const row = (await within(main()).findByText('מערכת בטא')).closest('article') as HTMLElement;
-  await user.click(within(row).getByRole('button', { name: 'השבתה' }));
+  await user.click(within(row).getByRole('button', { name: 'פעולות עבור מערכת בטא' }));
+  await user.click(await screen.findByRole('menuitem', { name: 'השבתה' }));
   const dialog = await screen.findByRole('dialog', { name: 'השבתת מערכת / עמדה' });
   await user.click(within(dialog).getByRole('button', { name: 'השבתה' }));
   await screen.findByText('המצב עודכן בהצלחה.');

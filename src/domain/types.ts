@@ -114,10 +114,26 @@ export interface PersonnelEntry {
   avatarUrl: string | null;
 }
 
+/** Fixed, product-defined categories -- not administratively configurable.
+ *  Declaration order here is also the required fixed UI display order
+ *  (mirrors the system_category/location_category enum declaration order
+ *  in migration 0041, which sorts the same way in the database). */
+export type SystemCategory = 'platforms' | 'station_systems' | 'computing' | 'infrastructure' | 'other';
+
+export type LocationCategory =
+  | 'unit_internal'
+  | 'field_side'
+  | 'external_bases'
+  | 'external_sites'
+  | 'other';
+
 export interface SystemRecord {
   id: string;
   name: string;
   archived: boolean;
+  category: SystemCategory;
+  /** Position within this record's OWN category, not the whole table --
+   *  two records in different categories may share the same displayOrder. */
   displayOrder: number;
   createdAt: string;
 }
@@ -126,6 +142,9 @@ export interface LocationRecord {
   id: string;
   name: string;
   archived: boolean;
+  category: LocationCategory;
+  /** Position within this record's OWN category, not the whole table --
+   *  two records in different categories may share the same displayOrder. */
   displayOrder: number;
   createdAt: string;
 }

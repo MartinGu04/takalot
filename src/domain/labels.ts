@@ -7,6 +7,8 @@ import type {
   ReportedToOps,
   EventType,
   NotificationType,
+  SystemCategory,
+  LocationCategory,
 } from './types';
 
 export const APP_NAME = 'AVARIA';
@@ -106,6 +108,43 @@ export const notificationTypeLabels: Record<NotificationType, string> = {
   update_overdue: 'עבר מועד העדכון',
   incident_reopened: 'תקלה נפתחה מחדש',
   handover_pending: 'העברת משמרת ממתינה לאישורך',
+};
+
+/** Fixed display order for system categories -- product-defined, not
+ *  administratively configurable. Every place that groups systems by
+ *  category (management page, incident-creation selector) iterates this
+ *  array so the section order can never drift between call sites. */
+export const SYSTEM_CATEGORY_ORDER: SystemCategory[] = [
+  'platforms',
+  'station_systems',
+  'computing',
+  'infrastructure',
+  'other',
+];
+
+export const systemCategoryLabels: Record<SystemCategory, string> = {
+  platforms: 'פלטפורמות',
+  station_systems: 'מערכות תחנה',
+  computing: 'מחשוב',
+  infrastructure: 'תשתיות',
+  other: 'אחר',
+};
+
+/** Fixed display order for location categories -- see SYSTEM_CATEGORY_ORDER. */
+export const LOCATION_CATEGORY_ORDER: LocationCategory[] = [
+  'unit_internal',
+  'field_side',
+  'external_bases',
+  'external_sites',
+  'other',
+];
+
+export const locationCategoryLabels: Record<LocationCategory, string> = {
+  unit_internal: 'פנים יחידתי',
+  field_side: 'צד שטח',
+  external_bases: 'בסיסים חיצוניים',
+  external_sites: 'אתרים חיצוניים',
+  other: 'אחר',
 };
 
 export const fieldLabels: Record<string, string> = {

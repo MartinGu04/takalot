@@ -1,5 +1,6 @@
 import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord } from '../domain/types';
 import { severityLabels, statusLabels } from '../domain/labels';
+import { SystemOptions, LocationOptions } from './ReferenceDataOptions';
 import { Input, Select, Badge } from './ui';
 import { useDebouncedField } from '../lib/useDebouncedField';
 
@@ -120,9 +121,7 @@ export function IncidentFilterBar({
           onChange={(e) => onChange({ ...value, systemId: e.target.value || undefined })}
         >
           <option value="">מערכת / עמדה…</option>
-          {systems?.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.archived ? ' (בארכיון)' : ''}</option>
-          ))}
+          <SystemOptions systems={systems} includeArchived />
         </Select>
         <Select
           aria-label="סינון לפי מיקום"
@@ -130,9 +129,7 @@ export function IncidentFilterBar({
           onChange={(e) => onChange({ ...value, locationId: e.target.value || undefined })}
         >
           <option value="">מיקום…</option>
-          {locations?.map((l) => (
-            <option key={l.id} value={l.id}>{l.name}{l.archived ? ' (בארכיון)' : ''}</option>
-          ))}
+          <LocationOptions locations={locations} includeArchived />
         </Select>
         {extra}
       </div>

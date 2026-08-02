@@ -49,7 +49,7 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
   };
 }
 
-const ctx = { profiles: [], systems: [{ id: 'sys-alpha', name: 'מערכת אלפא', archived: false, displayOrder: 1, createdAt: '' }], locations: [{ id: 'loc-1', name: 'אתר 1', archived: false, displayOrder: 1, createdAt: '' }], now: new Date('2026-07-16T12:00:00.000Z') };
+const ctx = { profiles: [], systems: [{ id: 'sys-alpha', name: 'מערכת אלפא', archived: false, category: 'other' as const, displayOrder: 1, createdAt: '' }], locations: [{ id: 'loc-1', name: 'אתר 1', archived: false, category: 'other' as const, displayOrder: 1, createdAt: '' }], now: new Date('2026-07-16T12:00:00.000Z') };
 
 describe('CSV Hebrew export encoding', () => {
   it('starts with a UTF-8 BOM so Excel renders Hebrew correctly', () => {

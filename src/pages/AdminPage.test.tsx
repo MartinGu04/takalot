@@ -24,11 +24,27 @@ beforeEach(async () => {
   AppError = (await import('../data/repository')).AppError;
 });
 
+/** A compact row card no longer uses a heading for the record name (only
+ *  the category section uses <h2>) -- find it by its visible name text. */
 function cardNamed(name: string): HTMLElement {
-  const heading = screen.getByRole('heading', { name });
-  const card = heading.closest('article');
+  const text = screen.getByText(name, { selector: 'p' });
+  const card = text.closest('article');
   if (!card) throw new Error(`No management card found for ${name}`);
   return card;
+}
+
+/** The <section> for one fixed category, found by its <h2> heading (which
+ *  always renders as "<label> (<count>)"). */
+function categorySection(labelPrefix: string): HTMLElement {
+  const heading = screen.getByRole('heading', { level: 2, name: new RegExp(`^${labelPrefix} \\(\\d+\\)$`) });
+  const section = heading.closest('section');
+  if (!section) throw new Error(`No category section found for ${labelPrefix}`);
+  return section;
+}
+
+async function openActionMenu(user: ReturnType<typeof userEvent.setup>, recordName: string): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: `פעולות עבור ${recordName}` }));
+  return screen.getByRole('menu', { name: `פעולות עבור ${recordName}` });
 }
 
 async function loginAdminAndOpenManagement(user: ReturnType<typeof userEvent.setup>) {
@@ -43,8 +59,9 @@ async function loginAdminAndOpenManagement(user: ReturnType<typeof userEvent.set
  * sortable items' getBoundingClientRect().top -- jsdom never lays anything
  * out (every rect is 0x0 at the origin), so without this every item looks
  * identical and neither pointer nor keyboard movement can pick a direction.
- * Stubbing article rects by DOM order gives dnd-kit the same "row N is
- * below row N-1" signal a real browser's layout would produce.
+ * Stubbing article rects by DOM order (within their own parent, i.e. their
+ * own category's list) gives dnd-kit the same "row N is below row N-1"
+ * signal a real browser's layout would produce.
  */
 function stubSortableRowRects() {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
@@ -70,13 +87,47 @@ function stubSortableRowRects() {
   });
 }
 
-/** DOM order of the currently rendered config cards' names (h2 headings). */
-function currentRecordOrder(): string[] {
-  return screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent ?? '');
+/** DOM order of the record names WITHIN one category section. */
+function categoryRecordOrder(labelPrefix: string): string[] {
+  const section = categorySection(labelPrefix);
+  return Array.from(section.querySelectorAll('article p.truncate')).map((p) => p.textContent ?? '');
 }
 
 describe('reference-data management UI', () => {
-  it('supports the complete accessible system and location workflow in RTL', async () => {
+  it('renders the five fixed category sections in order, with a compact empty state for empty ones', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginAdminAndOpenManagement(user);
+
+    // Systems tab: fixed order, exact Hebrew labels, with live counts.
+    // Seed: sys-alpha=platforms(1), sys-beta+sys-pos-a=station_systems(2),
+    // sys-gamma=computing(1), sys-pos-b=infrastructure(1), none in 'other'.
+    const systemHeadings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(systemHeadings).toEqual([
+      'פלטפורמות (1)',
+      'מערכות תחנה (2)',
+      'מחשוב (1)',
+      'תשתיות (1)',
+      'אחר (0)',
+    ]);
+    expect(categorySection('אחר')).toHaveTextContent('אין פריטים בקטגוריה זו');
+    expect(categoryRecordOrder('פלטפורמות')).toEqual(['מערכת אלפא']);
+    expect(categoryRecordOrder('מערכות תחנה')).toEqual(['מערכת בטא', 'עמדה א׳']);
+
+    await user.click(screen.getByRole('tab', { name: 'מיקומים' }));
+    // loc-1+loc-control=unit_internal(2), loc-2=field_side(1), loc-3=external_bases(1).
+    const locationHeadings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(locationHeadings).toEqual([
+      'פנים יחידתי (2)',
+      'צד שטח (1)',
+      'בסיסים חיצוניים (1)',
+      'אתרים חיצוניים (0)',
+      'אחר (0)',
+    ]);
+    expect(categoryRecordOrder('פנים יחידתי')).toEqual(['אתר 1', 'חדר בקרה ראשי']);
+  });
+
+  it('supports the complete accessible system workflow via the three-dot menu, in RTL', async () => {
     const user = userEvent.setup();
     render(<App />);
     await loginAdminAndOpenManagement(user);
@@ -87,79 +138,138 @@ describe('reference-data management UI', () => {
 
     const systemName = 'מערכת בדיקת ניהול';
     await user.type(screen.getByLabelText(/^שם מערכת \/ עמדה חדשה/), `  ${systemName}  `);
+    // Creation requires an explicit category selection -- the fixed-order
+    // <select> defaults to the first category (פלטפורמות); switch to
+    // "מחשוב" to prove the chosen category, not just the default, is used.
+    await user.selectOptions(screen.getByLabelText(/^סוג /), 'computing');
     await user.click(screen.getByRole('button', { name: 'הוספה' }));
-    await screen.findByRole('heading', { name: systemName });
+    await screen.findByText(systemName, { selector: 'p' });
     expect(await screen.findByText('המערכת / העמדה נוספה בהצלחה.')).toBeInTheDocument();
+
+    // Appended to the end of the selected category (מחשוב already had
+    // מערכת גמא as its sole member).
+    expect(categoryRecordOrder('מחשוב')).toEqual(['מערכת גמא', systemName]);
 
     let systemCard = cardNamed(systemName);
     expect(within(systemCard).getByText('פעיל')).toBeInTheDocument();
-    expect(within(systemCard).getByText(/סדר תצוגה:/)).toBeInTheDocument();
     const dragHandle = within(systemCard).getByRole('button', {
       name: `גרירה לשינוי סדר עבור ${systemName}`,
     });
-    expect(dragHandle).toHaveTextContent('⠿');
     expect(dragHandle).toHaveAttribute('aria-roledescription', 'sortable');
     expect(dragHandle).not.toBeDisabled();
+    // No permanent bordered box / background around the handle itself --
+    // only the grip icon and a transparent, generously sized hit target.
+    expect(dragHandle.className).not.toMatch(/\bborder\b/);
+    expect(dragHandle.className).not.toMatch(/\bbg-(surface|white|black)\b/);
 
-    const betaCard = cardNamed('מערכת בטא');
-    expect(
-      within(betaCard).getByRole('button', { name: 'גרירה לשינוי סדר עבור מערכת בטא' }),
-    ).toBeInTheDocument();
+    // The old always-visible rename/deactivate/delete button row is gone --
+    // every per-record action lives behind the three-dot menu now.
+    expect(within(systemCard).queryByRole('button', { name: 'שינוי שם' })).not.toBeInTheDocument();
+    expect(within(systemCard).queryByRole('button', { name: 'השבתה' })).not.toBeInTheDocument();
+    expect(within(systemCard).queryByRole('button', { name: `מחיקת ${systemName}` })).not.toBeInTheDocument();
+    const menuTrigger = within(systemCard).getByRole('button', { name: `פעולות עבור ${systemName}` });
+    expect(menuTrigger).toHaveAttribute('aria-haspopup', 'menu');
 
-    // The old "שינוי סדר" up/down menu is fully replaced by the drag handle.
-    expect(screen.queryByRole('button', { name: /^שינוי סדר/ })).not.toBeInTheDocument();
-    expect(screen.queryByText('↑')).not.toBeInTheDocument();
-    expect(screen.queryByText('↓')).not.toBeInTheDocument();
+    let menu = await openActionMenu(user, systemName);
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'שינוי שם',
+      'שינוי סוג',
+      'השבתה',
+      'מחיקה',
+    ]);
+    await user.click(within(menu).getByRole('menuitem', { name: 'שינוי שם' }));
 
-    await user.click(within(systemCard).getByRole('button', { name: 'שינוי שם' }));
     const renameDialog = screen.getByRole('dialog', { name: 'שינוי שם מערכת / עמדה' });
     const renameInput = within(renameDialog).getByLabelText(/^שם חדש/);
     await user.clear(renameInput);
     await user.type(renameInput, 'מערכת לאחר שינוי');
     await user.click(within(renameDialog).getByRole('button', { name: 'שמירת השם' }));
-    await screen.findByRole('heading', { name: 'מערכת לאחר שינוי' });
+    await screen.findByText('מערכת לאחר שינוי', { selector: 'p' });
 
     systemCard = cardNamed('מערכת לאחר שינוי');
-    await user.click(within(systemCard).getByRole('button', { name: 'השבתה' }));
+    menu = await openActionMenu(user, 'מערכת לאחר שינוי');
+    await user.click(within(menu).getByRole('menuitem', { name: 'השבתה' }));
     const deactivateDialog = screen.getByRole('dialog', { name: 'השבתת מערכת / עמדה' });
     expect(deactivateDialog).toHaveTextContent('לא תופיע בבחירה בעת פתיחת תקלה חדשה');
     await user.click(within(deactivateDialog).getByRole('button', { name: 'השבתה' }));
     systemCard = cardNamed('מערכת לאחר שינוי');
     await within(systemCard).findByText('לא פעיל');
 
-    await user.click(within(systemCard).getByRole('button', { name: 'הפעלה מחדש' }));
+    // Inactive records show "הפעלה מחדש" instead of "השבתה".
+    menu = await openActionMenu(user, 'מערכת לאחר שינוי');
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'שינוי שם',
+      'שינוי סוג',
+      'הפעלה מחדש',
+      'מחיקה',
+    ]);
+    await user.click(within(menu).getByRole('menuitem', { name: 'הפעלה מחדש' }));
     systemCard = cardNamed('מערכת לאחר שינוי');
     await within(systemCard).findByText('פעיל');
 
-    const deleteSystemButton = within(systemCard).getByRole('button', {
-      name: 'מחיקת מערכת לאחר שינוי',
-    });
-    expect(deleteSystemButton).toHaveAttribute('title', 'מחיקת מערכת לאחר שינוי');
-    await user.click(deleteSystemButton);
+    menu = await openActionMenu(user, 'מערכת לאחר שינוי');
+    await user.click(within(menu).getByRole('menuitem', { name: 'מחיקה' }));
     const deleteDialog = screen.getByRole('dialog', { name: 'מחיקת מערכת / עמדה' });
     expect(deleteDialog).toHaveTextContent('פריט שמקושר לתקלה או לרשומה היסטורית יישמר');
     await user.click(within(deleteDialog).getByRole('button', { name: 'בקשת מחיקה' }));
     expect(await screen.findByText(/נמחקה לצמיתות משום שלא הייתה בשימוש/)).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'מערכת לאחר שינוי' })).not.toBeInTheDocument(),
+      expect(screen.queryByText('מערכת לאחר שינוי', { selector: 'p' })).not.toBeInTheDocument(),
     );
+  });
 
-    await user.click(screen.getByRole('tab', { name: 'מיקומים' }));
-    expect(screen.getByRole('tab', { name: 'מיקומים' })).toHaveAttribute('aria-selected', 'true');
-    const locationName = 'מיקום בדיקת ניהול';
-    await user.type(screen.getByLabelText(/^שם מיקום חדש/), locationName);
-    await user.click(screen.getByRole('button', { name: 'הוספה' }));
-    const locationCard = cardNamed(locationName);
-    expect(within(locationCard).getByText('פעיל')).toBeInTheDocument();
+  it('changes a system\'s category via "שינוי סוג", moving it to the destination section', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginAdminAndOpenManagement(user);
 
-    // Referenced deletion is visibly distinguished from physical deletion.
-    await user.click(
-      within(cardNamed('אתר 1')).getByRole('button', { name: 'מחיקת אתר 1' }),
-    );
-    const referencedDeleteDialog = screen.getByRole('dialog', { name: 'מחיקת מיקום' });
-    await user.click(within(referencedDeleteDialog).getByRole('button', { name: 'בקשת מחיקה' }));
-    expect(await screen.findByText(/המיקום נמצא בשימוש ולכן הועבר למצב לא פעיל/)).toBeInTheDocument();
-    await within(cardNamed('אתר 1')).findByText('לא פעיל');
+    expect(categoryRecordOrder('פלטפורמות')).toEqual(['מערכת אלפא']);
+    expect(categoryRecordOrder('תשתיות')).toEqual(['עמדה ב׳']);
+
+    const menu = await openActionMenu(user, 'מערכת אלפא');
+    await user.click(within(menu).getByRole('menuitem', { name: 'שינוי סוג' }));
+    const dialog = await screen.findByRole('dialog', { name: 'שינוי סוג עבור מערכת אלפא' });
+    expect(dialog).toHaveTextContent('פלטפורמות'); // current category shown
+    // The current category is never offered as a selectable destination.
+    expect(within(dialog).queryByRole('option', { name: 'פלטפורמות' })).not.toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText(/^סוג חדש/), 'תשתיות');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירה' }));
+    await screen.findByText('הסוג עודכן בהצלחה.');
+
+    await waitFor(() => {
+      expect(categoryRecordOrder('פלטפורמות')).toEqual([]);
+      // Appended to the END of the destination category.
+      expect(categoryRecordOrder('תשתיות')).toEqual(['עמדה ב׳', 'מערכת אלפא']);
+    });
+    expect(categorySection('פלטפורמות')).toHaveTextContent('אין פריטים בקטגוריה זו');
+
+    // Active/inactive state survives the category change: עמדה ב׳ was
+    // seeded archived, and stays so after this unrelated move.
+    expect(within(cardNamed('עמדה ב׳')).getByText('לא פעיל')).toBeInTheDocument();
+    expect(within(cardNamed('מערכת אלפא')).getByText('פעיל')).toBeInTheDocument();
+  });
+
+  it('keeps global search results grouped by category rather than flattening them', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await loginAdminAndOpenManagement(user);
+
+    await user.type(screen.getByLabelText('חיפוש במערכות / עמדות'), 'עמדה');
+    // Matches sys-pos-a ("עמדה א׳", station_systems) and sys-pos-b
+    // ("עמדה ב׳", infrastructure) -- still two separate category sections,
+    // not one flat list.
+    await waitFor(() => {
+      expect(categoryRecordOrder('מערכות תחנה')).toEqual(['עמדה א׳']);
+    });
+    expect(categoryRecordOrder('תשתיות')).toEqual(['עמדה ב׳']);
+    expect(categorySection('פלטפורמות')).toHaveTextContent('אין תוצאות התואמות לחיפוש בקטגוריה זו');
+    expect(screen.queryByText('מערכת אלפא')).not.toBeInTheDocument();
+
+    // Dragging is disabled while a search is active (a partial, filtered
+    // list is not a meaningful reorder target).
+    expect(
+      screen.queryByRole('button', { name: 'גרירה לשינוי סדר עבור עמדה א׳' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a controlled conflict instead of creating a normalized duplicate', async () => {
@@ -176,27 +286,35 @@ describe('reference-data management UI', () => {
 });
 
 describe('drag-and-drop reordering', () => {
-  it('reorders locations via the keyboard-focused drag handle and keeps the order after a refresh', async () => {
+  it('reorders locations within one category via the keyboard-focused drag handle, leaves other categories untouched, and keeps the order after a refresh', async () => {
     stubSortableRowRects();
     const user = userEvent.setup();
     const { unmount } = render(<App />);
     await loginAdminAndOpenManagement(user);
     await user.click(screen.getByRole('tab', { name: 'מיקומים' }));
-    await screen.findByRole('heading', { name: 'אתר 1' });
+    await screen.findByText('אתר 1', { selector: 'p' });
 
-    expect(currentRecordOrder()).toEqual(['אתר 1', 'אתר 2', 'אתר 3', 'חדר בקרה ראשי']);
+    // unit_internal has exactly two members: אתר 1, then חדר בקרה ראשי.
+    expect(categoryRecordOrder('פנים יחידתי')).toEqual(['אתר 1', 'חדר בקרה ראשי']);
+    // צד שטח (field_side, אתר 2) and בסיסים חיצוניים (external_bases, אתר 3)
+    // are separate, unrelated categories/sections.
+    expect(categoryRecordOrder('צד שטח')).toEqual(['אתר 2']);
+    expect(categoryRecordOrder('בסיסים חיצוניים')).toEqual(['אתר 3']);
 
     const handle = screen.getByRole('button', { name: 'גרירה לשינוי סדר עבור אתר 1' });
     handle.focus();
     await user.keyboard(' '); // pick up
-    await user.keyboard('{ArrowDown}'); // move one position down
+    await user.keyboard('{ArrowDown}'); // move one position down, within its own category
     await user.keyboard(' '); // drop
 
     await waitFor(() => {
-      expect(currentRecordOrder()).toEqual(['אתר 2', 'אתר 1', 'אתר 3', 'חדר בקרה ראשי']);
+      expect(categoryRecordOrder('פנים יחידתי')).toEqual(['חדר בקרה ראשי', 'אתר 1']);
     });
-    expect(within(cardNamed('אתר 1')).getByText(/סדר תצוגה: 2/)).toBeInTheDocument();
-    expect(within(cardNamed('אתר 2')).getByText(/סדר תצוגה: 1/)).toBeInTheDocument();
+    // Cross-category dragging cannot happen through the UI (each category is
+    // its own SortableContext) -- the other two, unrelated sections are
+    // provably unaffected by this drag.
+    expect(categoryRecordOrder('צד שטח')).toEqual(['אתר 2']);
+    expect(categoryRecordOrder('בסיסים חיצוניים')).toEqual(['אתר 3']);
 
     // Simulate a refresh: unmount the whole app tree and remount against the
     // same underlying (localStorage-backed) demo database. The demo session
@@ -206,8 +324,8 @@ describe('drag-and-drop reordering', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'ניהול' });
     await userEvent.setup().click(screen.getByRole('tab', { name: 'מיקומים' }));
-    await screen.findByRole('heading', { name: 'אתר 1' });
-    expect(currentRecordOrder()).toEqual(['אתר 2', 'אתר 1', 'אתר 3', 'חדר בקרה ראשי']);
+    await screen.findByText('אתר 1', { selector: 'p' });
+    expect(categoryRecordOrder('פנים יחידתי')).toEqual(['חדר בקרה ראשי', 'אתר 1']);
   });
 
   it('restores the previous order and shows a Hebrew error toast when persistence fails', async () => {
@@ -216,8 +334,8 @@ describe('drag-and-drop reordering', () => {
     render(<App />);
     await loginAdminAndOpenManagement(user);
     await user.click(screen.getByRole('tab', { name: 'מיקומים' }));
-    await screen.findByRole('heading', { name: 'אתר 1' });
-    expect(currentRecordOrder()).toEqual(['אתר 1', 'אתר 2', 'אתר 3', 'חדר בקרה ראשי']);
+    await screen.findByText('אתר 1', { selector: 'p' });
+    expect(categoryRecordOrder('פנים יחידתי')).toEqual(['אתר 1', 'חדר בקרה ראשי']);
 
     const failure = new AppError('NETWORK', 'אירעה שגיאה בלתי צפויה מול השרת. הנתונים לא נשמרו — ניתן לנסות שוב.');
     const reorderSpy = vi.spyOn(hooks.repo(), 'reorderLocations').mockRejectedValueOnce(failure);
@@ -232,16 +350,22 @@ describe('drag-and-drop reordering', () => {
     // reverted to the exact previous order once the backend rejects it.
     await screen.findByText(failure.message);
     await waitFor(() => {
-      expect(currentRecordOrder()).toEqual(['אתר 1', 'אתר 2', 'אתר 3', 'חדר בקרה ראשי']);
+      expect(categoryRecordOrder('פנים יחידתי')).toEqual(['אתר 1', 'חדר בקרה ראשי']);
     });
     expect(reorderSpy).toHaveBeenCalledTimes(1);
+    // Only that one category's ids were submitted -- never the whole table.
+    expect(reorderSpy.mock.calls[0][1]).toEqual(
+      expect.arrayContaining([expect.any(String), expect.any(String)]),
+    );
+    expect(reorderSpy.mock.calls[0][1]).toHaveLength(2);
 
     // The row's existing actions remain fully functional after a failed drag.
-    await user.click(within(cardNamed('אתר 1')).getByRole('button', { name: 'שינוי שם' }));
+    const menu = await openActionMenu(user, 'אתר 1');
+    await user.click(within(menu).getByRole('menuitem', { name: 'שינוי שם' }));
     expect(screen.getByRole('dialog', { name: 'שינוי שם מיקום' })).toBeInTheDocument();
   });
 
-  it('does not offer the drag handle to a role without reference-data permission', async () => {
+  it('does not offer the drag handle or the actions menu to a role without reference-data permission', async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByTestId('login-u-viewer'));
@@ -252,5 +376,6 @@ describe('drag-and-drop reordering', () => {
     window.history.pushState({}, '', '/admin');
     render(<App />);
     expect(screen.queryByRole('button', { name: /^גרירה לשינוי סדר/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^פעולות עבור/ })).not.toBeInTheDocument();
   });
 });

@@ -11,11 +11,13 @@ import type {
   Incident,
   IncidentEvent,
   IncidentUpdate,
+  LocationCategory,
   LocationRecord,
   PendingPersonnel,
   PersonnelEntry,
   Profile,
   Role,
+  SystemCategory,
   SystemRecord,
 } from '../../domain/types';
 import type {
@@ -191,6 +193,7 @@ const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
   id: r.id as string,
   name: r.name as string,
   archived: r.archived as boolean,
+  category: r.category as SystemCategory,
   displayOrder: r.display_order as number,
   createdAt: r.created_at as string,
 });
@@ -199,6 +202,7 @@ const mapLocation = (r: Record<string, unknown>): LocationRecord => ({
   id: r.id as string,
   name: r.name as string,
   archived: r.archived as boolean,
+  category: r.category as LocationCategory,
   displayOrder: r.display_order as number,
   createdAt: r.created_at as string,
 });
@@ -257,6 +261,7 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.client
       .from('systems')
       .select('*')
+      .order('category')
       .order('display_order')
       .order('name')
       .order('id');
@@ -268,6 +273,7 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.client
       .from('locations')
       .select('*')
+      .order('category')
       .order('display_order')
       .order('name')
       .order('id');
@@ -275,8 +281,10 @@ export class SupabaseRepository implements Repository {
     return (data ?? []).map(mapLocation);
   }
 
-  async createSystem(_s: Session, name: string): Promise<SystemRecord> {
-    return mapSystem(await this.referenceDataRpc<Record<string, unknown>>('create_system', { p_name: name }));
+  async createSystem(_s: Session, name: string, category: SystemCategory): Promise<SystemRecord> {
+    return mapSystem(
+      await this.referenceDataRpc<Record<string, unknown>>('create_system', { p_name: name, p_category: category }),
+    );
   }
 
   async renameSystem(_s: Session, id: string, name: string): Promise<void> {
@@ -299,8 +307,17 @@ export class SupabaseRepository implements Repository {
     await this.referenceDataRpc('reorder_systems', { p_ids: orderedIds });
   }
 
-  async createLocation(_s: Session, name: string): Promise<LocationRecord> {
-    return mapLocation(await this.referenceDataRpc<Record<string, unknown>>('create_location', { p_name: name }));
+  async setSystemCategory(_s: Session, id: string, category: SystemCategory): Promise<void> {
+    await this.referenceDataRpc('set_system_category', { p_system_id: id, p_category: category });
+  }
+
+  async createLocation(_s: Session, name: string, category: LocationCategory): Promise<LocationRecord> {
+    return mapLocation(
+      await this.referenceDataRpc<Record<string, unknown>>('create_location', {
+        p_name: name,
+        p_category: category,
+      }),
+    );
   }
 
   async renameLocation(_s: Session, id: string, name: string): Promise<void> {
@@ -321,6 +338,10 @@ export class SupabaseRepository implements Repository {
 
   async reorderLocations(_s: Session, orderedIds: string[]): Promise<void> {
     await this.referenceDataRpc('reorder_locations', { p_ids: orderedIds });
+  }
+
+  async setLocationCategory(_s: Session, id: string, category: LocationCategory): Promise<void> {
+    await this.referenceDataRpc('set_location_category', { p_location_id: id, p_category: category });
   }
 
   async setUserRole(_s: Session, userId: string, role: Role): Promise<void> {

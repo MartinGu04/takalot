@@ -163,12 +163,12 @@ select pg_temp.check_result(
 
 select pg_temp.check_result(
   'authenticated can execute all ten reference-data RPCs',
-  has_function_privilege('authenticated', 'public.create_system(text)', 'EXECUTE')
+  has_function_privilege('authenticated', 'public.create_system(text,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.rename_system(uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.set_system_active(uuid,boolean)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.move_system(uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.delete_system(uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.create_location(text)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.create_location(text,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.rename_location(uuid,text)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.set_location_active(uuid,boolean)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.move_location(uuid,text)', 'EXECUTE')
@@ -177,12 +177,12 @@ select pg_temp.check_result(
 
 select pg_temp.check_result(
   'anon cannot execute any reference-data RPC',
-  not has_function_privilege('anon', 'public.create_system(text)', 'EXECUTE')
+  not has_function_privilege('anon', 'public.create_system(text,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.rename_system(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.set_system_active(uuid,boolean)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.move_system(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.delete_system(uuid)', 'EXECUTE')
-  and not has_function_privilege('anon', 'public.create_location(text)', 'EXECUTE')
+  and not has_function_privilege('anon', 'public.create_location(text,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.rename_location(uuid,text)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.set_location_active(uuid,boolean)', 'EXECUTE')
   and not has_function_privilege('anon', 'public.move_location(uuid,text)', 'EXECUTE')
@@ -267,13 +267,13 @@ begin
   perform pg_temp.as_user('00000000-0000-0000-0000-000000000243');
   set local role authenticated;
   begin
-    perform create_system('Forbidden');
+    perform create_system('Forbidden', 'other');
     perform pg_temp.check_result('non-admin system creation is rejected', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('non-admin system creation is rejected', sqlerrm like 'permission:%', sqlerrm);
   end;
   begin
-    perform create_location('Forbidden');
+    perform create_location('Forbidden', 'other');
     perform pg_temp.check_result('non-admin location creation is rejected', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('non-admin location creation is rejected', sqlerrm like 'permission:%', sqlerrm);
@@ -283,7 +283,7 @@ begin
   perform pg_temp.as_user('00000000-0000-0000-0000-000000000242');
   set local role authenticated;
   begin
-    perform create_system('Inactive forbidden');
+    perform create_system('Inactive forbidden', 'other');
     perform pg_temp.check_result('inactive administrator is rejected', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('inactive administrator is rejected', sqlerrm like 'permission:%', sqlerrm);
@@ -293,25 +293,25 @@ begin
   perform pg_temp.as_user('00000000-0000-0000-0000-000000000241');
   set local role authenticated;
   begin
-    select * into v_system from create_system('   ');
+    select * into v_system from create_system('   ', 'other');
     perform pg_temp.check_result('whitespace-only system name is rejected', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('whitespace-only system name is rejected', sqlerrm like 'validation:%', sqlerrm);
   end;
   begin
-    select * into v_location from create_location('');
+    select * into v_location from create_location('', 'other');
     perform pg_temp.check_result('empty location name is rejected', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('empty location name is rejected', sqlerrm like 'validation:%', sqlerrm);
   end;
   begin
-    perform create_system(repeat('א', 121));
+    perform create_system(repeat('א', 121), 'other');
     perform pg_temp.check_result('system maximum length is enforced', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('system maximum length is enforced', sqlerrm like 'validation:%120%', sqlerrm);
   end;
   begin
-    perform create_location(repeat('א', 121));
+    perform create_location(repeat('א', 121), 'other');
     perform pg_temp.check_result('location maximum length is enforced', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result('location maximum length is enforced', sqlerrm like 'validation:%120%', sqlerrm);
@@ -330,7 +330,7 @@ begin
   perform pg_temp.as_user('00000000-0000-0000-0000-000000000241');
   set local role authenticated;
 
-  select * into v_system from create_system('  Control Alpha  ');
+  select * into v_system from create_system('  Control Alpha  ', 'other');
   perform pg_temp.check_result(
     'authorized system creation trims and stores the name',
     v_system.name = 'Control Alpha' and not v_system.archived and v_system.display_order > 2,
@@ -338,14 +338,14 @@ begin
   );
   v_system_id := v_system.id;
 
-  select * into v_location from create_location('  Control Alpha  ');
+  select * into v_location from create_location('  Control Alpha  ', 'other');
   perform pg_temp.check_result(
     'systems and locations use separate name namespaces',
     v_location.name = 'Control Alpha' and not v_location.archived,
     row_to_json(v_location)::text
   );
   begin
-    perform create_location(' control alpha ');
+    perform create_location(' control alpha ', 'other');
     perform pg_temp.check_result('normalized location name is reserved within its namespace', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result(
@@ -357,7 +357,7 @@ begin
 
   perform set_system_active(v_system.id, false);
   begin
-    perform create_system('  control alpha ');
+    perform create_system('  control alpha ', 'other');
     perform pg_temp.check_result('inactive system name remains globally reserved', false, 'succeeded');
   exception when others then
     perform pg_temp.check_result(
@@ -559,7 +559,7 @@ begin
   end;
   perform set_location_active('00000000-0000-0000-0000-000000002411', true);
 
-  select * into v_unused_system from create_system('Disposable');
+  select * into v_unused_system from create_system('Disposable', 'other');
   v_result := delete_system(v_unused_system.id);
   perform pg_temp.check_result(
     'never-used system is physically deleted',
@@ -577,7 +577,7 @@ begin
       ),
     v_result
   );
-  perform create_system(' disposable ');
+  perform create_system(' disposable ', 'other');
   perform pg_temp.check_result(
     'physical deletion releases the normalized system name',
     exists (
@@ -587,7 +587,7 @@ begin
     ''
   );
 
-  select * into v_unused_location from create_location('Disposable location');
+  select * into v_unused_location from create_location('Disposable location', 'other');
   v_result := delete_location(v_unused_location.id);
   perform pg_temp.check_result(
     'never-used location is physically deleted',
@@ -605,7 +605,7 @@ begin
     ),
     v_result
   );
-  perform create_location(' disposable location ');
+  perform create_location(' disposable location ', 'other');
   perform pg_temp.check_result(
     'physical deletion releases the normalized location name',
     exists (

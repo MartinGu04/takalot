@@ -264,6 +264,22 @@ export function IconWrench(props: IconProps) {
   );
 }
 
+/** Drag-handle grip: two columns of three dots, the universal "draggable"
+ *  affordance. Deliberately no outline/frame of its own -- callers provide
+ *  the hit target and any hover/focus treatment around it. */
+export function IconGripVertical(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="7.5" cy="5" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="7.5" cy="10" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="7.5" cy="15" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="5" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="10" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="15" r="1.15" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function IconEye(props: IconProps) {
   return (
     <svg {...base(props)}>
