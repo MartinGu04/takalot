@@ -1,6 +1,6 @@
-// Archive: terminal incidents only -- closed AND cancelled. Search, filters,
-// readiness, root-cause/solution text search, and export. No deletion action
-// anywhere on this page.
+// Archive: terminal incidents only -- closed AND cancelled. Search, filters
+// (outcome, system, date range), root-cause/solution text search, and
+// export. No deletion action anywhere on this page.
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
@@ -10,15 +10,13 @@ import { ArchiveDateFilter } from '../components/ArchiveDateFilter';
 import { useUrlState } from '../lib/useUrlState';
 import { useDebouncedField } from '../lib/useDebouncedField';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
-import { readinessLabels } from '../domain/labels';
-import type { Readiness } from '../domain/types';
 
 export default function ArchivePage() {
   const url = useUrlState();
   const search = url.get('q') ?? '';
   const rootCauseText = url.get('rootCause') ?? '';
   const resolutionText = url.get('resolution') ?? '';
-  const readiness = url.get('readiness') as Readiness | undefined;
+  const systemId = url.get('system');
   // Terminal outcome. The archive's default scope is both outcomes; 'closed'
   // and 'cancelled' narrow it to one. Reached from the dashboard's closed
   // counter and "לכל הארכיון" link, and clearable here like any other filter.
@@ -46,7 +44,7 @@ export default function ArchivePage() {
       search,
       rootCauseText: rootCauseText || undefined,
       resolutionText: resolutionText || undefined,
-      readinessAtClose: readiness ? [readiness] : undefined,
+      systemId: systemId || undefined,
       createdFrom: createdFrom ? new Date(createdFrom).toISOString() : undefined,
       createdTo: createdTo ? new Date(createdTo + 'T23:59:59').toISOString() : undefined,
     },
@@ -63,7 +61,7 @@ export default function ArchivePage() {
       const ctx = { profiles: profiles ?? [], systems: systems ?? [], locations: locations ?? [], now };
       await repo().recordExport(session, {
         exportType: kind === 'xlsx' ? 'incidents_xlsx' : 'incidents_csv',
-        filtersDescription: `ארכיון: ${JSON.stringify({ search, readiness, createdFrom, createdTo })}`,
+        filtersDescription: `ארכיון: ${JSON.stringify({ search, systemId, createdFrom, createdTo })}`,
       });
       const rows = incidents ?? [];
       if (rows.length === 0) {
@@ -122,14 +120,20 @@ export default function ArchivePage() {
             <option value="cancelled">מבוטלות בלבד</option>
           </Select>
           <Select
-            aria-label="סינון לפי כשירות בסגירה"
+            aria-label="סינון לפי מערכת"
             className="min-w-0"
-            value={readiness ?? ''}
-            onChange={(e) => url.set('readiness', e.target.value || undefined)}
+            value={systemId ?? ''}
+            onChange={(e) => url.set('system', e.target.value || undefined)}
           >
-            <option value="">כשירות בסגירה…</option>
-            {Object.entries(readinessLabels).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
+            <option value="">כל המערכות</option>
+            {/* Includes archived systems (listSystems returns the full set,
+                unfiltered) -- an archived incident may reference a system
+                that's since been archived/deactivated, and that historical
+                incident must still be findable. Same "(בארכיון)" suffix
+                convention IncidentFilterBar already uses for the same
+                reason, rather than a new visual treatment. */}
+            {systems?.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}{s.archived ? ' (בארכיון)' : ''}</option>
             ))}
           </Select>
           <Input

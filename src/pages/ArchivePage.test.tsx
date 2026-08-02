@@ -3,7 +3,7 @@
 // leaves the open-incident views -- exercised through the real app with the
 // demo repository, mirroring IncidentDetailPage.test.tsx's approach.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type AppType from '../App';
 
@@ -31,6 +31,26 @@ async function goToArchive(user: ReturnType<typeof userEvent.setup>) {
   // findByText for incident content can match a stale, still-hidden node
   // from the previous page before the new one finishes mounting.
   await within(main()).findByRole('heading', { name: /ארכיון/ });
+}
+
+async function goToAdmin(user: ReturnType<typeof userEvent.setup>) {
+  const sidebarNav = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+  await user.click(within(sidebarNav).getByRole('link', { name: 'ניהול' }));
+  await within(main()).findByRole('heading', { name: 'ניהול' });
+}
+
+// מערכת בטא (sys-beta) already has a closed archive incident (inc-5).
+// Deactivating it through the real admin flow gives a genuine, live
+// "archived system with historical archive incidents" fixture, instead of
+// hand-editing the shared demo seed (which several other pages' tests
+// assert exact counts against).
+async function deactivateSystemBeta(user: ReturnType<typeof userEvent.setup>) {
+  await goToAdmin(user);
+  const row = (await within(main()).findByText('מערכת בטא')).closest('article') as HTMLElement;
+  await user.click(within(row).getByRole('button', { name: 'השבתה' }));
+  const dialog = await screen.findByRole('dialog', { name: 'השבתת מערכת / עמדה' });
+  await user.click(within(dialog).getByRole('button', { name: 'השבתה' }));
+  await screen.findByText('המצב עודכן בהצלחה.');
 }
 
 async function cancelIncidentOneAsAdmin(user: ReturnType<typeof userEvent.setup>) {
@@ -255,5 +275,117 @@ describe('Archive: date-range filter control', () => {
     await user.type(within(main()).getByLabelText('חיפוש בארכיון'), 'בטא');
     await within(main()).findByText('1 תקלות בארכיון תואמות');
     expect(within(main()).getByText(INC5_TEXT)).toBeInTheDocument();
+  });
+});
+
+describe('Archive: system filter (replaces the removed כשירות בסגירה filter)', () => {
+  it('כשירות בסגירה no longer appears, and כל המערכות is the system filter\'s default option', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    expect(within(main()).queryByLabelText('סינון לפי כשירות בסגירה')).not.toBeInTheDocument();
+    expect(within(main()).queryByText(/כשירות בסגירה/)).not.toBeInTheDocument();
+
+    const systemSelect = within(main()).getByLabelText('סינון לפי מערכת');
+    expect(systemSelect).toHaveValue('');
+    expect(within(systemSelect).getByRole('option', { name: 'כל המערכות' })).toBeInTheDocument();
+  });
+
+  it('selecting a system filters the archived list and stores the selection in the URL', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    expect(await within(main()).findByText(INC5_TEXT)).toBeInTheDocument(); // sys-beta
+    expect(within(main()).getByText(INC9_TEXT)).toBeInTheDocument(); // sys-alpha
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי מערכת'), 'sys-beta');
+
+    expect(await within(main()).findByText(INC5_TEXT)).toBeInTheDocument();
+    expect(within(main()).queryByText(INC9_TEXT)).not.toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get('system')).toBe('sys-beta');
+  });
+
+  it('a deep link / refresh with ?system= restores the selected system and the filtered result', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+
+    // Simulates a refresh/deep link landing straight on the filtered URL --
+    // a second render, mirroring the same pattern used for the equivalent
+    // check elsewhere in this codebase (e.g. ReportsPage.test.tsx). Query
+    // through plain `screen`, not the `main()` helper: the first render's
+    // tree is still mounted alongside this one, so `main()` (which grabs
+    // the first <main> in the document) would return the stale, pre-
+    // navigation tree instead of this fresh one.
+    window.history.pushState({}, '', '/archive?system=sys-beta');
+    render(<App />);
+    await screen.findByRole('heading', { name: /ארכיון/ });
+
+    expect(screen.getByLabelText('סינון לפי מערכת')).toHaveValue('sys-beta');
+    expect(await screen.findByText(INC5_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText(INC9_TEXT)).not.toBeInTheDocument();
+  });
+
+  it('reset removes the system parameter and restores the unfiltered archive result', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי מערכת'), 'sys-beta');
+    expect(new URLSearchParams(window.location.search).get('system')).toBe('sys-beta');
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי מערכת'), '');
+
+    expect(new URLSearchParams(window.location.search).has('system')).toBe(false);
+    expect(within(main()).getByLabelText('סינון לפי מערכת')).toHaveValue('');
+    expect(await within(main()).findByText(INC9_TEXT)).toBeInTheDocument();
+  });
+
+  it('an archived system associated with a historical archive incident remains selectable and filterable', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+
+    await deactivateSystemBeta(user);
+    await goToArchive(user);
+
+    const systemSelect = within(main()).getByLabelText('סינון לפי מערכת');
+    // Still listed -- and visually marked as archived -- rather than
+    // silently dropped from the filter now that it's inactive.
+    expect(within(systemSelect).getByRole('option', { name: 'מערכת בטא (בארכיון)' })).toBeInTheDocument();
+
+    await user.selectOptions(systemSelect, 'sys-beta');
+    expect(await within(main()).findByText(INC5_TEXT)).toBeInTheDocument();
+    expect(within(main()).queryByText(INC9_TEXT)).not.toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get('system')).toBe('sys-beta');
+  });
+
+  it('composes correctly with the date filter, status filter and general search', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי תוצאה'), 'closed');
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי מערכת'), 'sys-beta');
+    await user.type(within(main()).getByLabelText('חיפוש בארכיון'), 'תצורה');
+
+    // The search field commits to the URL only after a debounce (see
+    // useDebouncedField) -- inc-5 already matches on outcome+system alone,
+    // so waiting for it to render isn't proof the search term has committed
+    // yet. Wait for the 'q' param itself before asserting on it.
+    await waitFor(() => expect(new URLSearchParams(window.location.search).get('q')).toBe('תצורה'));
+
+    expect(within(main()).getByText(INC5_TEXT)).toBeInTheDocument();
+    expect(within(main()).queryByText(INC9_TEXT)).not.toBeInTheDocument();
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('outcome')).toBe('closed');
+    expect(params.get('system')).toBe('sys-beta');
   });
 });
