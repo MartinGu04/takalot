@@ -62,13 +62,40 @@ export function formatDuration(fromIso: string, toIso: string): string {
   return formatMinutesHebrew((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000);
 }
 
-/** Duration from a raw minute count (e.g. an analytics average) as Hebrew
- *  text. null (no data to average, e.g. nothing closed in the selected
- *  period) renders as '—', matching this file's existing null convention
- *  (formatDate(null) etc.), not an invented "0 דקות". */
+/** Compact Hebrew duration for analytics display only (KPI cards averaging
+ *  a raw minute count) -- numeral + unit, at most TWO components (days +
+ *  hours, or hours + minutes, or minutes alone), never three. Presentation
+ *  only, deliberately terser than formatDuration's fuller "X ימים, Y שעות
+ *  ו־Z דקות" (still used everywhere else -- incident detail, exports):
+ *  once the leading unit is days or hours, the next-smaller unit rounds
+ *  away rather than adding a third clause, since for an average duration
+ *  that level of precision reads as noise, not information. E.g. 2380
+ *  minutes -> "1 יום, 15 שעות", not "יום אחד, 15 שעות ו־40 דקות". null (no
+ *  data to average, e.g. nothing closed in the selected period) renders as
+ *  '—', matching this file's existing null convention (formatDate(null)
+ *  etc.), not an invented "0 דקות". */
 export function formatDurationMinutes(minutes: number | null): string {
   if (minutes === null) return '—';
-  return formatMinutesHebrew(minutes);
+  let total = Math.max(0, Math.round(minutes));
+  const days = Math.floor(total / 1440);
+  total -= days * 1440;
+  const hours = Math.floor(total / 60);
+  total -= hours * 60;
+  const mins = total;
+
+  const unit = (n: number, singular: string, plural: string) => `${n} ${n === 1 ? singular : plural}`;
+
+  if (days > 0) {
+    return hours > 0
+      ? `${unit(days, 'יום', 'ימים')}, ${unit(hours, 'שעה', 'שעות')}`
+      : unit(days, 'יום', 'ימים');
+  }
+  if (hours > 0) {
+    return mins > 0
+      ? `${unit(hours, 'שעה', 'שעות')}, ${unit(mins, 'דקה', 'דקות')}`
+      : unit(hours, 'שעה', 'שעות');
+  }
+  return unit(mins, 'דקה', 'דקות');
 }
 
 /** Relative Hebrew text, e.g. "לפני 18 דקות" / "בעוד שעתיים". */

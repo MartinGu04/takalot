@@ -55,13 +55,14 @@ test.describe('desktop sidebar', () => {
     for (const label of [
       'נפתחו בתקופה',
       'נסגרו בתקופה',
-      'זמן ממוצע לסגירה',
+      'זמן סגירה ממוצע',
       'פתוחות עכשיו',
-      'כמה זמן הן פתוחות',
+      'משך פתיחה ממוצע',
       'נפתחו מחדש',
     ]) {
-      // exact: true -- the top-systems rows also render text like "3 נפתחו
-      // בתקופה", which would otherwise collide with the KPI card's label.
+      // exact: true -- the top-systems rows also render short chip labels
+      // ("נפתחו" / "פתוחות" / "זמן סגירה"), which are substrings of some
+      // KPI card labels and would otherwise collide under a loose match.
       await expect(page.getByText(label, { exact: true })).toBeVisible();
     }
 

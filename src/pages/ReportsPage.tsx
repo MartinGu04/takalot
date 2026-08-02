@@ -170,9 +170,9 @@ export default function ReportsPage() {
             />
             <AnalyticsKpiCard
               icon={IconClock}
-              label="זמן ממוצע לסגירה"
+              label="זמן סגירה ממוצע"
               value={formatDurationMinutes(data.avgCloseMinutes)}
-              context="מרגע הגילוי ועד לסגירה בפועל"
+              context="מגילוי ועד סגירה בפועל"
               tone="blue"
             />
             <AnalyticsKpiCard
@@ -184,16 +184,16 @@ export default function ReportsPage() {
             />
             <AnalyticsKpiCard
               icon={IconAlertTriangle}
-              label="כמה זמן הן פתוחות"
+              label="משך פתיחה ממוצע"
               value={formatDurationMinutes(data.avgOpenMinutes)}
-              context="ממוצע זמן פתיחה של התקלות הפעילות"
+              context="מגילוי ועד עכשיו"
               tone="amber"
             />
             <AnalyticsKpiCard
               icon={IconArrowsExchange}
               label="נפתחו מחדש"
               value={data.reopenedInPeriod}
-              context="תקלות שנפתחו מחדש בתקופה שנבחרה"
+              context="בתקופה שנבחרה"
               tone="red"
             />
           </div>
@@ -207,6 +207,7 @@ export default function ReportsPage() {
 
           <section className="mt-8">
             <h2 className="section-title">מערכות עם הכי הרבה תקלות</h2>
+            <p className="mt-0.5 text-xs text-muted">דירוג לפי תקלות שנפתחו בתקופה שנבחרה</p>
             <div className="mt-3">
               <TopSystemsList rows={data.topSystems} />
             </div>

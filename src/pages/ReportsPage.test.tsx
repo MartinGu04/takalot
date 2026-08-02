@@ -101,7 +101,7 @@ describe('Analytics page content', () => {
 
     expect(screen.getByText('מגמות, ביצועים ונקודות שדורשות תשומת לב')).toBeInTheDocument();
 
-    for (const label of ['נפתחו בתקופה', 'נסגרו בתקופה', 'זמן ממוצע לסגירה', 'פתוחות עכשיו', 'כמה זמן הן פתוחות', 'נפתחו מחדש']) {
+    for (const label of ['נפתחו בתקופה', 'נסגרו בתקופה', 'זמן סגירה ממוצע', 'פתוחות עכשיו', 'משך פתיחה ממוצע', 'נפתחו מחדש']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
 

@@ -79,11 +79,41 @@ export function AnalyticsKpiCard({
       aria-label={`${label}: ${value}. ${context}.`}
       className={`surface flex min-w-0 flex-col gap-4 p-5 text-right sm:p-6 ${t.border}`}
     >
-      <div className="flex min-w-0 items-center gap-3.5" aria-hidden="true">
+      {/* Numeric counts keep the icon beside the value (it's always short
+          enough to share the row). String (duration) values stack the icon
+          ABOVE the value instead, below the sm: breakpoint only -- at a
+          2-column mobile width, icon + value sharing one row leaves the
+          value under 80px to work with, which forces a duration string
+          into 3-4 cramped lines regardless of font size. Stacking gives it
+          the card's full width instead, at the cost of the icon sitting a
+          line higher; from sm: up (3-column desktop, ~300px+ per card)
+          there's room for both side by side, matching the numeric cards. */}
+      <div
+        className={
+          typeof value === 'number'
+            ? 'flex min-w-0 items-center gap-3.5'
+            : 'flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3.5'
+        }
+        aria-hidden="true"
+      >
         <span className={`flex size-12 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
           <Icon className="size-6" />
         </span>
-        <div className="text-3xl font-extrabold leading-none text-text-primary">{value}</div>
+        {/* Numeric counts (a plain number) stay large -- they're always
+            short. String values (compact duration text, e.g. "1 יום, 15
+            שעות") get a smaller, tighter size instead of the same 3xl: at
+            the same size a duration string reads as oversized/cramped
+            against the card's width, where the equivalent 1-2 digit count
+            never does. */}
+        <div
+          className={
+            typeof value === 'number'
+              ? 'text-3xl font-extrabold leading-none text-text-primary'
+              : 'text-xl font-extrabold leading-snug text-text-primary sm:text-2xl'
+          }
+        >
+          {value}
+        </div>
       </div>
       <div className="min-w-0" aria-hidden="true">
         {/* No truncate: Hebrew KPI labels/context must wrap on narrow
