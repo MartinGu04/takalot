@@ -123,9 +123,24 @@ export function IncidentCard({
               {locationName}
             </span>
           </p>
-          <p dir="auto" className="mt-1.5 line-clamp-2 break-words text-start text-sm text-secondary">
-            {incident.operationalImpact}
-          </p>
+          {/* Labeled, like the מערכת/מיקום row above -- and for the same
+              reason, the label stays outside the bidi-isolated value rather
+              than the whole paragraph taking dir="auto". Wrapping the whole
+              block in dir="auto" let an LTR-dominant value (English-only,
+              technical identifiers) flip the ENTIRE paragraph's direction,
+              which also flips text-start's resolved side -- an English value
+              would then start-align from the paragraph's now-left edge,
+              landing right up against the metadata column beside it instead
+              of reading as part of this content column. `<bdi dir="auto">`
+              isolates only the dynamic value: it still resolves its own
+              direction per content, but never drags the label or the
+              paragraph's own alignment along with it. */}
+          {incident.operationalImpact && (
+            <p className="mt-1.5 line-clamp-2 break-words text-start text-sm text-secondary">
+              השפעה מבצעית:{' '}
+              <bdi dir="auto">{incident.operationalImpact}</bdi>
+            </p>
+          )}
           {incident.followUpRequired && !incident.followUpCompletedAt && (
             <p className="mt-2 text-sm font-medium text-orange-700 dark:text-orange-400">
               נדרשות פעולות המשך — כשירות לא מלאה
