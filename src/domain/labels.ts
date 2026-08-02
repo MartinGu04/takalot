@@ -20,9 +20,11 @@ export const roleLabels: Record<Role, string> = {
   viewer: 'צפייה בלבד',
 };
 
-/** Short role labels for the כוח אדם (personnel) page only -- deliberately
- *  more compact than roleLabels (e.g. "נגד" instead of "נגד / מנהל מקצועי"),
- *  which stays as the general-purpose label used elsewhere in the app. */
+/** Short role labels -- deliberately more compact than roleLabels (e.g.
+ *  "נגד" instead of "נגד / מנהל מקצועי"). Used by the כוח אדם (personnel)
+ *  page and by OwnerField's owner-group headings (the approved internal-owner
+ *  picker group label is "נגד", not "נגד / מנהל מקצועי"); roleLabels stays
+ *  as the general-purpose label used elsewhere in the app. */
 export const personnelRoleLabels: Record<Role, string> = {
   system_admin: 'מנהל מערכת',
   professional_manager: 'נגד',

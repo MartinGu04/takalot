@@ -6,6 +6,7 @@ import { useLocations, useProfiles, useSystems, useAppMutation, repo } from '../
 import { useSession } from '../auth/AuthContext';
 import { Button, Field, Input, Select, Textarea } from '../components/ui';
 import { ExternalPartyFields } from '../components/ExternalPartyFields';
+import { OwnerField } from '../components/OwnerField';
 import { severityLabels, reportedToOpsLabels } from '../domain/labels';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
 import { loadDraft, clearDraft, useDraft, useClearDraftOnRouteLeave, useWarnOnUnload } from '../lib/useDraft';
@@ -263,28 +264,16 @@ export default function IncidentCreatePage() {
           )}
         </Field>
 
-        <Field
-          label="בעל אחריות פנימי"
-          required
+        <OwnerField
+          profiles={profiles}
+          ownerUserId={values.ownerUserId}
+          onChange={(v) => {
+            ownerManuallySetRef.current = true;
+            setValue('ownerUserId', v);
+          }}
           error={ownerError}
           hint="האחראי לוודא שהטיפול בתקלה יימשך עד לסגירתה — לאו דווקא מי שמבצע את התיקון הטכני עצמו."
-        >
-          {(a) => (
-            <Select
-              {...a}
-              {...register('ownerUserId', {
-                onChange: () => {
-                  ownerManuallySetRef.current = true;
-                },
-              })}
-            >
-              <option value="">— בחירה —</option>
-              {profiles?.filter((p) => p.active).map((p) => (
-                <option key={p.id} value={p.id}>{p.fullName}</option>
-              ))}
-            </Select>
-          )}
-        </Field>
+        />
 
         <ExternalPartyFields
           name={values.externalHandlerName}
