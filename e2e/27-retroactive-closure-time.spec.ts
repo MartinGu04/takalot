@@ -45,6 +45,7 @@ test.describe('CloseDialog: actual closure time', () => {
 
     await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
     await expect(dialog).toBeHidden();
+    await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     // Detail page's "שעת סגירה" reflects the actual (backdated) closure
     // time, not the moment the request was submitted -- the datetime-local
@@ -133,6 +134,7 @@ test.describe('CloseDialog: actual closure time', () => {
     await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
     await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
     await expect(dialog).toBeHidden();
+    await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     await page.goto('/archive');
     await expect(page.getByRole('link', { name: /2026-004/ })).toBeVisible();

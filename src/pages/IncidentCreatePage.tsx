@@ -3,11 +3,14 @@ import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { createIncidentSchema, type CreateIncidentInput } from '../domain/schemas';
 import { useLocations, useProfiles, useSystems, useAppMutation, repo } from '../data/hooks';
-import { useSession } from '../auth/AuthContext';
+import { useAuth, useSession } from '../auth/AuthContext';
 import { Button, Field, Input, Select, Textarea } from '../components/ui';
 import { ExternalPartyFields } from '../components/ExternalPartyFields';
 import { OwnerField } from '../components/OwnerField';
+import { NotificationCopyDialog } from '../components/dialogs/NotificationCopyDialog';
 import { severityLabels, reportedToOpsLabels } from '../domain/labels';
+import { buildIncidentOpenedMessage } from '../domain/notificationMessage';
+import type { Incident } from '../domain/types';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
 import { loadDraft, clearDraft, useDraft, useClearDraftOnRouteLeave, useWarnOnUnload } from '../lib/useDraft';
 
@@ -61,10 +64,12 @@ function defaultValues(): FormValues {
 export default function IncidentCreatePage() {
   const navigate = useNavigate();
   const session = useSession();
+  const { user } = useAuth();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
   const { data: profiles } = useProfiles();
   const [submitted, setSubmitted] = useState(false);
+  const [createdIncident, setCreatedIncident] = useState<Incident | null>(null);
 
   // Merge a restored draft OVER the current defaults rather than using it
   // directly: a draft saved before a later form revision (e.g. PR C's
@@ -109,7 +114,11 @@ export default function IncidentCreatePage() {
       onSuccess: (incident) => {
         setSubmitted(true);
         clearDraft(DRAFT_KEY);
-        navigate(`/incidents/${incident.id}`, { state: { justCreated: true } });
+        // Navigation to the new incident's own page is deferred until the
+        // WhatsApp notification-copy modal below is dismissed -- the modal
+        // must appear right after the confirmed success, built from this
+        // exact persisted incident (not the form's now-stale local state).
+        setCreatedIncident(incident);
       },
     },
   );
@@ -410,6 +419,19 @@ export default function IncidentCreatePage() {
           </Button>
         </div>
       </form>
+
+      {createdIncident && user && (
+        <NotificationCopyDialog
+          open
+          title="התקלה נפתחה בהצלחה"
+          message={buildIncidentOpenedMessage(
+            createdIncident,
+            systems?.find((s) => s.id === createdIncident.systemId)?.name ?? '—',
+            user.fullName,
+          )}
+          onDismiss={() => navigate(`/incidents/${createdIncident.id}`, { state: { justCreated: true } })}
+        />
+      )}
     </div>
   );
 }

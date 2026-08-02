@@ -17,6 +17,7 @@ test.describe('creation: the external-handler trio is optional alongside the man
     await page.getByLabel('גורם מטפל חיצוני').fill('ספק תחזוקה בע״מ');
     await page.getByLabel('איש קשר').fill('דנה כהן');
     await page.getByRole('button', { name: 'פתיחת תקלה' }).click();
+    await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     await expect(page.getByRole('definition').filter({ hasText: 'יואב כהן' })).toBeVisible();
     const externalRow = page.getByRole('definition').filter({ hasText: 'ספק תחזוקה בע״מ' });
@@ -100,6 +101,7 @@ test.describe('closure: ExternalPartyFields appears at every readiness level', (
     await dialog.getByLabel('גורם מטפל חיצוני').fill('ארגון בסגירה מלאה');
     await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
     await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
+    await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     await expect(page.getByRole('definition').filter({ hasText: 'ארגון בסגירה מלאה' })).toBeVisible();
   });

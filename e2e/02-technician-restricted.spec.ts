@@ -42,6 +42,7 @@ test('technician creates an incident, then reassigns and closes an incident owne
   await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית על ידי הטכנאי');
   await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
   await page.locator('form button[type="submit"]').click();
+  await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
   await expect(page.getByRole('status')).toContainText('נפתחה בהצלחה');
 
   // inc-4 (seed.ts): status "monitoring" (non-terminal), owned by
@@ -72,6 +73,9 @@ test('technician creates an incident, then reassigns and closes an incident owne
   await closeDialog.getByLabel('הפתרון שבוצע').fill('הפתרון שבוצע על ידי הטכנאי');
   await closeDialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
   await closeDialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
+
+  // Temporary WhatsApp notification-copy modal -- dismiss without copying.
+  await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
   await expect(page.getByText('נסגרה', { exact: false }).first()).toBeVisible();
   await expect(page.locator('text=סיכום סגירה')).toBeVisible();

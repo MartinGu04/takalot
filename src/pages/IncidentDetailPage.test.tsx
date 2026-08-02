@@ -738,3 +738,94 @@ describe('incident details: internal owner and external handler render as two se
     expect(within(main()).queryByText('גורם מטפל חיצוני')).not.toBeInTheDocument();
   });
 });
+
+// Temporary operational workaround (no real WhatsApp integration yet):
+// NotificationCopyDialog, shown after a confirmed successful CLOSURE.
+// inc-1 is owned by tech1 ("עומר פרץ (דמו)"); every test here signs in as
+// u-admin ("אלון ברק (דמו)") to prove the actor comes from the authenticated
+// profile, not the incident's own (editable) owner field.
+async function fillCloseDialogMinimalFields(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+  await user.type(within(dialog).getByLabelText(/^סיבת התקלה/), 'תקלת חומרה');
+  await user.type(within(dialog).getByLabelText(/^הפתרון שבוצע/), 'הוחלף רכיב');
+}
+
+describe('IncidentDetailPage: WhatsApp notification-copy modal (post-closure)', () => {
+  it('does not appear before closing, appears only after a confirmed successful full closure, and its message uses the persisted data, the authenticated actor (never the incident owner), and the exact duration CloseDialog itself previewed', async () => {
+    const user = await openIncidentDetailAsAdmin();
+    expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument();
+    const heading = await within(main()).findByRole('heading', { level: 1 });
+    const incidentNumber = heading.textContent?.match(/\d{4}-\d{3}/)?.[0];
+    expect(incidentNumber).toBeTruthy();
+
+    await user.click(await within(main()).findByRole('button', { name: 'סגירת תקלה' }));
+    const closeDialog = await screen.findByRole('dialog', { name: 'סגירת תקלה' });
+    await fillCloseDialogMinimalFields(user, closeDialog);
+
+    // CloseDialog's own pre-confirm duration preview (regression-tested
+    // elsewhere to reflect the selected effective closure time, never the
+    // current clock) is the source of truth this test cross-checks against.
+    const previewText = within(closeDialog).getByText(/^משך התקלה למועד הסגירה שנבחר:/).textContent ?? '';
+    const expectedDuration = previewText.replace('משך התקלה למועד הסגירה שנבחר: ', '');
+    expect(expectedDuration).not.toBe('');
+
+    await user.click(within(closeDialog).getByRole('button', { name: 'המשך לאישור סגירה' }));
+    expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument(); // not yet confirmed
+    await user.click(await within(closeDialog).findByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    const notification = await screen.findByRole('dialog', { name: 'התקלה נסגרה בהצלחה' });
+    expect(
+      within(notification).getByText(/כרגע AVARIA עדיין לא שולחת התראות אוטומטיות לוואטסאפ/),
+    ).toBeInTheDocument();
+    const message = within(notification).getByRole('group', { name: 'תוכן ההודעה להעתקה' }).textContent ?? '';
+    expect(message).toBe(`✅ תקלה ${incidentNumber} במערכת מערכת אלפא נסגרה על ידי אלון ברק (דמו) לאחר ${expectedDuration}`);
+    expect(message).not.toContain('עומר פרץ'); // inc-1's owner (tech1) -- never the actor
+  });
+
+  it('does not appear when the close request fails', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const { AppError } = await import('../data/repository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'closeIncident')
+      .mockRejectedValueOnce(
+        new AppError('CONFLICT', 'התקלה עודכנה על ידי משתמש אחר. יש לרענן את הדף לפני שמירה.'),
+      );
+
+    const user = await openIncidentDetailAsAdmin();
+    await user.click(await within(main()).findByRole('button', { name: 'סגירת תקלה' }));
+    const closeDialog = await screen.findByRole('dialog', { name: 'סגירת תקלה' });
+    await fillCloseDialogMinimalFields(user, closeDialog);
+    await user.click(within(closeDialog).getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(await within(closeDialog).findByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    expect(await screen.findByText('התקלה עודכנה על ידי משתמש אחר. יש לרענן את הדף לפני שמירה.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it('does not appear for a partial-readiness submission -- the incident stays open, so it never actually "closes"', async () => {
+    const user = await openIncidentDetailAsAdmin();
+    await user.click(await within(main()).findByRole('button', { name: 'סגירת תקלה' }));
+    const closeDialog = await screen.findByRole('dialog', { name: 'סגירת תקלה' });
+    await fillCloseDialogMinimalFields(user, closeDialog);
+    await user.selectOptions(within(closeDialog).getByLabelText(/^כשירות המערכת/), 'partial');
+    await user.type(within(closeDialog).getByLabelText(/^פעולות המשך/), 'להשלים בדיקה נוספת');
+    await user.click(within(closeDialog).getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(await within(closeDialog).findByRole('button', { name: 'אישור ושמירה' }));
+
+    expect(await screen.findByText('התקלה נסגרה.')).toBeInTheDocument(); // the mutation itself still succeeds
+    expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument();
+  });
+
+  it('a normal incident update never triggers either notification modal', async () => {
+    const { user } = await openUpdateDialogAsAdmin();
+    const dialog = screen.getByRole('dialog', { name: 'עדכון תקלה' });
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון רגיל');
+    await fillCurrentStatusText(user, dialog);
+    await fillUpdateReporting(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+
+    expect(await screen.findByText('העדכון נשמר.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'התקלה נפתחה בהצלחה' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument();
+  });
+});

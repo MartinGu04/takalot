@@ -18,6 +18,7 @@ test.describe('incident event notes ("הערה נוספת")', () => {
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
     await page.getByLabel('הערה נוספת').fill('  הערה נוספת שהוזנה בעת הפתיחה  ');
     await page.locator('form button[type="submit"]').click();
+    await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     await expect(page.getByRole('status')).toContainText('נפתחה בהצלחה');
     await expect(page.getByText(/נבדק ראשונית/)).toBeVisible();
@@ -35,6 +36,7 @@ test.describe('incident event notes ("הערה נוספת")', () => {
     await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית ללא הערה');
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
     await page.locator('form button[type="submit"]').click();
+    await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     await expect(page.getByRole('status')).toContainText('נפתחה בהצלחה');
     await expect(page.getByText(/נבדק ראשונית ללא הערה/)).toBeVisible();
@@ -111,6 +113,7 @@ test.describe('incident event notes ("הערה נוספת")', () => {
     await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית');
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
     await page.locator('form button[type="submit"]').click();
+    await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
     await expect(page.getByRole('status')).toContainText('נפתחה בהצלחה');
 
     await page.getByRole('button', { name: 'סגירת תקלה' }).click();
@@ -120,6 +123,7 @@ test.describe('incident event notes ("הערה נוספת")', () => {
     await closeDialog.getByLabel('הערה נוספת').fill('הערה נוספת בעת הסגירה');
     await closeDialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
     await closeDialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
+    await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
     await expect(page.getByText('נסגרה', { exact: false }).first()).toBeVisible();
     await expect(page.getByText(/סיבת התקלה שזוהתה/).first()).toBeVisible();

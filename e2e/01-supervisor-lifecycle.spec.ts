@@ -13,6 +13,11 @@ test('shift supervisor creates an incident, assigns a technician, adds an update
   await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
   await page.locator('form button[type="submit"]').click();
 
+  // A successful creation first shows the temporary WhatsApp
+  // notification-copy modal; dismiss it without copying to reach the new
+  // incident's own detail page.
+  await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
+
   // Redirects to the new incident's detail page with a success confirmation.
   await expect(page.getByRole('status')).toContainText('נפתחה בהצלחה');
   const numberMatch = await page.locator('h1').innerText();
@@ -44,6 +49,10 @@ test('shift supervisor creates an incident, assigns a technician, adds an update
   await closeDialog.getByLabel('הפתרון שבוצע').fill('הפתרון שבוצע לתיקון התקלה');
   await closeDialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
   await closeDialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
+
+  // Same temporary WhatsApp notification-copy modal, this time for the
+  // closure -- dismiss it without copying.
+  await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
 
   await expect(page.getByText('נסגרה', { exact: false }).first()).toBeVisible();
   await expect(page.locator('text=סיכום סגירה')).toBeVisible();
