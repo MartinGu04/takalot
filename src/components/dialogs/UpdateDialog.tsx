@@ -81,6 +81,7 @@ export function UpdateDialog({
   const [updateReportedToCommsRecipient, setUpdateReportedToCommsRecipient] = useState('');
   const [updateWisdomReported, setUpdateWisdomReported] = useState<'yes' | 'no' | ''>('');
   const [changeReason, setChangeReason] = useState('');
+  const [note, setNote] = useState('');
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -91,6 +92,7 @@ export function UpdateDialog({
     setFindings('');
     setNextSteps('');
     setCurrentStatusText('');
+    setNote('');
     setStatus(incident.status);
     setSeverity(incident.severity);
     setOwnerUserId(incident.ownerUserId ?? '');
@@ -128,6 +130,7 @@ export function UpdateDialog({
       updateReportedToComms,
       updateReportedToCommsRecipient: updateReportedToComms === 'yes' ? updateReportedToCommsRecipient : null,
       updateWisdomReported,
+      note,
     };
   }
   function buildTechInput() {
@@ -138,6 +141,7 @@ export function UpdateDialog({
       findings,
       nextSteps,
       currentStatusText,
+      note,
     };
   }
 
@@ -257,6 +261,20 @@ export function UpdateDialog({
                 placeholder="לדוגמה: הצוות הטכני בדרך לאתר, ממתינים להערכת נזק."
               />
               <p className="text-left text-xs text-muted">{currentStatusText.length}/1000</p>
+            </>
+          )}
+        </Field>
+        <Field label="הערה נוספת">
+          {(a) => (
+            <>
+              <Textarea
+                {...a}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={600}
+                placeholder="כל מידע נוסף שכדאי לתעד לצד עדכון זה (לא חובה)."
+              />
+              <p className="text-left text-xs text-muted">{note.length}/600</p>
             </>
           )}
         </Field>

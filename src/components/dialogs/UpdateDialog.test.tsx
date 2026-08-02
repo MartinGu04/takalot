@@ -138,6 +138,39 @@ describe('UpdateDialog: a legacy/internal current status is read-only context, n
   });
 });
 
+describe('UpdateDialog: "הערה נוספת" (optional note, shared by full and technician updates)', () => {
+  it('renders with a live character counter and a 600-character cap, regardless of treatment category', () => {
+    renderDialog('in_progress');
+    const noteField = screen.getByLabelText('הערה נוספת');
+    expect(noteField).toHaveAttribute('maxLength', '600');
+    expect(screen.getByText('0/600')).toBeInTheDocument();
+  });
+
+  it('is passed through to onSubmitFull when the full update is submitted', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const onSubmitFull = vi.fn();
+    const incident = makeIncident({ status: 'in_progress' });
+    render(
+      <UpdateDialog
+        open
+        onClose={() => {}}
+        incident={incident}
+        onSubmitFull={onSubmitFull}
+        onSubmitTechnician={() => {}}
+        submitting={false}
+      />,
+    );
+    await user.type(screen.getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'פעולות שבוצעו');
+    await user.type(screen.getByLabelText(/^סטטוס נוכחי/), 'המצב הנוכחי');
+    await user.type(screen.getByLabelText('הערה נוספת'), 'הערה נוספת לבדיקה');
+    await user.selectOptions(screen.getByLabelText(/^דווח למבצעים\?/), 'not_required');
+    await user.selectOptions(screen.getByLabelText(/^האם דווח לתקשוב למבצעים\?/), 'no');
+    await user.selectOptions(screen.getByLabelText(/^האם עודכן ב-WISDOM\?/), 'no');
+    await user.click(screen.getByRole('button', { name: 'שמירת עדכון' }));
+    expect(onSubmitFull).toHaveBeenCalledWith(expect.objectContaining({ note: 'הערה נוספת לבדיקה' }));
+  });
+});
+
 describe('UpdateDialog: waiting reasons are filtered independently, matching the backend exactly', () => {
   it('acknowledged reaches all three structured בהמתנה reasons', async () => {
     const user = (await import('@testing-library/user-event')).default.setup();

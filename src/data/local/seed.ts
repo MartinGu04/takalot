@@ -137,6 +137,7 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     oldValue: null,
     newValue: null,
     note: null,
+    userNote: null,
     refId: null,
     createdAt: at(offset),
     // Seed data represents pre-existing history, exactly like any real
@@ -387,6 +388,7 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       updateReportedToComms: true,
       updateReportedToCommsRecipient: 'תקשוב מוקד מבצעים (דמו)',
       updateWisdomReported: false,
+      userNote: null,
       createdAt: at(-hours(4)),
     },
     {
@@ -404,6 +406,7 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       updateReportedToComms: false,
       updateReportedToCommsRecipient: null,
       updateWisdomReported: true,
+      userNote: 'יש לתאם עם הספק את מועד אספקת הרכיב מראש.',
       createdAt: at(-hours(2)),
     },
     {
@@ -421,6 +424,7 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       updateReportedToComms: false,
       updateReportedToCommsRecipient: null,
       updateWisdomReported: false,
+      userNote: null,
       createdAt: at(-hours(3)),
     },
     {
@@ -442,13 +446,17 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       updateReportedToComms: null,
       updateReportedToCommsRecipient: null,
       updateWisdomReported: null,
+      userNote: null,
       createdAt: at(-hours(1)),
     },
   ];
   db.incidentUpdates = updates;
 
   db.incidentEvents = [
-    ev('ev-1-created', 'inc-1', 'created', DEMO_USERS.supervisor1, -hours(6), { note: 'פתיחת תקלה' }),
+    ev('ev-1-created', 'inc-1', 'created', DEMO_USERS.supervisor1, -hours(6), {
+      note: 'פתיחת תקלה',
+      userNote: 'התקלה דווחה טלפונית על ידי מפעיל המשמרת.',
+    }),
     ev('ev-1-ack', 'inc-1', 'acknowledged', DEMO_USERS.supervisor1, -hours(6) + minutes(5)),
     ev('ev-1-assign', 'inc-1', 'assignment_change', DEMO_USERS.supervisor1, -hours(6) + minutes(10), {
       field: 'owner', oldValue: 'יואב כהן (דמו)', newValue: 'עומר פרץ (דמו)',

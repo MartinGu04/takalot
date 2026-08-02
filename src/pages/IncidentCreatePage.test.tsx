@@ -261,6 +261,31 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     await within(main()).findByRole('heading', { name: 'תקלות' });
     expect(within(main()).getByText(number)).toBeInTheDocument();
   });
+
+  it('an optional "הערה נוספת" persists and appears under the created event, distinct from the generated opening note', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.type(screen.getByLabelText('הערה נוספת'), '  הערה נוספת לצורך הבדיקה  ');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await screen.findByText(/נפתחה בהצלחה/);
+
+    const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    expect(within(timeline).getByText(/נבדק ראשונית לצורך הבדיקה/)).toBeInTheDocument();
+    expect(within(timeline).getByText('הערה נוספת:')).toBeInTheDocument();
+    expect(within(timeline).getByText('הערה נוספת לצורך הבדיקה')).toBeInTheDocument();
+  });
+
+  it('leaving "הערה נוספת" blank shows no note section at all', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await screen.findByText(/נפתחה בהצלחה/);
+
+    const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    expect(within(timeline).queryByText('הערה נוספת:')).not.toBeInTheDocument();
+  });
 });
 
 describe('IncidentCreatePage: תקשוב למבצעים ו-WISDOM', () => {
@@ -452,7 +477,9 @@ describe('IncidentCreatePage: 600-character limit (פעולות שבוצעו ע�
     await goToCreatePage(user);
     const actionsTaken = screen.getByLabelText(/^פעולות שבוצעו עד כה/);
     expect(actionsTaken).toHaveAttribute('maxLength', '600');
-    expect(screen.getByText('0/600')).toBeInTheDocument();
+    // Two counters legitimately start at "0/600": this field's own, and the
+    // separate optional "הערה נוספת" field's (also capped at 600).
+    expect(screen.getAllByText('0/600')).toHaveLength(2);
 
     await user.type(actionsTaken, 'א'.repeat(15));
     expect(screen.getByText('15/600')).toBeInTheDocument();

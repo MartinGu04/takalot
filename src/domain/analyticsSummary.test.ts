@@ -75,6 +75,7 @@ function makeEvent(overrides: Partial<IncidentEvent> = {}): IncidentEvent {
     oldValue: null,
     newValue: null,
     note: null,
+    userNote: null,
     refId: null,
     createdAt: daysAgo(1),
     operationId: null,

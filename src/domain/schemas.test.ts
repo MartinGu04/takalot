@@ -284,6 +284,80 @@ describe('createIncidentSchema: 600-character limit on פעולות שבוצעו
   });
 });
 
+// "הערה נוספת" (migration 0038): one new optional, ≤600-character note on
+// create/update/technician-update/close. Never required, never mixed with
+// any other field's own limit.
+describe('note ("הערה נוספת"): optional, 600-character limit, on every relevant schema', () => {
+  it('createIncidentSchema: note is optional -- a payload without it is valid', () => {
+    const result = createIncidentSchema.safeParse(baseInput());
+    expect(result.success).toBe(true);
+  });
+
+  it('createIncidentSchema accepts note at exactly 600 characters and rejects 601 with the exact Hebrew message', () => {
+    const atLimit = createIncidentSchema.safeParse(baseInput({ note: 'א'.repeat(600) }));
+    expect(atLimit.success).toBe(true);
+
+    const overLimit = createIncidentSchema.safeParse(baseInput({ note: 'א'.repeat(601) }));
+    expect(overLimit.success).toBe(false);
+    if (!overLimit.success) {
+      expect(overLimit.error.issues.some((i) => i.path[0] === 'note' && i.message === 'הערה נוספת: עד 600 תווים')).toBe(true);
+    }
+  });
+
+  it('updateIncidentSchema: note is optional and shares the same 600-character limit', () => {
+    const withoutNote = updateIncidentSchema.safeParse(baseUpdateInput());
+    expect(withoutNote.success).toBe(true);
+
+    const overLimit = updateIncidentSchema.safeParse(baseUpdateInput({ note: 'ב'.repeat(601) }));
+    expect(overLimit.success).toBe(false);
+    if (!overLimit.success) {
+      expect(overLimit.error.issues.some((i) => i.path[0] === 'note' && i.message === 'הערה נוספת: עד 600 תווים')).toBe(true);
+    }
+  });
+
+  it('technicianUpdateSchema: note is optional, granting no protected-field capability, and shares the same 600-character limit', () => {
+    const base = {
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      actionsTaken: 'נבדק',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+    };
+    expect(technicianUpdateSchema.safeParse(base).success).toBe(true);
+    expect(technicianUpdateSchema.safeParse({ ...base, note: 'הערה טכנית' }).success).toBe(true);
+
+    const overLimit = technicianUpdateSchema.safeParse({ ...base, note: 'ג'.repeat(601) });
+    expect(overLimit.success).toBe(false);
+    if (!overLimit.success) {
+      expect(overLimit.error.issues.some((i) => i.path[0] === 'note' && i.message === 'הערה נוספת: עד 600 תווים')).toBe(true);
+    }
+    // technicianUpdateSchema has no protected fields to begin with -- adding
+    // `note` introduces no new key besides itself.
+    expect(Object.keys(technicianUpdateSchema.shape)).not.toContain('severity');
+    expect(Object.keys(technicianUpdateSchema.shape)).not.toContain('status');
+  });
+
+  it('closeIncidentSchema: note is optional at every readiness level and shares the same 600-character limit', () => {
+    const base = {
+      expectedVersion: 1,
+      eventTime: new Date().toISOString(),
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full' as const,
+      reportedToOps: 'not_required' as const,
+    };
+    expect(closeIncidentSchema.safeParse(base).success).toBe(true);
+    expect(closeIncidentSchema.safeParse({ ...base, note: 'הערה בעת סגירה' }).success).toBe(true);
+
+    const overLimit = closeIncidentSchema.safeParse({ ...base, note: 'ד'.repeat(601) });
+    expect(overLimit.success).toBe(false);
+    if (!overLimit.success) {
+      expect(overLimit.error.issues.some((i) => i.path[0] === 'note' && i.message === 'הערה נוספת: עד 600 תווים')).toBe(true);
+    }
+  });
+});
+
 // Additive external handling party (migration 0032): a separate, always-
 // optional org/handler alongside the (now uniformly mandatory) internal
 // owner. update/assign/close/reopen no longer accept "internal OR external"

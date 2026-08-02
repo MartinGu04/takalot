@@ -249,6 +249,7 @@ export class LocalDemoRepository implements Repository {
       oldValue: null,
       newValue: null,
       note: null,
+      userNote: null,
       refId: null,
       createdAt: ts,
       operationId: null,
@@ -1268,6 +1269,9 @@ export class LocalDemoRepository implements Repository {
         `פעולות שבוצעו עד כה: ${input.actionsTaken.trim()}\n` +
         `תקשוב למבצעים: ${commsLine}\n` +
         `WISDOM: ${wisdomLine}`,
+      // "הערה נוספת": a separate, optional, raw user note -- never folded
+      // into the generated note above. Blank/whitespace-only -> null.
+      userNote: (input.note ?? '').trim() || null,
     });
     if (incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient) {
       this.addEvent(incident.id, 'reported_to_ops_change', actor.id, {
@@ -1392,6 +1396,10 @@ export class LocalDemoRepository implements Repository {
       updateReportedToCommsRecipient:
         input.updateReportedToComms === 'yes' ? (input.updateReportedToCommsRecipient ?? '').trim() || null : null,
       updateWisdomReported: input.updateWisdomReported === '' ? null : input.updateWisdomReported === 'yes',
+      // "הערה נוספת": a separate, optional, raw user note on THIS update
+      // only -- never folded into actionsTaken/findings/nextSteps/
+      // currentStatusText. Blank/whitespace-only -> null.
+      userNote: (input.note ?? '').trim() || null,
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
@@ -1541,6 +1549,10 @@ export class LocalDemoRepository implements Repository {
       updateReportedToComms: null,
       updateReportedToCommsRecipient: null,
       updateWisdomReported: null,
+      // "הערה נוספת": a separate, optional, raw user note on THIS update
+      // only -- storing it grants no protected-field capability, exactly
+      // like every other field on this content-only schema.
+      userNote: (input.note ?? '').trim() || null,
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
@@ -1728,6 +1740,9 @@ export class LocalDemoRepository implements Repository {
       this.addEvent(incidentId, 'closed', actor.id, {
         newValue: input.readiness,
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}`,
+        // "הערה נוספת": a separate, optional, raw user note -- never folded
+        // into the generated note above. Blank/whitespace-only -> null.
+        userNote: (input.note ?? '').trim() || null,
         eventTime: input.eventTime,
         operationId,
       });
@@ -1773,6 +1788,9 @@ export class LocalDemoRepository implements Repository {
         oldValue: oldStatus,
         newValue: 'partial_readiness',
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון החלקי שבוצע: ${input.resolution.trim()}\nפעולות המשך: ${incident.followUpNotes}\nגורם מטפל אחראי המשך: ${this.ownerLabel(incident.ownerUserId, null)}`,
+        // "הערה נוספת": a separate, optional, raw user note -- never folded
+        // into the generated note above. Blank/whitespace-only -> null.
+        userNote: (input.note ?? '').trim() || null,
         eventTime: input.eventTime,
         operationId,
       });
