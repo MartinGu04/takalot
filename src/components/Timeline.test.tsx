@@ -349,3 +349,124 @@ describe('Timeline: empty state', () => {
     expect(screen.getByText('אין אירועים בציר הזמן.')).toBeInTheDocument();
   });
 });
+
+// A correction is an audit entry that amends a previous record, not a new
+// treatment update -- it must render as its own distinct entry, never as a
+// near-duplicate of the original update's full status/actions/findings/
+// next-steps card. 02.08.2026T18:46 UTC is 21:46 Asia/Jerusalem (DST, UTC+3
+// in August), matching the exact worked example in the spec.
+describe('Timeline: record corrections render as distinct audit entries', () => {
+  const ORIGINAL_UPDATE_TIME = '2026-08-02T18:46:00.000Z';
+
+  function correctionFixture(overrides: Partial<IncidentEvent> = {}) {
+    const events = [
+      ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1', eventTime: ORIGINAL_UPDATE_TIME }),
+      ev({
+        id: 'e-correction',
+        type: 'correction',
+        operationId: 'op-2',
+        refId: 'upd-1',
+        note: 'שעת האירוע היא 21:40',
+        ...overrides,
+      }),
+    ];
+    const updates = [
+      upd({
+        id: 'upd-1',
+        eventTime: ORIGINAL_UPDATE_TIME,
+        actionsTaken: 'פעולות שבוצעו במקור',
+        findings: 'ממצאים מקוריים',
+        nextSteps: 'צעדים הבאים במקור',
+      }),
+    ];
+    return { events, updates };
+  }
+
+  it('titles a correction "תיקון לרישום קודם", not the generic event-type label', () => {
+    const { events, updates } = correctionFixture();
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText('תיקון לרישום קודם')).toBeInTheDocument();
+    // Never the generic label used elsewhere for this same event type.
+    expect(screen.queryByText('תיקון רישום')).not.toBeInTheDocument();
+  });
+
+  it('shows the persisted correction note prominently with a "תיקון:" prefix', () => {
+    const { events, updates } = correctionFixture();
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText('תיקון:')).toBeInTheDocument();
+    expect(screen.getByText('שעת האירוע היא 21:40')).toBeInTheDocument();
+  });
+
+  it("does not repeat the corrected update's own status/actions/findings/next-steps fields", () => {
+    const { events, updates } = correctionFixture();
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    // These belong to the ORIGINAL entry and must appear exactly once --
+    // never duplicated onto the correction entry beside it.
+    expect(screen.getAllByText('פעולות שבוצעו במקור')).toHaveLength(1);
+    expect(screen.getAllByText('ממצאים מקוריים')).toHaveLength(1);
+    expect(screen.getAllByText('צעדים הבאים במקור')).toHaveLength(1);
+  });
+
+  it('references the correct original timeline entry, using the real refId relationship and its actual recorded date/time', () => {
+    const { events, updates } = correctionFixture();
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText('מתייחס לעדכון הטיפול מ־02.08.2026 בשעה 21:46')).toBeInTheDocument();
+  });
+
+  it('leaves the original entry fully intact and adds a small "corrected later" indication to it', () => {
+    const { events, updates } = correctionFixture();
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    // Original entry: title, actor, and full content all unaffected.
+    expect(screen.getByText('עדכון טיפול')).toBeInTheDocument();
+    expect(screen.getByText('פעולות שבוצעו במקור')).toBeInTheDocument();
+    expect(screen.getByText('ממצאים מקוריים')).toBeInTheDocument();
+    expect(screen.getByText('רישום זה תוקן בהמשך')).toBeInTheDocument();
+  });
+
+  it('does not show the "corrected later" indication on an entry with no correction', () => {
+    const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
+    const updates = [upd({ id: 'upd-1' })];
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.queryByText('רישום זה תוקן בהמשך')).not.toBeInTheDocument();
+  });
+
+  it('shows an accurate structured field-level diff when a correction genuinely carries one, via the existing generic field-diff rendering', () => {
+    const { events, updates } = correctionFixture({
+      field: 'operational_impact',
+      oldValue: 'השפעה ישנה',
+      newValue: 'השפעה מתוקנת',
+      note: null,
+    });
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText('השפעה מבצעית:')).toBeInTheDocument();
+    expect(screen.getByText('השפעה ישנה')).toBeInTheDocument();
+    expect(screen.getByText('השפעה מתוקנת')).toBeInTheDocument();
+    // No free-text "תיקון:" block when there is no note to show.
+    expect(screen.queryByText('תיקון:')).not.toBeInTheDocument();
+  });
+
+  it('renders free-text correction content verbatim, never rewritten into a more specific claim than what was actually entered', () => {
+    const { events, updates } = correctionFixture({ note: 'יש לתקן את השעה בהמשך, לבדוק מול הטכנאי' });
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText('יש לתקן את השעה בהמשך, לבדוק מול הטכנאי')).toBeInTheDocument();
+    // No invented specific claim beyond what the technician actually typed.
+    expect(screen.queryByText(/תוקנה מ/)).not.toBeInTheDocument();
+  });
+
+  it('keeps Hebrew, English and mixed-direction correction content readable via bidirectional isolation', () => {
+    const { events, updates } = correctionFixture({ note: 'תוקן ל-Server-42, שעה 21:40' });
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    const value = screen.getByText('תוקן ל-Server-42, שעה 21:40');
+    expect(value.tagName).toBe('BDI');
+    expect(value).toHaveAttribute('dir', 'auto');
+  });
+
+  it('other timeline event types keep their existing presentation, unaffected by the correction-rendering changes', () => {
+    const events = [
+      ev({ id: 'e-closed', type: 'closed', operationId: 'op-1', newValue: 'full', note: 'סיבת התקלה: X\nהפתרון שבוצע: Y' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('סגירת תקלה')).toBeInTheDocument();
+    expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
+  });
+});
