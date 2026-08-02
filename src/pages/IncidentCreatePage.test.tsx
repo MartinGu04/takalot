@@ -51,14 +51,12 @@ describe('IncidentCreatePage: access control', () => {
     expect(screen.getByRole('button', { name: 'פתיחת תקלה' })).toBeInTheDocument();
   });
 
-  it('a technician (no create_incident capability) sees no CTA and is forbidden on direct navigation', async () => {
-    await loginAs('login-u-tech-1');
+  it('a technician (migration 0037: create_incident is now granted) sees the CTA and can open the form', async () => {
+    const user = await loginAs('login-u-tech-1');
     const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' }).closest('aside') as HTMLElement;
-    expect(within(sidebar).queryByRole('link', { name: 'פתיחת תקלה' })).not.toBeInTheDocument();
-
-    window.history.pushState({}, '', '/incidents/new');
-    render(<App />);
-    expect(await screen.findByText('אין הרשאה')).toBeInTheDocument();
+    expect(within(sidebar).getByRole('link', { name: 'פתיחת תקלה' })).toBeInTheDocument();
+    await goToCreatePage(user);
+    expect(screen.getByRole('button', { name: 'פתיחת תקלה' })).toBeInTheDocument();
   });
 
   it('a viewer is also forbidden on direct navigation to the creation route', async () => {

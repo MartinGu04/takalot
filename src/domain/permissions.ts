@@ -94,7 +94,7 @@ const matrix: Record<Role, Capability[]> = {
     'complete_follow_up',
     // 'reopen_incident' is granted only via PolicyFlags.allowSupervisorReopen
   ],
-  technician: ['view_all_incidents', 'technical_update'],
+  technician: ['view_all_incidents', 'technical_update', 'create_incident', 'close_incident', 'assign_incident'],
   viewer: ['view_all_incidents'],
 };
 

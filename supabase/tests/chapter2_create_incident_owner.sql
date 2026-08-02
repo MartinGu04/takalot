@@ -241,19 +241,23 @@ begin
 end $$;
 
 -- =====================================================================
--- 11. Unauthorized roles (technician, viewer) remain rejected.
+-- 11. Migration 0037: an active technician may now create an incident too
+--     -- viewer remains rejected.
 -- =====================================================================
 do $$
+declare
+  v_incident incidents;
 begin
   perform pg_temp.as_user('00000000-0000-0000-0000-0000000000b5');
   set local role authenticated;
   begin
-    perform create_incident(pg_temp.base_input(
+    v_incident := create_incident(pg_temp.base_input(
       jsonb_build_object('ownerUserId', '00000000-0000-0000-0000-0000000000b2')));
-    insert into results (test, result, detail) values ('technician cannot create an incident', 'FAIL', 'succeeded');
+    insert into results (test, result, detail) values
+      ('active technician can create an incident (0037)', 'PASS', 'number=' || v_incident.number);
   exception when others then
-    insert into results (test, result, detail) values ('technician cannot create an incident',
-      case when sqlerrm = 'permission: אין הרשאה לפתוח תקלה' then 'PASS' else 'FAIL' end, sqlerrm);
+    insert into results (test, result, detail) values
+      ('active technician can create an incident (0037)', 'FAIL', sqlerrm);
   end;
   reset role;
 end $$;

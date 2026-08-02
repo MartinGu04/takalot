@@ -27,13 +27,26 @@ describe('role permission matrix', () => {
     expect(hasCapability('shift_supervisor', 'manage_config')).toBe(false);
   });
 
-  it('limits technician to technical_update only, no severity/close/export', () => {
+  it('limits technician to technical_update plus the narrow create/close/assign slice, no severity/cancel/reopen/full_update/export', () => {
     expect(hasCapability('technician', 'technical_update')).toBe(true);
     expect(hasCapability('technician', 'full_update')).toBe(false);
     expect(hasCapability('technician', 'change_severity')).toBe(false);
-    expect(hasCapability('technician', 'close_incident')).toBe(false);
+    expect(hasCapability('technician', 'cancel_incident')).toBe(false);
     expect(hasCapability('technician', 'reopen_incident')).toBe(false);
     expect(hasCapability('technician', 'export_data')).toBe(false);
+  });
+
+  // Migration 0037: an active technician may create, close (either
+  // readiness outcome) and reassign/change-handling-party on any
+  // non-terminal incident, regardless of current owner -- narrow additions
+  // to the RPCs' own permission checks, not a change to is_operational_role()
+  // itself. cancel_incident, reopen_incident and full_update stay exactly
+  // as before (see the test above and 'grants cancel_incident to exactly
+  // the operational roles' below).
+  it('grants technician the narrow create/close/assign slice added by migration 0037', () => {
+    expect(hasCapability('technician', 'create_incident')).toBe(true);
+    expect(hasCapability('technician', 'close_incident')).toBe(true);
+    expect(hasCapability('technician', 'assign_incident')).toBe(true);
   });
 
   it('denies viewer mutation and export unless explicitly granted', () => {
@@ -56,13 +69,13 @@ describe('role permission matrix', () => {
     expect(hasCapability('viewer', 'cancel_incident')).toBe(false);
   });
 
-  // create_incident mirrors is_operational_role() the same way -- the
-  // incident-creation vertical slice's route/action gating relies on this.
-  it('grants create_incident to exactly the operational roles', () => {
+  // create_incident is granted to the operational roles and, as of
+  // migration 0037, to technician as well -- never to viewer.
+  it('grants create_incident to the operational roles and technician, never viewer', () => {
     expect(hasCapability('system_admin', 'create_incident')).toBe(true);
     expect(hasCapability('professional_manager', 'create_incident')).toBe(true);
     expect(hasCapability('shift_supervisor', 'create_incident')).toBe(true);
-    expect(hasCapability('technician', 'create_incident')).toBe(false);
+    expect(hasCapability('technician', 'create_incident')).toBe(true);
     expect(hasCapability('viewer', 'create_incident')).toBe(false);
   });
 });

@@ -253,11 +253,13 @@ describe('creation opening-time reporting: תקשוב למבצעים / WISDOM (m
     // Numbering still increments normally alongside the new fields.
     expect(after.number).not.toBe(before.number);
     expect(after.ownerUserId).toBe(DEMO_USERS.tech1);
-    // A technician still cannot create an incident at all, regardless of
-    // these new fields being populated.
-    await expect(
-      repo.createIncident(tech1, baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: 'x' })),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    // Migration 0037: an active technician can now create an incident too,
+    // regardless of these new fields being populated.
+    const byTech = await repo.createIncident(
+      tech1,
+      baseCreateInput({ reportedToComms: true, reportedToCommsRecipient: 'x' }),
+    );
+    expect(byTech.createdBy).toBe(DEMO_USERS.tech1);
   });
 });
 
@@ -330,19 +332,39 @@ describe('closure requirements', () => {
     expect(closed.followUpRequired).toBe(true);
   });
 
-  it('denies closure to a technician', async () => {
-    const incident = await repo.getIncident(tech1, 'inc-1');
-    await expect(
-      repo.closeIncident(tech1, 'inc-1', {
-        expectedVersion: incident!.version,
-        eventTime: FIXED_NOW.toISOString(),
-        rootCause: 'x',
-        resolution: 'y',
-        readiness: 'full',
-        followUpNotes: '',
-        reportedToOps: 'no',
-      }),
-    ).rejects.toThrow(AppError);
+  // Migration 0037 (mirrored here since the local repo enforces the same
+  // capability matrix): an active technician may close ANY non-terminal
+  // incident, regardless of current owner -- inc-2 is owned by tech2, not
+  // tech1.
+  it('allows a technician to close (full readiness) an incident owned by someone else', async () => {
+    const incident = await repo.getIncident(tech1, 'inc-2');
+    const closed = await repo.closeIncident(tech1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      rootCause: 'x',
+      resolution: 'y',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+    });
+    expect(closed.status).toBe('closed');
+    expect(closed.closedBy).toBe(DEMO_USERS.tech1);
+  });
+
+  it('allows a technician to close an incident owned by someone else with incomplete readiness', async () => {
+    const incident = await repo.getIncident(tech1, 'inc-2');
+    const closed = await repo.closeIncident(tech1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      rootCause: 'x',
+      resolution: 'y',
+      readiness: 'partial',
+      followUpNotes: 'להשלים בהמשך',
+      ownerUserId: DEMO_USERS.tech2,
+      reportedToOps: 'no',
+    });
+    expect(closed.status).toBe('partial_readiness');
+    expect(closed.followUpRequired).toBe(true);
   });
 
   it('rejects closing an already-closed incident', async () => {
@@ -1121,6 +1143,19 @@ describe('external handling party (migration 0032)', () => {
     expect(notifications.filter((n) => n.type === 'incident_assigned' && n.incidentId === 'inc-4').length).toBe(0);
   });
 
+  // Migration 0037: an active technician may reassign/change the handling
+  // party on ANY non-terminal incident, regardless of current owner --
+  // inc-4 is owned by supervisor1, not tech1.
+  it('allows a technician to reassign an incident owned by someone else', async () => {
+    const before = await repo.getIncident(tech1, 'inc-4');
+    const assigned = await repo.assignIncident(tech1, 'inc-4', {
+      expectedVersion: before!.version,
+      note: '',
+      ownerUserId: DEMO_USERS.tech2,
+    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    expect(assigned.ownerUserId).toBe(DEMO_USERS.tech2);
+  });
+
   it('close_incident (full readiness): accepts the external-handler trio without touching owner columns', async () => {
     const before = await repo.getIncident(supervisor1, 'inc-2');
     const closed = await repo.closeIncident(supervisor1, 'inc-2', {
@@ -1497,7 +1532,9 @@ describe('technician update restrictions (backend enforced)', () => {
     ).rejects.toThrow(AppError);
   });
 
-  it('denies a technician from closing an incident', async () => {
+  // acknowledge_incident is unaffected by migration 0037 -- still gated by
+  // is_operational_role() alone.
+  it('denies a technician from acknowledging an incident', async () => {
     await expect(repo.acknowledgeIncident(tech1, 'inc-1', 1)).rejects.toThrow(AppError);
   });
 });
