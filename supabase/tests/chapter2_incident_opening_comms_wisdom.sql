@@ -218,8 +218,10 @@ begin
   end;
 
   -- =====================================================================
-  -- 9. Unrelated authorization is unchanged: viewer/technician still cannot
-  --    create_incident at all, regardless of these new fields.
+  -- 9. Unrelated authorization: viewer still cannot create_incident at all,
+  --    regardless of these new fields. Migration 0037 lets an active
+  --    technician create incidents too -- confirm that still works
+  --    alongside the comms/WISDOM fields from this migration.
   -- =====================================================================
   perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c3');
   begin
@@ -232,11 +234,12 @@ begin
 
   perform pg_temp.as_user('00000000-0000-0000-0000-0000000000c4');
   begin
-    perform create_incident(pg_temp.base_input('{}'::jsonb));
-    insert into results (test, result, detail) values ('technician still cannot create an incident', 'FAIL', 'succeeded');
+    v_incident := create_incident(pg_temp.base_input('{}'::jsonb));
+    insert into results (test, result, detail) values
+      ('active technician can create an incident (0037)', 'PASS', 'number=' || v_incident.number);
   exception when others then
-    insert into results (test, result, detail) values ('technician still cannot create an incident',
-      case when sqlerrm like 'permission%' then 'PASS' else 'FAIL' end, sqlerrm);
+    insert into results (test, result, detail) values
+      ('active technician can create an incident (0037)', 'FAIL', sqlerrm);
   end;
 
   reset role;

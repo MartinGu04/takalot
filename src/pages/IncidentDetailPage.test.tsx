@@ -551,6 +551,36 @@ describe('incident cancellation: visibility', () => {
   });
 });
 
+// Migration 0037: an active technician gains close_incident and
+// assign_incident -- independent of the incident's current owner -- while
+// cancel_incident, reopen_incident and full_update stay exactly as before.
+// inc-4 (seed.ts): status "monitoring" (non-terminal), owned by
+// supervisor1 -- not the technician actor below.
+describe('technician incident actions (migration 0037)', () => {
+  it('offers close and reassignment on a non-terminal incident owned by someone else, but never cancel/reopen/full-update controls', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-tech-1'));
+    const card = await within(main()).findByText(/אין פגיעה תפקודית\. במעקב טמפרטורה כל שעתיים/);
+    await user.click(card.closest('a.incident-card') as HTMLElement);
+    await within(main()).findByText('בעל אחריות פנימי'); // confirms the detail page loaded
+
+    expect(within(main()).getByRole('button', { name: 'סגירת תקלה' })).toBeInTheDocument();
+    expect(within(main()).getByRole('button', { name: 'שינוי גורם מטפל' })).toBeInTheDocument();
+
+    // No cancel/export overflow menu (technician still lacks cancel_incident
+    // and export_data) and no reopen button (only ever shown once closed).
+    expect(screen.queryByRole('button', { name: 'פעולות נוספות' })).not.toBeInTheDocument();
+    expect(within(main()).queryByRole('button', { name: 'פתיחה מחדש' })).not.toBeInTheDocument();
+
+    // technician_update_incident's owner scoping is unaffected by 0037: the
+    // "עדכון תקלה" action stays unavailable on an incident this technician
+    // does not own (canFullUpdate is false, canTechnicianUpdate requires
+    // ownership) even though close/assign are now offered on it.
+    expect(within(main()).queryByRole('button', { name: 'עדכון תקלה' })).not.toBeInTheDocument();
+  });
+});
+
 describe('incident cancellation: dialog and submission', () => {
   it('shows the incident number, a required reason field, and a datetime field defaulted to now', async () => {
     const { dialog } = await openCancelDialogAsAdmin();

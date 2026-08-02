@@ -1,17 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, DEMO_USERS } from './helpers';
 
-test('technician sees an assigned incident, adds a permitted technical update, but cannot close it', async ({ page }) => {
+test('technician sees an assigned incident and adds a permitted technical update', async ({ page }) => {
   await loginAs(page, DEMO_USERS.tech1);
 
   // inc-1 is seeded as assigned to tech1.
   await page.goto('/incidents');
   await page.getByRole('link', { name: /2026-001/ }).click();
   await expect(page.getByRole('heading', { name: /2026-001/ })).toBeVisible();
-
-  // Close action must not be offered to a technician.
-  await expect(page.getByRole('button', { name: 'סגירת תקלה' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'שינוי גורם מטפל' })).toHaveCount(0);
 
   // Technical update is permitted and does not expose protected fields --
   // the structured "מצב הטיפול" control and severity stay full-update-only.
@@ -28,4 +24,61 @@ test('technician sees an assigned incident, adds a permitted technical update, b
 
   await expect(page.getByText('העדכון נשמר')).toBeVisible();
   await expect(page.getByText('בדיקה טכנית נוספת בוצעה על ידי הטכנאי')).toBeVisible();
+});
+
+// Migration 0037: an active technician gains create_incident, close_incident
+// and assign_incident -- independent of the incident's current owner -- while
+// cancel_incident, reopen_incident and the full/protected update flow stay
+// exactly as before.
+test('technician creates an incident, then reassigns and closes an incident owned by someone else -- but still cannot cancel or reopen', async ({ page }) => {
+  await loginAs(page, DEMO_USERS.tech1);
+
+  // Creation: the CTA is now offered, and the flow works end to end.
+  await page.goto('/incidents/new');
+  await page.getByLabel('מערכת / עמדה').selectOption({ label: 'מערכת בטא' });
+  await page.getByLabel('מיקום').selectOption({ label: 'אתר 1' });
+  await page.getByLabel('תיאור התקלה').fill('בדיקת קצה לקצה: תקלה נוצרה על ידי טכנאי');
+  await page.getByLabel('השפעה מבצעית').fill('השפעה מבצעית לבדיקה אוטומטית');
+  await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית על ידי הטכנאי');
+  await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
+  await page.locator('form button[type="submit"]').click();
+  await expect(page.getByRole('status')).toContainText('נפתחה בהצלחה');
+
+  // inc-4 (seed.ts): status "monitoring" (non-terminal), owned by
+  // supervisor1 -- not this technician.
+  await page.goto('/incidents');
+  await page.getByRole('link', { name: /2026-004/ }).click();
+  await expect(page.getByRole('heading', { name: /2026-004/ })).toBeVisible();
+
+  // Never offered regardless of ownership: cancel/reopen and the full update
+  // flow. No "פעולות נוספות" overflow at all (still no cancel_incident/
+  // export_data), and technician-update stays owner-scoped, so "עדכון תקלה"
+  // is also unavailable on an incident this technician does not own.
+  await expect(page.getByRole('button', { name: 'פעולות נוספות' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'פתיחה מחדש' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'עדכון תקלה' })).toHaveCount(0);
+
+  // Reassign the handling party on an incident owned by someone else.
+  await page.getByRole('button', { name: 'שינוי גורם מטפל' }).click();
+  const assignDialog = page.getByRole('dialog', { name: 'שינוי גורם מטפל' });
+  await assignDialog.getByLabel('בעל אחריות פנימי').selectOption({ label: 'ליאור אדרי (דמו)' });
+  await assignDialog.locator('form button[type="submit"]').click();
+  await expect(page.getByRole('definition').filter({ hasText: 'ליאור אדרי (דמו)' })).toBeVisible();
+
+  // Close it (full readiness) too, still as the technician actor.
+  await page.getByRole('button', { name: 'סגירת תקלה' }).click();
+  const closeDialog = page.getByRole('dialog', { name: 'סגירת תקלה' });
+  await closeDialog.getByLabel('סיבת התקלה').fill('סיבת התקלה שזוהתה על ידי הטכנאי');
+  await closeDialog.getByLabel('הפתרון שבוצע').fill('הפתרון שבוצע על ידי הטכנאי');
+  await closeDialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
+  await closeDialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
+
+  await expect(page.getByText('נסגרה', { exact: false }).first()).toBeVisible();
+  await expect(page.locator('text=סיכום סגירה')).toBeVisible();
+
+  // Now terminal: no cancel/reopen/close/assign controls at all.
+  await expect(page.getByRole('button', { name: 'סגירת תקלה' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'שינוי גורם מטפל' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'פתיחה מחדש' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'פעולות נוספות' })).toHaveCount(0);
 });
