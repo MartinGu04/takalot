@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Incident } from '../../domain/types';
 import { cancelIncidentSchema, type CancelIncidentInput } from '../../domain/schemas';
-import { Dialog, Field, Input, Textarea, Button } from '../ui';
+import { Dialog, Field, Textarea, Button, DateTimeLocalInput } from '../ui';
 import { isoToLocalInput, localInputToIso } from '../../lib/time';
 
 export function CancelDialog({
@@ -80,9 +80,7 @@ export function CancelDialog({
           )}
         </Field>
         <Field label="מועד הביטול בפועל" required>
-          {(a) => (
-            <Input {...a} type="datetime-local" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
-          )}
+          {(a) => <DateTimeLocalInput {...a} value={eventTime} onChange={setEventTime} />}
         </Field>
         {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">

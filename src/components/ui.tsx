@@ -98,6 +98,78 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   },
 );
 
+/**
+ * A reliable `<input type="datetime-local">` for manual keyboard editing --
+ * regular number row and numeric keypad alike.
+ *
+ * Native datetime-local inputs corrupt manual editing when kept fully
+ * controlled (`value` + `onChange` feeding straight back into `value`, the
+ * obvious React pattern): every keystroke on an already-complete value
+ * re-fires `onChange` -> `setState` -> re-render, which reassigns the DOM
+ * node's `.value` property. Browsers reset the control's active/focused
+ * segment back to the first one (typically month) whenever `.value` is
+ * programmatically reassigned -- even to a byte-for-byte identical string --
+ * so the very next keystroke lands on whatever segment is now focused
+ * instead of the one the user is actually editing. That reads as the month
+ * "resetting, jumping, or becoming corrupted," but it isn't month-specific:
+ * editing ANY segment retriggers the same reassignment and the same
+ * refocus-to-first-segment.
+ *
+ * Fix: never hand `value` back to the DOM node once it exists. The input
+ * stays uncontrolled after mount (`defaultValue` only); `onChange` still
+ * reports every COMPLETE edit to the caller, for validation/duration/
+ * submission, but the DOM node itself is never reassigned, so the browser's
+ * own segment/focus state is never disturbed.
+ *
+ * A caller-driven reset (dialog opens and defaults to "now", a rejected
+ * submission restores the previous value, etc.) is the one case that SHOULD
+ * visibly jump the field -- comparing the incoming `value` against what this
+ * component itself last reported distinguishes "the user typed this"
+ * (already in sync, left alone) from "the caller changed this out from under
+ * us" (remounted via `key`, the only way to hand a native datetime-local a
+ * new value without repeating the exact bug this exists to avoid).
+ */
+export const DateTimeLocalInput = forwardRef<
+  HTMLInputElement,
+  {
+    value: string;
+    onChange: (value: string) => void;
+  } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'defaultValue' | 'onChange' | 'type' | 'dir'>
+>(function DateTimeLocalInput({ value, onChange, className, ...rest }, ref) {
+  const [trackedValue, setTrackedValue] = useState(value);
+  const [resetToken, setResetToken] = useState(0);
+  if (value !== trackedValue) {
+    setTrackedValue(value);
+    setResetToken((t) => t + 1);
+  }
+  return (
+    <Input
+      {...rest}
+      key={resetToken}
+      ref={ref}
+      defaultValue={value}
+      type="datetime-local"
+      // datetime-local always lays out day/month/year and hour/minute
+      // left-to-right, regardless of page language -- inheriting the
+      // surrounding RTL document direction visually reverses the segment
+      // order, which reads as broken even when nothing is wrong.
+      dir="ltr"
+      className={cx('text-left', className)}
+      onChange={(e) => {
+        // datetime-local's value is atomic: it is either a complete valid
+        // string or "" while some segment is still mid-edit -- there is no
+        // partial-but-valid state to speak of. Committing that intermediate
+        // "" up to the caller (and therefore back into `value` above) is
+        // exactly what used to wipe out whatever the user had already typed
+        // elsewhere in the field, so it's ignored here.
+        if (!e.target.value) return;
+        setTrackedValue(e.target.value);
+        onChange(e.target.value);
+      }}
+    />
+  );
+});
+
 /** Labeled field with semantic error message. */
 export function Field({
   label,

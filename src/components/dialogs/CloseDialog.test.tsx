@@ -128,3 +128,101 @@ describe('CloseDialog: duration reflects the selected effective closure time, no
     }
   });
 });
+
+describe('CloseDialog: manual numeric editing of the closure time field is reliable', () => {
+  // Before the fix, CloseDialog bound the field as
+  // value={eventTime} onChange={(e) => setEventTime(e.target.value)} --
+  // fully controlled. Every keystroke re-fires onChange with a complete
+  // value, which re-renders and reassigns the native input's .value, and
+  // browsers respond to that reassignment (even to an identical string) by
+  // resetting the control's focused segment back to the first one --
+  // corrupting whichever segment the user actually meant to edit next. This
+  // reproduces with the regular number row and the numeric keypad alike,
+  // which is exactly what these two tests exercise separately.
+  it('changing the month with the regular number row does not corrupt the rest of the date, and the exact date/time submits correctly as ISO', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const incident = makeIncident({ discoveredAt: DISCOVERED_AT });
+    render(<CloseDialog open onClose={() => {}} incident={incident} onSubmit={onSubmit} submitting={false} />);
+
+    const timeField = screen.getByLabelText(/מועד סגירת התקלה בפועל/) as HTMLInputElement;
+    fireEvent.change(timeField, { target: { value: '2026-01-19T16:06' } });
+    fireEvent.change(timeField, { target: { value: '2026-07-19T16:06' } }); // month, top-row digits: 01 -> 07
+    expect(timeField.value).toBe('2026-07-19T16:06');
+
+    await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
+    await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+    await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ eventTime: '2026-07-19T13:06:00.000Z' }));
+  });
+
+  it('changing the month with the numeric keypad is equally reliable -- this is not a NumPad-specific bug', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const incident = makeIncident({ discoveredAt: DISCOVERED_AT });
+    render(<CloseDialog open onClose={() => {}} incident={incident} onSubmit={onSubmit} submitting={false} />);
+
+    const timeField = screen.getByLabelText(/מועד סגירת התקלה בפועל/) as HTMLInputElement;
+    fireEvent.change(timeField, { target: { value: '2026-01-19T16:06' } });
+    // The numeric keypad reports different KeyboardEvent.code values
+    // ("Numpad0"/"Numpad7") than the number row, but the native control
+    // resolves both to the same digit characters -- so the resulting
+    // datetime-local value is identical either way.
+    fireEvent.keyDown(timeField, { key: '0', code: 'Numpad0' });
+    fireEvent.keyDown(timeField, { key: '7', code: 'Numpad7' });
+    fireEvent.change(timeField, { target: { value: '2026-07-19T16:06' } }); // month, numpad digits: 01 -> 07
+    expect(timeField.value).toBe('2026-07-19T16:06');
+
+    await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
+    await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+    await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ eventTime: '2026-07-19T13:06:00.000Z' }));
+  });
+
+  it('editing day, month, year, hour, and minute one at a time never resets an unrelated segment, and a mid-edit empty value is ignored rather than clearing the field', () => {
+    const incident = makeIncident({ discoveredAt: DISCOVERED_AT });
+    render(<CloseDialog open onClose={() => {}} incident={incident} onSubmit={() => {}} submitting={false} />);
+    const timeField = screen.getByLabelText(/מועד סגירת התקלה בפועל/) as HTMLInputElement;
+
+    fireEvent.change(timeField, { target: { value: '2026-01-01T00:00' } });
+    // Native datetime-local reports "" while a segment is only partially
+    // typed -- this must never wipe out the rest of the already-typed date.
+    fireEvent.change(timeField, { target: { value: '' } });
+    expect(screen.getByText(/משך התקלה למועד הסגירה שנבחר:/)).toBeInTheDocument();
+
+    fireEvent.change(timeField, { target: { value: '2026-01-19T00:00' } }); // day
+    expect(timeField.value).toBe('2026-01-19T00:00');
+    fireEvent.change(timeField, { target: { value: '2026-07-19T00:00' } }); // month
+    expect(timeField.value).toBe('2026-07-19T00:00');
+    fireEvent.change(timeField, { target: { value: '2027-07-19T00:00' } }); // year
+    expect(timeField.value).toBe('2027-07-19T00:00');
+    fireEvent.change(timeField, { target: { value: '2027-07-19T16:00' } }); // hour
+    expect(timeField.value).toBe('2027-07-19T16:00');
+    fireEvent.change(timeField, { target: { value: '2027-07-19T16:06' } }); // minute
+    // Every earlier segment (day/month/year/hour) survived the later edits.
+    expect(timeField.value).toBe('2027-07-19T16:06');
+  });
+
+  it('entering 19/07/2026 16:06 in one shot shows the correct duration and submits the correct ISO value', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const incident = makeIncident({ discoveredAt: DISCOVERED_AT });
+    render(<CloseDialog open onClose={() => {}} incident={incident} onSubmit={onSubmit} submitting={false} />);
+
+    const timeField = screen.getByLabelText(/מועד סגירת התקלה בפועל/) as HTMLInputElement;
+    fireEvent.change(timeField, { target: { value: '2026-07-19T16:06' } });
+    expect(screen.getByText(/משך התקלה למועד הסגירה שנבחר:\s*דקה אחת/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
+    await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+    await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
+    expect(screen.getByText('משך התקלה:').parentElement).toHaveTextContent('משך התקלה: דקה אחת');
+    await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ eventTime: '2026-07-19T13:06:00.000Z' }));
+  });
+});
