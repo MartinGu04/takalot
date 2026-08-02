@@ -9,7 +9,7 @@
 // comment and supabase/tests/incident_analytics_rpc.sql for the
 // authoritative spec and its SQL-level test coverage; a change to either
 // implementation should prompt a matching review of the other.
-import type { Incident, IncidentEvent, Severity, SystemRecord } from './types';
+import type { Incident, IncidentEvent, LocationRecord, Severity, SystemRecord } from './types';
 import { isOpen } from './types';
 import { localInputToIso } from '../lib/time';
 
@@ -37,6 +37,14 @@ export interface AnalyticsSystemRow {
   avgCloseMinutes: number | null;
 }
 
+export interface AnalyticsLocationRow {
+  locationId: string;
+  locationName: string;
+  openedInPeriod: number;
+  currentlyOpen: number;
+  avgCloseMinutes: number | null;
+}
+
 export interface IncidentAnalytics {
   openedInPeriod: number;
   closedInPeriod: number;
@@ -46,6 +54,7 @@ export interface IncidentAnalytics {
   reopenedInPeriod: number;
   buckets: AnalyticsBucket[];
   topSystems: AnalyticsSystemRow[];
+  topLocations: AnalyticsLocationRow[];
 }
 
 const TZ = 'Asia/Jerusalem';
@@ -105,6 +114,7 @@ export function computeIncidentAnalytics(
   incidents: Incident[],
   events: IncidentEvent[],
   systems: SystemRecord[],
+  locations: LocationRecord[],
   filters: AnalyticsFilters,
   now: Date,
 ): IncidentAnalytics {
@@ -194,6 +204,36 @@ export function computeIncidentAnalytics(
     )
     .slice(0, 5);
 
+  // ----- Top 5 locations: same rules as top systems above, keyed on
+  // locationId instead of systemId. -----
+  const byLocation = new Map<string, { openedInPeriod: number; currentlyOpen: number; closeDurations: number[] }>();
+  for (const i of f) {
+    const row = byLocation.get(i.locationId) ?? { openedInPeriod: 0, currentlyOpen: 0, closeDurations: [] };
+    if (withinPeriod(i.discoveredAt, periodStartIso, periodEndIso)) row.openedInPeriod += 1;
+    if (isOpen(i.status)) row.currentlyOpen += 1;
+    if (i.closedAt !== null && withinPeriod(i.closedAt, periodStartIso, periodEndIso)) {
+      row.closeDurations.push(minutesBetween(i.discoveredAt, i.closedAt));
+    }
+    byLocation.set(i.locationId, row);
+  }
+  const locationNameOf = (id: string) => locations.find((l) => l.id === id)?.name ?? '—';
+  const topLocations: AnalyticsLocationRow[] = [...byLocation.entries()]
+    .filter(([, row]) => row.openedInPeriod > 0)
+    .map(([locationId, row]) => ({
+      locationId,
+      locationName: locationNameOf(locationId),
+      openedInPeriod: row.openedInPeriod,
+      currentlyOpen: row.currentlyOpen,
+      avgCloseMinutes: avg(row.closeDurations),
+    }))
+    .sort(
+      (a, b) =>
+        b.openedInPeriod - a.openedInPeriod ||
+        b.currentlyOpen - a.currentlyOpen ||
+        a.locationName.localeCompare(b.locationName),
+    )
+    .slice(0, 5);
+
   return {
     openedInPeriod: openedInPeriod.length,
     closedInPeriod: closedInPeriod.length,
@@ -203,5 +243,6 @@ export function computeIncidentAnalytics(
     reopenedInPeriod: new Set(reopenedEventsInPeriod.map((e) => e.incidentId)).size,
     buckets,
     topSystems,
+    topLocations,
   };
 }

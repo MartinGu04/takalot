@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeIncidentAnalytics } from './analyticsSummary';
 import type { AnalyticsFilters } from './analyticsSummary';
-import type { Incident, IncidentEvent, SystemRecord } from './types';
+import type { Incident, IncidentEvent, LocationRecord, SystemRecord } from './types';
 
 const NOW = new Date('2026-08-02T10:00:00.000Z');
 
@@ -87,6 +87,10 @@ function makeSystem(id: string, name: string): SystemRecord {
   return { id, name, archived: false, displayOrder: 1, createdAt: daysAgo(400) };
 }
 
+function makeLocation(id: string, name: string): LocationRecord {
+  return { id, name, archived: false, displayOrder: 1, createdAt: daysAgo(400) };
+}
+
 const baseFilters: AnalyticsFilters = { periodDays: 30 };
 
 describe('computeIncidentAnalytics: opened/closed grounding', () => {
@@ -95,7 +99,7 @@ describe('computeIncidentAnalytics: opened/closed grounding', () => {
       makeIncident({ id: 'old-discovery', discoveredAt: daysAgo(400), createdAt: daysAgo(1) }),
       makeIncident({ id: 'recent-discovery', discoveredAt: daysAgo(1), createdAt: daysAgo(400) }),
     ];
-    const r = computeIncidentAnalytics(incidents, [], [], baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], baseFilters, NOW);
     expect(r.openedInPeriod).toBe(1);
   });
 
@@ -114,7 +118,7 @@ describe('computeIncidentAnalytics: opened/closed grounding', () => {
       makeEvent({ id: 'ev2', incidentId: 'reopened-then-reclosed', type: 'reopened', eventTime: daysAgo(5) }),
       makeEvent({ id: 'ev3', incidentId: 'reopened-then-reclosed', type: 'closed', eventTime: daysAgo(1) }),
     ];
-    const r = computeIncidentAnalytics(incidents, events, [], baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, events, [], [], baseFilters, NOW);
     expect(r.closedInPeriod).toBe(1);
     expect(r.avgCloseMinutes).toBe(9 * 1440);
     expect(r.reopenedInPeriod).toBe(1);
@@ -126,7 +130,7 @@ describe('computeIncidentAnalytics: opened/closed grounding', () => {
       makeEvent({ id: 'ev1', incidentId: 'reopened', type: 'reopened', eventTime: daysAgo(15) }),
       makeEvent({ id: 'ev2', incidentId: 'reopened', type: 'reopened', eventTime: daysAgo(3) }),
     ];
-    const r = computeIncidentAnalytics(incidents, events, [], baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, events, [], [], baseFilters, NOW);
     expect(r.closedInPeriod).toBe(0);
     expect(r.currentlyOpen).toBe(1);
     // Reopened twice in-period -- still counted once, not twice.
@@ -137,7 +141,7 @@ describe('computeIncidentAnalytics: opened/closed grounding', () => {
     const incidents = [
       makeIncident({ id: 'cancelled', status: 'cancelled', discoveredAt: daysAgo(10), cancelledAt: daysAgo(2), closedAt: null }),
     ];
-    const r = computeIncidentAnalytics(incidents, [], [], baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], baseFilters, NOW);
     expect(r.openedInPeriod).toBe(1);
     expect(r.closedInPeriod).toBe(0);
     expect(r.currentlyOpen).toBe(0);
@@ -147,8 +151,8 @@ describe('computeIncidentAnalytics: opened/closed grounding', () => {
 describe('computeIncidentAnalytics: currently-open metrics are period-independent', () => {
   it('currentlyOpen and avgOpenMinutes are identical for a 7-day and 90-day period', () => {
     const incidents = [makeIncident({ id: 'long-open', status: 'waiting_information', discoveredAt: daysAgo(200) })];
-    const r7 = computeIncidentAnalytics(incidents, [], [], { periodDays: 7 }, NOW);
-    const r90 = computeIncidentAnalytics(incidents, [], [], { periodDays: 90 }, NOW);
+    const r7 = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 7 }, NOW);
+    const r90 = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 90 }, NOW);
     expect(r7.currentlyOpen).toBe(1);
     expect(r7.currentlyOpen).toBe(r90.currentlyOpen);
     expect(r7.avgOpenMinutes).toBe(r90.avgOpenMinutes);
@@ -162,23 +166,23 @@ describe('computeIncidentAnalytics: filters', () => {
   ];
 
   it('system filter alone includes both fixtures', () => {
-    const r = computeIncidentAnalytics(incidents, [], [], { periodDays: 30, systemId: 'sysA' }, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 30, systemId: 'sysA' }, NOW);
     expect(r.openedInPeriod).toBe(2);
   });
 
   it('system + location narrows to one', () => {
-    const r = computeIncidentAnalytics(incidents, [], [], { periodDays: 30, systemId: 'sysA', locationId: 'locA' }, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 30, systemId: 'sysA', locationId: 'locA' }, NOW);
     expect(r.openedInPeriod).toBe(1);
   });
 
   it('severity narrows to one', () => {
-    const r = computeIncidentAnalytics(incidents, [], [], { periodDays: 30, severity: 'low' }, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 30, severity: 'low' }, NOW);
     expect(r.openedInPeriod).toBe(1);
   });
 
   it('combined filters apply as AND, matching nothing here', () => {
     const r = computeIncidentAnalytics(
-      incidents, [], [],
+      incidents, [], [], [],
       { periodDays: 30, systemId: 'sysA', locationId: 'locB', severity: 'critical' },
       NOW,
     );
@@ -192,11 +196,11 @@ describe('computeIncidentAnalytics: durations', () => {
       makeIncident({ id: 'c1', status: 'closed', discoveredAt: daysAgo(6), closedAt: daysAgo(2) }),
       makeIncident({ id: 'c2', status: 'closed', discoveredAt: daysAgo(6), closedAt: daysAgo(4) }),
     ];
-    const r = computeIncidentAnalytics(incidents, [], [], baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], baseFilters, NOW);
     expect(r.avgCloseMinutes).toBe(4320);
     expect(r.closedInPeriod).toBe(2);
 
-    const rEmpty = computeIncidentAnalytics([makeIncident({ id: 'open-only' })], [], [], baseFilters, NOW);
+    const rEmpty = computeIncidentAnalytics([makeIncident({ id: 'open-only' })], [], [], [], baseFilters, NOW);
     expect(rEmpty.avgCloseMinutes).toBeNull();
   });
 
@@ -205,10 +209,10 @@ describe('computeIncidentAnalytics: durations', () => {
       makeIncident({ id: 'now', discoveredAt: NOW.toISOString() }),
       makeIncident({ id: 'skewed-future', discoveredAt: new Date(NOW.getTime() + 2 * 60_000).toISOString() }),
     ];
-    const r = computeIncidentAnalytics(incidents, [], [], baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], baseFilters, NOW);
     expect(r.avgOpenMinutes).toBe(0);
 
-    const rEmpty = computeIncidentAnalytics([], [], [], baseFilters, NOW);
+    const rEmpty = computeIncidentAnalytics([], [], [], [], baseFilters, NOW);
     expect(rEmpty.avgOpenMinutes).toBeNull();
     expect(rEmpty.currentlyOpen).toBe(0);
   });
@@ -216,19 +220,19 @@ describe('computeIncidentAnalytics: durations', () => {
 
 describe('computeIncidentAnalytics: zero-filled buckets', () => {
   it('a 7-day period yields exactly 7 daily buckets, all zero, for a system with no incidents', () => {
-    const r = computeIncidentAnalytics([], [], [], { periodDays: 7, systemId: 'ghost' }, NOW);
+    const r = computeIncidentAnalytics([], [], [], [], { periodDays: 7, systemId: 'ghost' }, NOW);
     expect(r.buckets).toHaveLength(7);
     expect(r.buckets.every((b) => b.opened === 0 && b.closed === 0)).toBe(true);
   });
 
   it('a 30-day period yields exactly 30 daily buckets, all zero', () => {
-    const r = computeIncidentAnalytics([], [], [], { periodDays: 30, systemId: 'ghost' }, NOW);
+    const r = computeIncidentAnalytics([], [], [], [], { periodDays: 30, systemId: 'ghost' }, NOW);
     expect(r.buckets).toHaveLength(30);
     expect(r.buckets.every((b) => b.opened === 0 && b.closed === 0)).toBe(true);
   });
 
   it('a 90-day period yields zero-filled weekly buckets', () => {
-    const r = computeIncidentAnalytics([], [], [], { periodDays: 90, systemId: 'ghost' }, NOW);
+    const r = computeIncidentAnalytics([], [], [], [], { periodDays: 90, systemId: 'ghost' }, NOW);
     expect(r.buckets.length).toBeGreaterThan(0);
     expect(r.buckets.every((b) => b.opened === 0 && b.closed === 0)).toBe(true);
   });
@@ -239,7 +243,7 @@ describe('computeIncidentAnalytics: zero-filled buckets', () => {
       makeIncident({ id: 'before', discoveredAt: new Date(NOW.getTime() - 91 * 86_400_000).toISOString() }),
       makeIncident({ id: 'inside', discoveredAt: daysAgo(10) }),
     ];
-    const r = computeIncidentAnalytics(incidents, [], [], { periodDays: 90 }, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 90 }, NOW);
     const bucketSum = r.buckets.reduce((sum, b) => sum + b.opened, 0);
     expect(bucketSum).toBe(r.openedInPeriod);
     expect(r.openedInPeriod).toBe(1);
@@ -264,7 +268,7 @@ describe('computeIncidentAnalytics: zero-filled buckets', () => {
         closedAt: '2026-07-30T23:15:00.000Z',
       }),
     ];
-    const r = computeIncidentAnalytics(incidents, [], [], { periodDays: 7 }, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [], [], { periodDays: 7 }, NOW);
 
     const openedBucket = r.buckets.find((b) => b.bucketStart === '2026-07-30');
     expect(openedBucket?.opened).toBe(1);
@@ -284,7 +288,7 @@ describe('computeIncidentAnalytics: zero-filled buckets', () => {
 describe('computeIncidentAnalytics: top systems', () => {
   it('excludes a system with zero incidents opened in the period, even if it has a currently-open incident', () => {
     const incidents = [makeIncident({ id: 'old', systemId: 'stale-system', status: 'in_progress', discoveredAt: daysAgo(200) })];
-    const r = computeIncidentAnalytics(incidents, [], [makeSystem('stale-system', 'Stale System')], { periodDays: 90 }, NOW);
+    const r = computeIncidentAnalytics(incidents, [], [makeSystem('stale-system', 'Stale System')], [], { periodDays: 90 }, NOW);
     expect(r.topSystems).toEqual([]);
   });
 
@@ -305,7 +309,7 @@ describe('computeIncidentAnalytics: top systems', () => {
       makeSystem('sysAlpha', 'Alpha-Rank-System'),
       makeSystem('sysBravo', 'Bravo-Rank-System'),
     ];
-    const r = computeIncidentAnalytics(incidents, [], systems, baseFilters, NOW);
+    const r = computeIncidentAnalytics(incidents, [], systems, [], baseFilters, NOW);
     expect(r.topSystems.map((s) => s.systemName)).toEqual([
       'Rank-A-System',
       'Rank-C-System',
@@ -313,5 +317,64 @@ describe('computeIncidentAnalytics: top systems', () => {
       'Alpha-Rank-System',
       'Bravo-Rank-System',
     ]);
+  });
+});
+
+// Mirrors "top systems" above exactly -- same rules, keyed on locationId
+// instead of systemId.
+describe('computeIncidentAnalytics: top locations', () => {
+  it('excludes a location with zero incidents opened in the period, even if it has a currently-open incident', () => {
+    const incidents = [makeIncident({ id: 'old', locationId: 'stale-location', status: 'in_progress', discoveredAt: daysAgo(200) })];
+    const r = computeIncidentAnalytics(
+      incidents, [], [], [makeLocation('stale-location', 'Stale Location')], { periodDays: 90 }, NOW,
+    );
+    expect(r.topLocations).toEqual([]);
+  });
+
+  it('ranks by openedInPeriod desc, currentlyOpen desc, then location name asc', () => {
+    const inc = (id: string, locationId: string, status: Incident['status'] = 'in_progress') =>
+      makeIncident({ id, locationId, status, discoveredAt: daysAgo(1) });
+    const incidents = [
+      inc('a1', 'locA'), inc('a2', 'locA'), inc('a3', 'locA'), // locA: opened=3, open=3
+      inc('c1', 'locC'), inc('c2', 'locC'), // locC: opened=2, open=2
+      inc('d1', 'locD'), inc('d2', 'locD', 'cancelled'), // locD: opened=2, open=1
+      inc('alpha1', 'locAlpha'), // opened=1, open=1
+      inc('bravo1', 'locBravo'), // opened=1, open=1 -- ties locAlpha, resolved by name
+    ];
+    const locations = [
+      makeLocation('locA', 'Rank-A-Location'),
+      makeLocation('locC', 'Rank-C-Location'),
+      makeLocation('locD', 'Zulu-Rank-D-Location'),
+      makeLocation('locAlpha', 'Alpha-Rank-Location'),
+      makeLocation('locBravo', 'Bravo-Rank-Location'),
+    ];
+    const r = computeIncidentAnalytics(incidents, [], [], locations, baseFilters, NOW);
+    expect(r.topLocations.map((l) => l.locationName)).toEqual([
+      'Rank-A-Location',
+      'Rank-C-Location',
+      'Zulu-Rank-D-Location',
+      'Alpha-Rank-Location',
+      'Bravo-Rank-Location',
+    ]);
+  });
+
+  it('avgCloseMinutes is null when no incident at this location closed in the period', () => {
+    const incidents = [
+      makeIncident({ id: 'open-only', locationId: 'locX', discoveredAt: daysAgo(1) }),
+    ];
+    const r = computeIncidentAnalytics(incidents, [], [], [makeLocation('locX', 'Location X')], baseFilters, NOW);
+    expect(r.topLocations).toHaveLength(1);
+    expect(r.topLocations[0].avgCloseMinutes).toBeNull();
+  });
+
+  it('is independent from topSystems -- both are derived from the same filtered set in the same pass', () => {
+    const incidents = [
+      makeIncident({ id: 'i1', systemId: 'sysOnly', locationId: 'locOnly', discoveredAt: daysAgo(1) }),
+    ];
+    const r = computeIncidentAnalytics(
+      incidents, [], [makeSystem('sysOnly', 'Only System')], [makeLocation('locOnly', 'Only Location')], baseFilters, NOW,
+    );
+    expect(r.topSystems.map((s) => s.systemName)).toEqual(['Only System']);
+    expect(r.topLocations.map((l) => l.locationName)).toEqual(['Only Location']);
   });
 });

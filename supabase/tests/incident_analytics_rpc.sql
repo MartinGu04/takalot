@@ -1,5 +1,6 @@
--- Tests for migration 0036: get_incident_analytics, the RPC backing the
--- ניתוחים (analytics) page's first vertical slice.
+-- Tests for migration 0036 (get_incident_analytics, the RPC backing the
+-- ניתוחים analytics page's first vertical slice) and migration 0040 (adds
+-- topLocations to the same RPC's payload, mirroring topSystems exactly).
 --
 -- Every fixture group below uses its OWN dedicated system (and usually its
 -- own dedicated location) so each scenario can be asserted precisely via a
@@ -31,9 +32,13 @@
 -- exclusion of a system with zero incidents opened in the period, and
 -- inclusion of a system/location/severity filter combination that matches
 -- on all three dimensions at once (not just the negative non-matching
--- case); and permission enforcement (inactive member rejected, anon
--- rejected at the grant boundary, any active role including viewer
--- accepted) plus period-days validation.
+-- case); top-locations ordering/exclusion/avgCloseMinutes, mirroring
+-- top-systems exactly (opened desc, currently-open desc, location name asc,
+-- exclusion of a location with zero incidents opened in the period even if
+-- currently open, and a ranking row's own avgCloseMinutes reflecting only
+-- closures within the selected period); and permission enforcement
+-- (inactive member rejected, anon rejected at the grant boundary, any
+-- active role including viewer accepted) plus period-days validation.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -69,7 +74,10 @@ insert into systems (id, name, display_order) values
   ('00000000-0000-0000-0000-0000c000000f', 'Zulu-Rank-D-System', 15),
   ('00000000-0000-0000-0000-0000c0000010', 'Alpha-Rank-System', 16),
   ('00000000-0000-0000-0000-0000c0000011', 'Bravo-Rank-System', 17),
-  ('00000000-0000-0000-0000-0000c0000012', 'G10 Bucket Date Label', 18);
+  ('00000000-0000-0000-0000-0000c0000012', 'G10 Bucket Date Label', 18),
+  ('00000000-0000-0000-0000-0000c0000013', 'G11 Loc Exclusion System', 19),
+  ('00000000-0000-0000-0000-0000c0000014', 'Rank System (for locations)', 20),
+  ('00000000-0000-0000-0000-0000c0000015', 'G12 Avg Close System (locations)', 21);
 
 -- ===== Locations =====
 insert into locations (id, name, display_order) values
@@ -87,7 +95,14 @@ insert into locations (id, name, display_order) values
   ('00000000-0000-0000-0000-0000d000000c', 'G9 Loc Empty', 12),
   ('00000000-0000-0000-0000-0000d000000d', 'G9 Loc Boundary', 13),
   ('00000000-0000-0000-0000-0000d000000e', 'Rank Loc', 14),
-  ('00000000-0000-0000-0000-0000d000000f', 'G10 Loc Date Label', 15);
+  ('00000000-0000-0000-0000-0000d000000f', 'G10 Loc Date Label', 15),
+  ('00000000-0000-0000-0000-0000d0000010', 'G11 Loc Exclusion', 16),
+  ('00000000-0000-0000-0000-0000d0000011', 'Rank-A-Location', 17),
+  ('00000000-0000-0000-0000-0000d0000012', 'Rank-C-Location', 18),
+  ('00000000-0000-0000-0000-0000d0000013', 'Zulu-Rank-D-Location', 19),
+  ('00000000-0000-0000-0000-0000d0000014', 'Alpha-Rank-Location', 20),
+  ('00000000-0000-0000-0000-0000d0000015', 'Bravo-Rank-Location', 21),
+  ('00000000-0000-0000-0000-0000d0000016', 'G12 Avg Close Location', 22);
 
 -- ===== Helpers (same shape as chapter2_close_event_time.sql /
 -- incident_cancellation_grant.sql: as_user() stamps the JWT claims a real
@@ -272,6 +287,88 @@ values
    'd', 'medium', 'closed', 'i', '00000000-0000-0000-0000-0000b0000001',
    pg_temp.jerusalem_local(-3, 1, 30), '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a',
    pg_temp.jerusalem_local(-2, 2, 15), '00000000-0000-0000-0000-0000b0000001', 'rc', 'res', 'full');
+
+-- G11: mirrors G5's exclusion sibling check (#14), for LOCATIONS instead of
+-- systems -- a location whose only incident was opened long before any
+-- tested period (but is still currently open) must be excluded from
+-- topLocations entirely, even though it has a currently-open incident.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason)
+values
+  ('00000000-0000-0000-0000-0000e0000021', 'G11-001', '00000000-0000-0000-0000-0000c0000013', '00000000-0000-0000-0000-0000d0000010',
+   'd', 'medium', 'waiting_information', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '200 days', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a');
+
+-- Top-locations ordering (#13-loc): five locations, all at the SAME
+-- dedicated system (Rank System (for locations)) so the ordering assertion
+-- can filter to exactly this fixture set via p_system_id, immune to any
+-- other group's counts. Mirrors the top-systems ordering group below
+-- exactly, inverted (system fixed, location varies).
+-- Rank-A-Location: opened=3, open=3 -- unambiguous #1 by opened count alone.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason)
+values
+  ('00000000-0000-0000-0000-0000e0000022', 'RAL-001', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000011',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a'),
+  ('00000000-0000-0000-0000-0000e0000023', 'RAL-002', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000011',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a'),
+  ('00000000-0000-0000-0000-0000e0000024', 'RAL-003', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000011',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a');
+-- Rank-C-Location: opened=2, open=2 -- #2 (beats Rank-D's opened=2/open=1
+-- on the currently-open tiebreak).
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason)
+values
+  ('00000000-0000-0000-0000-0000e0000025', 'RCL-001', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000012',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a'),
+  ('00000000-0000-0000-0000-0000e0000026', 'RCL-002', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000012',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a');
+-- Zulu-Rank-D-Location (named to also help prove name isn't used
+-- prematurely): opened=2, open=1 -- #3.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason)
+values
+  ('00000000-0000-0000-0000-0000e0000027', 'RDL-001', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000013',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a');
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason,
+  cancelled_at, cancelled_by, cancellation_reason)
+values
+  ('00000000-0000-0000-0000-0000e0000028', 'RDL-002', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000013',
+   'd', 'medium', 'cancelled', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a',
+   now(), '00000000-0000-0000-0000-0000b0000001', 'נפתחה בטעות');
+-- Alpha-Rank-Location and Bravo-Rank-Location: both opened=1, open=1 --
+-- exact tie on every numeric ranking signal, resolved only by location name
+-- ascending -- #4/#5, Alpha before Bravo.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason)
+values
+  ('00000000-0000-0000-0000-0000e0000029', 'RALPHAL-001', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000014',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a'),
+  ('00000000-0000-0000-0000-0000e000002a', 'RBRAVOL-001', '00000000-0000-0000-0000-0000c0000014', '00000000-0000-0000-0000-0000d0000015',
+   'd', 'medium', 'in_progress', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '1 day', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a');
+
+-- G12: a topLocations row's own avgCloseMinutes reflects the persisted
+-- effective closure time, and only closures within the selected period --
+-- mirrors G7 (#8), asserted at the ranking-row level rather than the
+-- top-level scalar this time.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason,
+  closed_at, closed_by, root_cause, resolution, readiness_at_close)
+values
+  ('00000000-0000-0000-0000-0000e000002b', 'G12-001', '00000000-0000-0000-0000-0000c0000015', '00000000-0000-0000-0000-0000d0000016',
+   'd', 'medium', 'closed', 'i', '00000000-0000-0000-0000-0000b0000001',
+   now() - interval '6 days', '00000000-0000-0000-0000-0000b0000001', '00000000-0000-0000-0000-0000b0000001', 'n/a',
+   now() - interval '2 days', '00000000-0000-0000-0000-0000b0000001', 'rc', 'res', 'full');
 
 -- Top-systems ordering (#13): five systems, all at the SAME dedicated
 -- location (locRankTest) so the ordering assertion can filter to exactly
@@ -560,6 +657,41 @@ begin
         ']'
       )::jsonb then 'PASS' else 'FAIL' end,
       v->>'topSystems');
+
+  -- topLocations exclusion (mirrors #14, for locations): a location whose
+  -- only incident was opened long before the period (but is still
+  -- currently open) is excluded from topLocations entirely.
+  v := get_incident_analytics(90, null, '00000000-0000-0000-0000-0000d0000010', null);
+  insert into results (test, result, detail) values
+    ('a location with zero incidents opened in the period is excluded from topLocations, even if currently open',
+      case when v->'topLocations' = '[]'::jsonb then 'PASS' else 'FAIL' end, v->>'topLocations');
+
+  -- topLocations ordering (mirrors #13, for locations): opened desc,
+  -- currentlyOpen desc tiebreak, location name asc final tiebreak. Scoped
+  -- to the shared ranking system so no other fixture group can interfere.
+  v := get_incident_analytics(30, '00000000-0000-0000-0000-0000c0000014', null, null);
+  insert into results (test, result, detail) values
+    ('top locations ranked opened desc / currentlyOpen desc / name asc, exact expected order',
+      case when v->'topLocations' = (
+        '[' ||
+        '{"locationId":"00000000-0000-0000-0000-0000d0000011","locationName":"Rank-A-Location","openedInPeriod":3,"currentlyOpen":3,"avgCloseMinutes":null},' ||
+        '{"locationId":"00000000-0000-0000-0000-0000d0000012","locationName":"Rank-C-Location","openedInPeriod":2,"currentlyOpen":2,"avgCloseMinutes":null},' ||
+        '{"locationId":"00000000-0000-0000-0000-0000d0000013","locationName":"Zulu-Rank-D-Location","openedInPeriod":2,"currentlyOpen":1,"avgCloseMinutes":null},' ||
+        '{"locationId":"00000000-0000-0000-0000-0000d0000014","locationName":"Alpha-Rank-Location","openedInPeriod":1,"currentlyOpen":1,"avgCloseMinutes":null},' ||
+        '{"locationId":"00000000-0000-0000-0000-0000d0000015","locationName":"Bravo-Rank-Location","openedInPeriod":1,"currentlyOpen":1,"avgCloseMinutes":null}' ||
+        ']'
+      )::jsonb then 'PASS' else 'FAIL' end,
+      v->>'topLocations');
+
+  -- topLocations avgCloseMinutes (mirrors #8, at the ranking-row level): the
+  -- persisted effective closure time, only within the selected period.
+  v := get_incident_analytics(30, '00000000-0000-0000-0000-0000c0000015', null, null);
+  insert into results (test, result, detail) values
+    ('a topLocations row reports avgCloseMinutes from the persisted discovered_at -> closed_at (4 days = 5760 min), scoped to the selected period',
+      case when v->'topLocations' = (
+        '[{"locationId":"00000000-0000-0000-0000-0000d0000016","locationName":"G12 Avg Close Location","openedInPeriod":1,"currentlyOpen":0,"avgCloseMinutes":5760}]'
+      )::jsonb then 'PASS' else 'FAIL' end,
+      v->>'topLocations');
 
   -- #17: invalid p_period_days is rejected with the controlled validation error.
   for v_bad in select unnest(array[14, 0, -5]) loop

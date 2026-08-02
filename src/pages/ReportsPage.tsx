@@ -1,8 +1,9 @@
 // ניתוחים -- operational incident analytics. First vertical slice: six KPI
-// cards, an opened-vs-closed trend chart, and a top-systems ranking, all
-// driven by a single get_incident_analytics RPC call (migration 0036) kept
-// in sync with the page's period/system/location/severity filters via the
-// URL (shareable/bookmarkable, same convention as ArchivePage/IncidentsPage).
+// cards, an opened-vs-closed trend chart, and top-systems/top-locations
+// rankings, all driven by a single get_incident_analytics RPC call
+// (migration 0036, extended with topLocations by migration 0040) kept in
+// sync with the page's period/system/location/severity filters via the URL
+// (shareable/bookmarkable, same convention as ArchivePage/IncidentsPage).
 import { useEffect } from 'react';
 import { useIncidentAnalytics, useLocations, useSystems } from '../data/hooks';
 import { useUrlState } from '../lib/useUrlState';
@@ -13,6 +14,7 @@ import { AnalyticsFilterBar } from '../components/analytics/AnalyticsFilterBar';
 import { AnalyticsKpiCard } from '../components/analytics/AnalyticsKpiCard';
 import { IncidentTrendChart } from '../components/analytics/IncidentTrendChart';
 import { TopSystemsList } from '../components/analytics/TopSystemsList';
+import { TopLocationsList } from '../components/analytics/TopLocationsList';
 import { ErrorState, Spinner } from '../components/ui';
 import {
   IconAlertTriangle,
@@ -205,13 +207,25 @@ export default function ReportsPage() {
             </div>
           </section>
 
-          <section className="mt-8">
-            <h2 className="section-title">מערכות עם הכי הרבה תקלות</h2>
-            <p className="mt-0.5 text-xs text-muted">דירוג לפי תקלות שנפתחו בתקופה שנבחרה</p>
-            <div className="mt-3">
-              <TopSystemsList rows={data.topSystems} />
-            </div>
-          </section>
+          {/* Side by side once the width comfortably fits two compact
+              ranking panels plus their column headers (lg:); stacked below
+              that, same as every other responsive section on this page. */}
+          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <section>
+              <h2 className="section-title">מערכות עם הכי הרבה תקלות</h2>
+              <p className="mt-0.5 text-xs text-muted">דירוג לפי מספר התקלות שנפתחו בתקופה שנבחרה</p>
+              <div className="mt-3">
+                <TopSystemsList rows={data.topSystems} />
+              </div>
+            </section>
+            <section>
+              <h2 className="section-title">מיקומים עם הכי הרבה תקלות</h2>
+              <p className="mt-0.5 text-xs text-muted">דירוג לפי מספר התקלות שנפתחו בתקופה שנבחרה</p>
+              <div className="mt-3">
+                <TopLocationsList rows={data.topLocations} />
+              </div>
+            </section>
+          </div>
         </>
       )}
     </div>
