@@ -22,7 +22,7 @@ test.describe('desktop', () => {
     await expect(logoComms).toHaveAttribute('src', LOGO_COMMS_SRC);
   });
 
-  test('each logo sits in a circular container (border-radius 50%, overflow hidden), sized ~42px, with a restrained gap and a visible border', async ({ page }) => {
+  test('each logo sits in a circular container (border-radius 50%, overflow hidden), sized ~37px, with a restrained gap and a visible border', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     const circle502 = page.getByTestId('department-logo-502');
     const circleComms = page.getByTestId('department-logo-strategic-communication');
@@ -42,19 +42,37 @@ test.describe('desktop', () => {
       const box = await circle.boundingBox();
       expect(box).not.toBeNull();
       expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
-      // ~42px at this wide (lg:) desktop width.
-      expect(box!.width).toBeGreaterThanOrEqual(40);
-      expect(box!.width).toBeLessThanOrEqual(44);
+      // ~37px at this wide (lg:) desktop width.
+      expect(box!.width).toBeGreaterThanOrEqual(35);
+      expect(box!.width).toBeLessThanOrEqual(39);
       expect(parseFloat(style.borderWidth)).toBeGreaterThan(0);
     }
 
     const box502 = (await circle502.boundingBox())!;
     const boxComms = (await circleComms.boundingBox())!;
+    // Both badges stay identical in size.
+    expect(Math.abs(box502.width - boxComms.width)).toBeLessThan(1);
     // RTL: don't assume which one renders visually first -- sort by x.
     const [left, right] = [box502, boxComms].sort((a, b) => a.x - b.x);
     const gap = right.x - (left.x + left.width);
     expect(gap).toBeGreaterThanOrEqual(5);
     expect(gap).toBeLessThanOrEqual(9);
+  });
+
+  test('the logo artwork renders larger than its circular frame (a deliberate ~12% zoom), clipped by the circle rather than the source file', async ({ page }) => {
+    await loginAs(page, DEMO_USERS.admin);
+    const circle502 = page.getByTestId('department-logo-502');
+    const img502 = circle502.locator('img');
+
+    const circleBox = (await circle502.boundingBox())!;
+    const imgBox = (await img502.boundingBox())!;
+    // The <img>'s own laid-out box is larger than its circular frame (the
+    // 112%-sized image box); the visible result still reads as a clean
+    // circle because the parent's overflow:hidden clips the excess.
+    expect(imgBox.width).toBeGreaterThan(circleBox.width);
+    expect(imgBox.height).toBeGreaterThan(circleBox.height);
+    // Preserves its own aspect ratio -- scaled equally on both axes.
+    expect(Math.abs(imgBox.width / imgBox.height - circleBox.width / circleBox.height)).toBeLessThan(0.05);
   });
 
   test('the logos are decorative and not interactive: no link/button role, not keyboard-focusable, hidden from assistive tech', async ({ page }) => {
@@ -133,7 +151,7 @@ test.describe('narrower desktop/tablet width', () => {
     expect(overflowX).toBe(false);
   });
 
-  test('logos scale down to ~36px at this narrower width, preserving the gap, with no overlap with existing controls', async ({ page }) => {
+  test('logos scale down to ~32px at this narrower width, preserving the gap, with no overlap with existing controls', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     const circle502 = page.getByTestId('department-logo-502');
     const circleComms = page.getByTestId('department-logo-strategic-communication');
@@ -142,8 +160,8 @@ test.describe('narrower desktop/tablet width', () => {
       const box = await circle.boundingBox();
       expect(box).not.toBeNull();
       expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
-      expect(box!.width).toBeGreaterThanOrEqual(34);
-      expect(box!.width).toBeLessThanOrEqual(38);
+      expect(box!.width).toBeGreaterThanOrEqual(30);
+      expect(box!.width).toBeLessThanOrEqual(34);
     }
 
     const box502 = (await circle502.boundingBox())!;
