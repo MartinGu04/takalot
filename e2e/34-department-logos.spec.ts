@@ -22,7 +22,7 @@ test.describe('desktop', () => {
     await expect(logoComms).toHaveAttribute('src', LOGO_COMMS_SRC);
   });
 
-  test('each logo sits in a circular container (border-radius 50%, overflow hidden), sized ~37px, with a restrained gap and a visible border', async ({ page }) => {
+  test('each logo sits in a circular container (border-radius 50%, overflow hidden), sized ~46px, with a restrained gap and a visible border', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     const circle502 = page.getByTestId('department-logo-502');
     const circleComms = page.getByTestId('department-logo-strategic-communication');
@@ -42,9 +42,9 @@ test.describe('desktop', () => {
       const box = await circle.boundingBox();
       expect(box).not.toBeNull();
       expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
-      // ~37px at this wide (lg:) desktop width.
-      expect(box!.width).toBeGreaterThanOrEqual(35);
-      expect(box!.width).toBeLessThanOrEqual(39);
+      // ~46px at this wide (lg:) desktop width.
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.width).toBeLessThanOrEqual(48);
       expect(parseFloat(style.borderWidth)).toBeGreaterThan(0);
     }
 
@@ -151,7 +151,7 @@ test.describe('narrower desktop/tablet width', () => {
     expect(overflowX).toBe(false);
   });
 
-  test('logos scale down to ~32px at this narrower width, preserving the gap, with no overlap with existing controls', async ({ page }) => {
+  test('logos stay at the default ~40px size at this narrower width (below the lg: breakpoint), preserving the gap, with no overlap with existing controls', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
     const circle502 = page.getByTestId('department-logo-502');
     const circleComms = page.getByTestId('department-logo-strategic-communication');
@@ -160,8 +160,8 @@ test.describe('narrower desktop/tablet width', () => {
       const box = await circle.boundingBox();
       expect(box).not.toBeNull();
       expect(Math.abs(box!.width - box!.height)).toBeLessThan(1);
-      expect(box!.width).toBeGreaterThanOrEqual(30);
-      expect(box!.width).toBeLessThanOrEqual(34);
+      expect(box!.width).toBeGreaterThanOrEqual(38);
+      expect(box!.width).toBeLessThanOrEqual(42);
     }
 
     const box502 = (await circle502.boundingBox())!;

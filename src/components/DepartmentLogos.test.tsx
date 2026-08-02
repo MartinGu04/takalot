@@ -31,16 +31,17 @@ describe('DepartmentLogos', () => {
 
     for (const circle of [logo502, logoComms]) {
       expect(circle).toHaveStyle({ borderRadius: '50%', overflow: 'hidden' });
-      // Fixed square box -- a circle, not an oval -- ~32px by default, ~37px
+      // Fixed square box -- a circle, not an oval -- ~40px by default, ~46px
       // at the wider desktop (lg:) breakpoint.
-      expect(circle.className).toMatch(/size-8/);
-      expect(circle.className).toMatch(/lg:size-\[37px\]/);
+      expect(circle.className).toMatch(/size-10/);
+      expect(circle.className).toMatch(/lg:size-\[46px\]/);
     }
 
     // object-contain (not cover/fill) preserves the source aspect ratio and
     // never stretches or distorts the artwork, even though the image box
     // itself is deliberately sized a bit past its circle (112%, equally on
-    // both axes) to read larger inside the smaller badge.
+    // both axes) to read larger inside the badge, trimming excess black
+    // margin without cropping the artwork itself.
     for (const img of Array.from(document.querySelectorAll('img'))) {
       expect(img.className).toMatch(/object-contain/);
       expect(img.className).toMatch(/w-\[112%\]/);
