@@ -13,7 +13,7 @@ import { canTransition, transitionError } from '../../domain/transitions';
 import { useProfiles } from '../../data/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { hasCapability, canTechnicianUpdate } from '../../domain/permissions';
-import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
+import { Dialog, Field, Input, Select, Textarea, Button, DateTimeLocalInput } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { ExternalPartyFields } from '../ExternalPartyFields';
 import { isoToLocalInput, localInputToIso } from '../../lib/time';
@@ -227,7 +227,7 @@ export function UpdateDialog({
           required
           hint="המועד שבו העדכון או הפעולה התרחשו בפועל, גם אם התיעוד נעשה מאוחר יותר."
         >
-          {(a) => <Input {...a} type="datetime-local" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />}
+          {(a) => <DateTimeLocalInput {...a} value={eventTime} onChange={setEventTime} />}
         </Field>
         <Field label="פעולות שבוצעו מאז העדכון הקודם" required>
           {(a) => (

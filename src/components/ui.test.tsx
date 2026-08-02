@@ -1,9 +1,10 @@
 // Focused tests for shared UI primitives whose whole point is an
 // accessibility contract rather than a visual one.
+import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Avatar, TruncatedTooltip } from './ui';
+import { Avatar, DateTimeLocalInput, TruncatedTooltip } from './ui';
 
 describe('Avatar', () => {
   it('renders the provider image over the initial when a URL is available', () => {
@@ -98,5 +99,80 @@ describe('TruncatedTooltip', () => {
   it('lets a Latin or mixed value resolve its own direction', () => {
     render(<TruncatedTooltip text="Alta Systems (IAF)" />);
     expect(screen.getByRole('tooltip')).toHaveAttribute('dir', 'auto');
+  });
+});
+
+describe('DateTimeLocalInput', () => {
+  // Native <input type="datetime-local"> corrupts manual keyboard editing
+  // when kept fully controlled (value + onChange feeding straight back into
+  // value): every keystroke on an already-complete value re-fires onChange
+  // -> setState -> re-render, which reassigns the DOM node's .value -- and
+  // browsers respond to any such reassignment (even to an identical string)
+  // by resetting the control's focused segment back to the first one,
+  // corrupting whatever the user types next. This harness exposes both the
+  // committed value (what validation/duration/submission would see) and the
+  // DOM node itself, so these tests can check the actual fix: the node is
+  // never recreated -- and `value` never handed back to it -- for edits that
+  // originate from the field's own onChange.
+  function Harness({ initial }: { initial: string }) {
+    const [value, setValue] = useState(initial);
+    return (
+      <div>
+        <DateTimeLocalInput
+          id="closure-time"
+          aria-invalid={false}
+          value={value}
+          onChange={setValue}
+        />
+        <p data-testid="committed">{value}</p>
+        <button type="button" onClick={() => setValue('2026-07-19T16:06')}>
+          external-reset
+        </button>
+      </div>
+    );
+  }
+
+  it('never reassigns the DOM node for edits that originate from its own onChange -- no remount, no forced focus/segment reset', () => {
+    const { container } = render(<Harness initial="2026-01-01T00:00" />);
+    const getField = () => container.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+    const node = getField();
+
+    fireEvent.change(node, { target: { value: '2026-07-01T00:00' } }); // month
+    expect(getField()).toBe(node);
+    fireEvent.change(node, { target: { value: '2026-07-19T00:00' } }); // day
+    expect(getField()).toBe(node);
+    fireEvent.change(node, { target: { value: '2026-07-19T16:06' } }); // hour + minute
+    expect(getField()).toBe(node);
+
+    expect(screen.getByTestId('committed')).toHaveTextContent('2026-07-19T16:06');
+  });
+
+  it('ignores an intermediate empty value while a segment is mid-edit, never corrupting the already-committed value', () => {
+    render(<Harness initial="2026-07-19T16:05" />);
+    const input = document.getElementById('closure-time') as HTMLInputElement;
+
+    // datetime-local reports "" while a segment is only partially typed --
+    // this must never propagate up and clear the committed value.
+    fireEvent.change(input, { target: { value: '' } });
+    expect(screen.getByTestId('committed')).toHaveTextContent('2026-07-19T16:05');
+  });
+
+  it('only a caller-driven change to `value` (not the field\'s own onChange) remounts the field with the new value', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Harness initial="2026-01-01T00:00" />);
+    const before = container.querySelector('input[type="datetime-local"]');
+
+    await user.click(screen.getByRole('button', { name: 'external-reset' }));
+
+    const after = container.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+    expect(after).not.toBe(before);
+    expect(after.value).toBe('2026-07-19T16:06');
+  });
+
+  it('renders left-to-right regardless of the surrounding RTL document direction', () => {
+    render(<Harness initial="2026-01-01T00:00" />);
+    const input = document.getElementById('closure-time') as HTMLInputElement;
+    expect(input).toHaveAttribute('dir', 'ltr');
+    expect(input.className).toContain('text-left');
   });
 });

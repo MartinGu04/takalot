@@ -3,7 +3,7 @@ import type { Incident } from '../../domain/types';
 import { closeIncidentSchema, type CloseIncidentInput } from '../../domain/schemas';
 import { readinessLabels, reportedToOpsLabels } from '../../domain/labels';
 import { formatDuration, isoToLocalInput, localInputToIso } from '../../lib/time';
-import { Dialog, Field, Input, Select, Textarea, Button } from '../ui';
+import { Dialog, Field, Input, Select, Textarea, Button, DateTimeLocalInput } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { ExternalPartyFields } from '../ExternalPartyFields';
 import { useProfiles } from '../../data/hooks';
@@ -160,7 +160,7 @@ export function CloseDialog({
             required
             hint="המועד שבו התקלה נסגרה בפועל, גם אם התיעוד נעשה מאוחר יותר."
           >
-            {(a) => <Input {...a} type="datetime-local" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />}
+            {(a) => <DateTimeLocalInput {...a} value={eventTime} onChange={setEventTime} />}
           </Field>
           <Field label="סיבת התקלה" required>
             {(a) => <Textarea {...a} rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)} maxLength={2000} />}
