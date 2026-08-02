@@ -299,6 +299,13 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
     await user.click(await within(closeDialog).findByRole('button', { name: 'אישור סגירת תקלה' }));
     expect(await screen.findByText('התקלה נסגרה.')).toBeInTheDocument();
 
+    // A successful full closure also shows the WhatsApp notification-copy
+    // modal (NotificationCopyDialog) -- dismiss it via the escape action,
+    // exactly like a real user who doesn't need to copy the message here.
+    const notification = await screen.findByRole('dialog', { name: 'התקלה נסגרה בהצלחה' });
+    await user.click(within(notification).getByRole('button', { name: 'המשך ללא העתקה' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument());
+
     await gotoDashboard(user);
     await waitFor(() => expect(within(main()).getByTestId('closed-total')).toHaveTextContent('4'));
 

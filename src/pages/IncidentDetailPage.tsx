@@ -12,7 +12,7 @@ import {
   repo,
 } from '../data/hooks';
 import { useAuth, useSession } from '../auth/AuthContext';
-import { isOpen } from '../domain/types';
+import { isOpen, type Incident } from '../domain/types';
 import { hasCapability, canTechnicianUpdate } from '../domain/permissions';
 import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { Timeline } from '../components/Timeline';
@@ -25,10 +25,12 @@ import { CloseDialog } from '../components/dialogs/CloseDialog';
 import { CancelDialog } from '../components/dialogs/CancelDialog';
 import { ReopenDialog } from '../components/dialogs/ReopenDialog';
 import { CorrectionDialog, FollowUpDialog } from '../components/dialogs/SimpleTextDialogs';
+import { NotificationCopyDialog } from '../components/dialogs/NotificationCopyDialog';
 import { buildIncidentPdf, incidentPdfFilename } from '../exports/incidentPdf';
 import { downloadPdf } from '../exports/pdf';
 import { AppError } from '../data/repository';
 import { IconChevronDown } from '../components/icons';
+import { buildIncidentClosedMessage } from '../domain/notificationMessage';
 import type {
   UpdateIncidentInput,
   TechnicianUpdateInput,
@@ -222,6 +224,7 @@ export default function IncidentDetailPage() {
     | 'followup'
     | { correction: { refId: string; label: string } }
   >(null);
+  const [closedNotification, setClosedNotification] = useState<Incident | null>(null);
 
   const refreshAll = () => {
     refetch();
@@ -255,7 +258,17 @@ export default function IncidentDetailPage() {
   );
   const closeMutation = useAppMutation(
     (input: CloseIncidentInput) => repo().closeIncident(session, id!, input),
-    { successText: 'התקלה נסגרה.', onSuccess: () => setDialog(null), onError: onConflict },
+    {
+      successText: 'התקלה נסגרה.',
+      onSuccess: (result) => {
+        setDialog(null);
+        // A submission with partial readiness keeps the incident open (see
+        // closeIncident/close_incident) -- only a genuine close (closedAt
+        // set) should prompt the WhatsApp notification-copy modal.
+        if (result.status === 'closed' && result.closedAt) setClosedNotification(result);
+      },
+      onError: onConflict,
+    },
   );
   const cancelMutation = useAppMutation(
     (input: CancelIncidentInput) => repo().cancelIncident(session, id!, input),
@@ -571,6 +584,14 @@ export default function IncidentDetailPage() {
           refLabel={dialog.correction.label}
           submitting={correctionMutation.isPending}
           onSubmit={(text) => correctionMutation.mutate({ refId: dialog.correction.refId, text })}
+        />
+      )}
+      {closedNotification && (
+        <NotificationCopyDialog
+          open
+          title="התקלה נסגרה בהצלחה"
+          message={buildIncidentClosedMessage(closedNotification, systemName, user.fullName)}
+          onDismiss={() => setClosedNotification(null)}
         />
       )}
     </div>

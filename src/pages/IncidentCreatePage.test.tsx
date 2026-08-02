@@ -42,6 +42,26 @@ async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(screen.getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
 }
 
+// A successful creation stays on this page and shows the WhatsApp
+// notification-copy modal (NotificationCopyDialog) before navigating to the
+// new incident's own detail page -- every "successful creation" test below
+// must dismiss it (via the escape action, no clipboard involved) to reach
+// the post-navigation page the rest of the assertions target.
+async function dismissCreationNotification(user: ReturnType<typeof userEvent.setup>) {
+  const dialog = await screen.findByRole('dialog', { name: 'התקלה נפתחה בהצלחה' });
+  await user.click(within(dialog).getByRole('button', { name: 'המשך ללא העתקה' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'התקלה נפתחה בהצלחה' })).not.toBeInTheDocument());
+  // The detail page is lazy-loaded (App.tsx) -- on its first visit in a
+  // fresh test, React keeps this now-hidden create page (modal included)
+  // mounted behind the route Suspense fallback for a tick while the chunk
+  // resolves. getByText queries ignore visibility, so a query for the
+  // detail page's own "...נפתחה בהצלחה" banner could otherwise still match
+  // the hidden modal's identically-worded title. Waiting for the generic
+  // route-level fallback ("טוען…", App.tsx's <Suspense>) to clear first
+  // guarantees the swap is actually done.
+  await waitFor(() => expect(screen.queryByText('טוען…')).not.toBeInTheDocument());
+}
+
 describe('IncidentCreatePage: access control', () => {
   it('an operational role sees the creation CTA and can open the form', async () => {
     const user = await loginAs('login-u-admin');
@@ -170,6 +190,7 @@ describe('IncidentCreatePage: form behavior', () => {
     await goToCreatePage(user);
     await fillMinimalValidForm(user);
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).not.toHaveTextContent('פתיחת תקלה'));
     expect(within(main()).getAllByText('בטיפול').length).toBeGreaterThan(0);
   });
@@ -202,6 +223,7 @@ describe('IncidentCreatePage: form behavior', () => {
     expect(spy).toHaveBeenCalledTimes(1);
 
     resolveCall?.();
+    await dismissCreationNotification(user);
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'פתיחת תקלה' })).not.toBeInTheDocument());
   });
 
@@ -233,6 +255,7 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     await goToCreatePage(user);
     await fillMinimalValidForm(user);
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
 
     // Success: navigated to the new incident's own detail page with a
     // prominent banner naming the generated number.
@@ -268,6 +291,7 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     await fillMinimalValidForm(user);
     await user.type(screen.getByLabelText('הערה נוספת'), '  הערה נוספת לצורך הבדיקה  ');
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
     await screen.findByText(/נפתחה בהצלחה/);
 
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
@@ -281,6 +305,7 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     await goToCreatePage(user);
     await fillMinimalValidForm(user);
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
     await screen.findByText(/נפתחה בהצלחה/);
 
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
@@ -349,6 +374,7 @@ describe('IncidentCreatePage: תקשוב למבצעים ו-WISDOM', () => {
     await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), '  WISDOM-7789  ');
 
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
     await screen.findByText(/נפתחה בהצלחה/);
 
     const commsRow = within(main()).getByText('תקשוב למבצעים').closest('div') as HTMLElement;
@@ -448,6 +474,7 @@ describe('IncidentCreatePage: form resets fully after a successful creation', ()
     await user.selectOptions(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?'), 'yes');
     await user.type(await screen.findByLabelText(/^מספר תקלה ב-WISDOM/), 'WISDOM-1111');
     await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
     await screen.findByText(/נפתחה בהצלחה/);
 
     // Navigate back to the creation form -- a fresh mount, exactly like a
@@ -581,5 +608,74 @@ describe('IncidentCreatePage: restoring a draft saved before the external-handle
     // typing works normally.
     await user.type(nameInput, 'ארגון שהוזן לאחר שחזור הטיוטה');
     expect(nameInput.value).toBe('ארגון שהוזן לאחר שחזור הטיוטה');
+  });
+});
+
+// Temporary operational workaround (no real WhatsApp integration yet):
+// NotificationCopyDialog, shown after a confirmed successful creation.
+describe('IncidentCreatePage: WhatsApp notification-copy modal (post-creation)', () => {
+  it('does not appear while the request is pending, and appears only once the server confirms success', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const original = LocalDemoRepository.prototype.createIncident;
+    let resolveCall: (() => void) | undefined;
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'createIncident')
+      .mockImplementationOnce(async function (
+        this: InstanceType<typeof LocalDemoRepository>,
+        ...args: Parameters<typeof original>
+      ) {
+        await new Promise<void>((resolve) => {
+          resolveCall = resolve;
+        });
+        return original.apply(this, args);
+      });
+
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    expect(screen.queryByRole('dialog', { name: 'התקלה נפתחה בהצלחה' })).not.toBeInTheDocument();
+    await fillMinimalValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+
+    await screen.findByRole('button', { name: 'שומר…' }); // still pending
+    expect(screen.queryByRole('dialog', { name: 'התקלה נפתחה בהצלחה' })).not.toBeInTheDocument();
+
+    resolveCall?.();
+    expect(await screen.findByRole('dialog', { name: 'התקלה נפתחה בהצלחה' })).toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it('does not appear when creation fails', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const { AppError } = await import('../data/repository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'createIncident')
+      .mockRejectedValueOnce(new AppError('VALIDATION', 'הגורם המטפל שנבחר אינו פעיל.'));
+
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+
+    expect(await screen.findByText('הגורם המטפל שנבחר אינו פעיל.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'התקלה נפתחה בהצלחה' })).not.toBeInTheDocument();
+    spy.mockRestore();
+  });
+
+  it('builds its message from the persisted incident and the authenticated actor -- never from the editable internal-owner field', async () => {
+    const user = await loginAs('login-u-admin'); // signed in as אלון ברק (דמו)
+    await goToCreatePage(user);
+    // fillMinimalValidForm sets the internal owner to u-tech-1 (עומר פרץ),
+    // a DIFFERENT person than the signed-in actor -- proves the message's
+    // actor name is never sourced from this (or any other) editable field.
+    await fillMinimalValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'התקלה נפתחה בהצלחה' });
+    expect(
+      within(dialog).getByText(/כרגע AVARIA עדיין לא שולחת התראות אוטומטיות לוואטסאפ/),
+    ).toBeInTheDocument();
+    const message = within(dialog).getByRole('group', { name: 'תוכן ההודעה להעתקה' }).textContent ?? '';
+    expect(message).toMatch(/^🟡 נפתחה תקלה בחומרה בינונית \d{4}-\d{3} במערכת מערכת אלפא על ידי אלון ברק \(דמו\)$/);
+    expect(message).not.toContain('עומר פרץ'); // the editable owner field's value must never appear as the actor
   });
 });
