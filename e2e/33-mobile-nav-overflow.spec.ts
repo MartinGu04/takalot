@@ -1,6 +1,6 @@
 // Mobile bottom-nav overflow ("עוד"): the bottom nav keeps a fixed 4-slot
 // layout. Roles with 4 or fewer destinations (technician, viewer) get all of
-// them as direct links, including דוחות. Roles with more (shift_supervisor,
+// them as direct links, including ניתוחים. Roles with more (shift_supervisor,
 // professional_manager, system_admin) get 3 direct links plus a 4th "עוד"
 // slot that opens a sheet with the remaining destinations. See
 // src/components/Layout.tsx.
@@ -14,11 +14,11 @@ test.describe('roles with 4 or fewer destinations: no overflow', () => {
     ['viewer', DEMO_USERS.viewer],
     ['technician', DEMO_USERS.tech1],
   ] as const) {
-    test(`${label}: all 4 destinations (including דוחות) are direct links, no עוד button`, async ({ page }) => {
+    test(`${label}: all 4 destinations (including ניתוחים) are direct links, no עוד button`, async ({ page }) => {
       await loginAs(page, userId);
       const bottomNav = page.getByRole('navigation', { name: 'ניווט תחתון' });
       const links = bottomNav.getByRole('link').filter({ hasText: /\S/ });
-      await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
+      await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'ניתוחים']);
       await expect(bottomNav.getByRole('button', { name: 'עוד' })).toHaveCount(0);
     });
   }
@@ -26,9 +26,9 @@ test.describe('roles with 4 or fewer destinations: no overflow', () => {
 
 test.describe('roles with more than 4 destinations: עוד overflow sheet', () => {
   for (const [label, userId, expectedOverflow] of [
-    ['shift_supervisor', DEMO_USERS.supervisor1, ['כוח אדם', 'דוחות']],
-    ['professional_manager', DEMO_USERS.manager, ['כוח אדם', 'דוחות']],
-    ['system_admin', DEMO_USERS.admin, ['כוח אדם', 'ניהול', 'דוחות']],
+    ['shift_supervisor', DEMO_USERS.supervisor1, ['כוח אדם', 'ניתוחים']],
+    ['professional_manager', DEMO_USERS.manager, ['כוח אדם', 'ניתוחים']],
+    ['system_admin', DEMO_USERS.admin, ['כוח אדם', 'ניהול', 'ניתוחים']],
   ] as const) {
     test(`${label}: 3 direct destinations plus עוד holding ${expectedOverflow.join(', ')}`, async ({ page }) => {
       await loginAs(page, userId);
@@ -59,9 +59,9 @@ test.describe('roles with more than 4 destinations: עוד overflow sheet', () =
       }
 
       // Selecting a destination navigates and closes the sheet.
-      await sheet.getByRole('link', { name: 'דוחות' }).click();
+      await sheet.getByRole('link', { name: 'ניתוחים' }).click();
       await expect(page).toHaveURL(/\/reports$/);
-      await expect(page.getByRole('heading', { name: 'דוחות' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'ניתוח תקלות' })).toBeVisible();
       await expect(sheet).toBeHidden();
       await expect(moreButton).toHaveAttribute('aria-expanded', 'false');
     });
@@ -129,7 +129,7 @@ test.describe('roles with more than 4 destinations: עוד overflow sheet', () =
     await loginAs(page, DEMO_USERS.admin);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     await expect(sidebar.getByRole('link')).toHaveText([
-      'מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'דוחות',
+      'מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'ניתוחים',
     ]);
     await expect(sidebar.getByRole('button', { name: 'עוד' })).toHaveCount(0);
   });

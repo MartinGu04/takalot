@@ -32,6 +32,13 @@ import type {
   TechnicianUpdateInput,
   UpdateIncidentInput,
 } from '../domain/schemas';
+// Re-exported here (not just imported) so callers of the Repository
+// interface can pull the ניתוחים (analytics) filter/result shapes from the
+// same place as every other repository-adjacent type, even though they are
+// defined in the domain layer -- see analyticsSummary.ts for why the
+// domain module owns these types rather than this file.
+export type { AnalyticsFilters, AnalyticsPeriodDays, IncidentAnalytics } from '../domain/analyticsSummary';
+import type { AnalyticsFilters, IncidentAnalytics } from '../domain/analyticsSummary';
 
 export type ErrorCode =
   | 'FORBIDDEN'
@@ -213,6 +220,18 @@ export interface Repository {
    * outcome and are never counted here.
    */
   countClosedIncidents(session: Session): Promise<number>;
+  /**
+   * Aggregate KPIs/chart/top-systems for the ניתוחים (analytics) page.
+   * Deliberately NOT derived from listIncidents(): several of these metrics
+   * (currently-open counts/durations) must reflect the true, unbounded
+   * current set, which the 500-row cap on listIncidents cannot safely
+   * represent. In production this calls a single Postgres RPC
+   * (get_incident_analytics, migration 0036) that is the actual
+   * calculation authority; the local/demo repository computes the same
+   * documented rules in-memory via src/domain/analyticsSummary.ts, which
+   * exists only to power demo mode and is not itself the source of truth.
+   */
+  getIncidentAnalytics(session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics>;
   getIncident(session: Session, id: string): Promise<Incident | null>;
   getIncidentEvents(session: Session, incidentId: string): Promise<IncidentEvent[]>;
   getIncidentUpdates(session: Session, incidentId: string): Promise<IncidentUpdate[]>;

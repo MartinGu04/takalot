@@ -1,9 +1,9 @@
 // Mobile bottom-nav overflow ("עוד"): the bottom nav keeps a fixed 4-slot
 // layout. Roles with 4 or fewer destinations (technician, viewer) get all of
-// them as direct links, including דוחות. Roles with more than 4
+// them as direct links, including ניתוחים. Roles with more than 4
 // (shift_supervisor, professional_manager, system_admin) get 3 direct links
 // plus a 4th "עוד" slot that opens a sheet with the remaining destinations
-// (כוח אדם / ניהול / דוחות, whichever the role is permitted). Exercised
+// (כוח אדם / ניהול / ניתוחים, whichever the role is permitted). Exercised
 // through the real app (real routing/auth), not a Layout-level unit mock.
 import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -28,21 +28,21 @@ describe('mobile bottom-nav overflow (עוד)', () => {
   it.each([
     ['viewer', 'login-u-viewer'],
     ['technician', 'login-u-tech-1'],
-  ])('%s: keeps all 4 destinations as direct links, including דוחות, with no עוד button', async (_role, testId) => {
+  ])('%s: keeps all 4 destinations as direct links, including ניתוחים, with no עוד button', async (_role, testId) => {
     const user = userEvent.setup();
     render(<App />);
     await login(user, testId);
 
     const nav = bottomNav();
     const links = within(nav).getAllByRole('link').filter((l) => l.textContent);
-    expect(links.map((l) => l.textContent)).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
+    expect(links.map((l) => l.textContent)).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'ניתוחים']);
     expect(within(nav).queryByRole('button', { name: 'עוד' })).not.toBeInTheDocument();
   });
 
   it.each([
-    ['shift_supervisor', 'login-u-supervisor-1', ['כוח אדם', 'דוחות']],
-    ['professional_manager', 'login-u-manager', ['כוח אדם', 'דוחות']],
-    ['system_admin', 'login-u-admin', ['כוח אדם', 'ניהול', 'דוחות']],
+    ['shift_supervisor', 'login-u-supervisor-1', ['כוח אדם', 'ניתוחים']],
+    ['professional_manager', 'login-u-manager', ['כוח אדם', 'ניתוחים']],
+    ['system_admin', 'login-u-admin', ['כוח אדם', 'ניהול', 'ניתוחים']],
   ] as const)(
     '%s: shows 3 direct destinations plus an עוד slot holding %o',
     async (_role, testId, expectedOverflow) => {
@@ -84,9 +84,9 @@ describe('mobile bottom-nav overflow (עוד)', () => {
     const nav = bottomNav();
     await user.click(within(nav).getByRole('button', { name: 'עוד' }));
     const sheet = screen.getByRole('dialog', { name: 'עוד' });
-    await user.click(within(sheet).getByRole('link', { name: 'דוחות' }));
+    await user.click(within(sheet).getByRole('link', { name: 'ניתוחים' }));
 
-    await screen.findByRole('heading', { name: 'דוחות' });
+    await screen.findByRole('heading', { name: 'ניתוח תקלות' });
     expect(screen.queryByRole('dialog', { name: 'עוד' })).not.toBeInTheDocument();
     expect(within(bottomNav()).getByRole('button', { name: 'עוד' })).toHaveAttribute(
       'aria-expanded',
@@ -162,7 +162,7 @@ describe('mobile bottom-nav overflow (עוד)', () => {
 
     const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' });
     const labels = within(sidebar).getAllByRole('link').map((l) => l.textContent);
-    expect(labels).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'דוחות']);
+    expect(labels).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'ניתוחים']);
     expect(within(sidebar).queryByRole('button', { name: 'עוד' })).not.toBeInTheDocument();
   });
 });

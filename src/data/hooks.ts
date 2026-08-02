@@ -1,7 +1,7 @@
 // TanStack Query hooks over the repository abstraction.
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepository } from './index';
-import { AppError, type AuditFilters, type IncidentFilters, type IncidentSort } from './repository';
+import { AppError, type AnalyticsFilters, type AuditFilters, type IncidentFilters, type IncidentSort } from './repository';
 import { useAuth, useSession } from '../auth/AuthContext';
 import { useToast } from '../components/ui';
 
@@ -47,6 +47,21 @@ export function useClosedIncidentCount() {
   return useQuery({
     queryKey: ['incidents', 'closed-count'],
     queryFn: () => repo().countClosedIncidents(session),
+  });
+}
+
+/** KPIs/chart/top-systems for the ניתוחים (analytics) page. Query key
+ *  varies structurally with `filters` (a plain object of primitives), so
+ *  TanStack Query treats a filter/period change as a distinct cache entry
+ *  with no extra memoization needed. placeholderData keeps the previous
+ *  numbers on screen during a filter change instead of flashing a loading
+ *  state, the same reasoning as useIncidents. */
+export function useIncidentAnalytics(filters: AnalyticsFilters) {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['analytics', filters],
+    queryFn: () => repo().getIncidentAnalytics(session, filters),
+    placeholderData: keepPreviousData,
   });
 }
 

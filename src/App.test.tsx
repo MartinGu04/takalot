@@ -26,7 +26,7 @@ describe('RTL layout', () => {
 
     const bottomNav = await screen.findByRole('navigation', { name: 'ניווט תחתון' });
     const links = within(bottomNav).getAllByRole('link');
-    // supervisor1 now has 5 destinations (מצב נוכחי/תקלות/ארכיון/כוח אדם/דוחות)
+    // supervisor1 now has 5 destinations (מצב נוכחי/תקלות/ארכיון/כוח אדם/ניתוחים)
     // -- see src/components/Layout.test.tsx for the full overflow-sheet
     // coverage. Here: only the first 3 are direct links; the 4th slot is the
     // "עוד" overflow button (not an <a>), so כוח אדם is not a direct link.

@@ -11,7 +11,7 @@ test.describe('desktop navigation', () => {
     await loginAs(page, DEMO_USERS.admin);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'דוחות']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'ניתוחים']);
     await expect(sidebar.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
   });
 
@@ -19,7 +19,7 @@ test.describe('desktop navigation', () => {
     await loginAs(page, DEMO_USERS.tech1);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'ניתוחים']);
     await expect(sidebar.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
   });
@@ -28,7 +28,7 @@ test.describe('desktop navigation', () => {
     await loginAs(page, DEMO_USERS.viewer);
     const sidebar = page.getByRole('navigation', { name: 'ניווט ראשי' });
     const links = sidebar.getByRole('link');
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'ניתוחים']);
     await expect(sidebar.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
   });
@@ -57,9 +57,9 @@ test.describe('mobile navigation', () => {
     await loginAs(page, DEMO_USERS.supervisor1);
     const bottomNav = page.getByRole('navigation', { name: 'ניווט תחתון' });
     await expect(bottomNav).toBeVisible();
-    // supervisor1 now has 5 destinations (מצב נוכחי/תקלות/ארכיון/כוח אדם/דוחות),
+    // supervisor1 now has 5 destinations (מצב נוכחי/תקלות/ארכיון/כוח אדם/ניתוחים),
     // so the bottom nav shows only the first 3 as direct links; כוח אדם and
-    // דוחות live in the עוד overflow sheet (see e2e/33-mobile-nav-overflow.spec.ts
+    // ניתוחים live in the עוד overflow sheet (see e2e/33-mobile-nav-overflow.spec.ts
     // for full overflow-sheet coverage across every role).
     const links = destinationLinks(bottomNav);
     await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון']);
@@ -74,12 +74,12 @@ test.describe('mobile navigation', () => {
     await expect(page.getByRole('heading', { name: 'כוח אדם' })).toBeVisible();
   });
 
-  test('role without Personnel access: bottom nav shows the 3 core destinations plus דוחות, no filler, no העברת משמרת', async ({ page }) => {
+  test('role without Personnel access: bottom nav shows the 3 core destinations plus ניתוחים, no filler, no העברת משמרת', async ({ page }) => {
     await loginAs(page, DEMO_USERS.tech1);
     const bottomNav = page.getByRole('navigation', { name: 'ניווט תחתון' });
     await expect(bottomNav).toBeVisible();
     const links = destinationLinks(bottomNav);
-    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'דוחות']);
+    await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'ניתוחים']);
     await expect(bottomNav.getByRole('link', { name: 'העברת משמרת' })).toHaveCount(0);
     await expect(bottomNav.getByRole('link', { name: 'כוח אדם' })).toHaveCount(0);
   });
