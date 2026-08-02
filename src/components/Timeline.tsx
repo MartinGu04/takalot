@@ -14,7 +14,7 @@ import {
   readinessLabels,
   reportedToOpsLabels,
 } from '../domain/labels';
-import { formatDateTime, formatDuration } from '../lib/time';
+import { formatDateTime, formatDuration, formatDate, formatTime } from '../lib/time';
 
 function valueLabel(field: string | null, value: string | null): string {
   if (value == null) return '—';
@@ -60,6 +60,34 @@ const typeIcon: Record<string, string> = {
 };
 
 const CORRECTABLE_TYPES = new Set(['update', 'status_change', 'severity_change', 'impact_change', 'assignment_change']);
+
+/**
+ * A correction's own `refId` targets whichever id the original record was
+ * addressed by at correction time (see CorrectionAction below): for a
+ * `type: 'update'` original that's its backing IncidentUpdate.id, for every
+ * other correctable type it's the event's own id. Resolving "what does this
+ * correction refer to" -- and, in reverse, "does this original have a later
+ * correction" -- both need that same two-id rule; getting it wrong (e.g.
+ * matching only against event ids) silently misses every correction of an
+ * update, the most common case.
+ */
+function resolveCorrectionTarget(
+  refId: string,
+  events: IncidentEvent[],
+  updatesById: Map<string, IncidentUpdate>,
+): { update: IncidentUpdate; event?: undefined } | { update?: undefined; event: IncidentEvent } | undefined {
+  const update = updatesById.get(refId);
+  if (update) return { update };
+  const event = events.find((e) => e.id === refId);
+  if (event) return { event };
+  return undefined;
+}
+
+function correctionsTargeting(events: IncidentEvent[], original: IncidentEvent): IncidentEvent[] {
+  const targetId = original.type === 'update' ? original.refId : original.id;
+  if (!targetId) return [];
+  return events.filter((e) => e.type === 'correction' && e.refId === targetId);
+}
 
 /** Creation, closure, reopening, cancellation: the incident's own lifecycle. */
 const LIFECYCLE_TYPES = new Set<EventType>(['created', 'closed', 'reopened', 'cancelled']);
@@ -248,7 +276,22 @@ export function Timeline({
     <ol className="relative flex flex-col gap-0">
       {groups.map((group, idx) => {
         const { primary, subordinates } = group;
-        const update = primary.refId ? updatesById.get(primary.refId) : undefined;
+        // A correction is never itself a treatment update, even when its
+        // refId happens to point at one (the common case: correcting an
+        // update's own text) -- it must never pull in and repeat that
+        // update's full status/actions/findings/next-steps card.
+        const update = primary.type !== 'correction' && primary.refId ? updatesById.get(primary.refId) : undefined;
+        const correctionTarget =
+          primary.type === 'correction' && primary.refId
+            ? resolveCorrectionTarget(primary.refId, events, updatesById)
+            : undefined;
+        const correctedLabel = correctionTarget?.update
+          ? 'עדכון הטיפול'
+          : correctionTarget?.event
+            ? eventTypeLabels[correctionTarget.event.type]
+            : null;
+        const correctedEventTime = correctionTarget?.update?.eventTime ?? correctionTarget?.event?.eventTime ?? null;
+        const laterCorrections = correctionsTargeting(events, primary);
         const timesDiffer =
           Math.abs(new Date(primary.eventTime).getTime() - new Date(primary.serverTime).getTime()) > 60_000;
         const tier = emphasisTier(primary);
@@ -270,7 +313,13 @@ export function Timeline({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className={titleClasses[tier]}>{eventTypeLabels[primary.type]}</span>
+                {/* A correction is an audit entry that amends a previous
+                    record, not a new treatment update -- its own title says
+                    so explicitly rather than reusing the generic "תיקון
+                    רישום" label (still used elsewhere, e.g. PDF export). */}
+                <span className={titleClasses[tier]}>
+                  {primary.type === 'correction' ? 'תיקון לרישום קודם' : eventTypeLabels[primary.type]}
+                </span>
                 <span className="text-sm text-secondary">{actorName(primary.actorId, primary.actorLabel)}</span>
               </div>
               {tier === 'medium' && (
@@ -283,6 +332,14 @@ export function Timeline({
               </div>
               {timesDiffer && (
                 <p className="mt-0.5 text-xs text-muted">תועד במערכת: {formatDateTime(primary.serverTime)}</p>
+              )}
+              {/* Derived from the already-fetched events, never a new field:
+                  a correction's own refId targets either this event's id or
+                  (for a corrected update) its backing IncidentUpdate.id --
+                  see resolveCorrectionTarget/correctionsTargeting above. The
+                  original content itself is never touched. */}
+              {primary.type !== 'correction' && laterCorrections.length > 0 && (
+                <p className="mt-0.5 text-xs text-muted">רישום זה תוקן בהמשך</p>
               )}
               <FieldChangeRow event={primary} />
               {primary.type === 'closed' && primary.newValue && (
@@ -353,7 +410,23 @@ export function Timeline({
                   )}
                 </div>
               )}
-              {primary.note && !update && primary.type !== 'reported_to_ops_change' && (
+              {/* Correction content: the persisted correction note, shown
+                  verbatim (never rewritten into a more specific claim the
+                  data doesn't actually support) with an explicit "תיקון:"
+                  label -- deliberately its own block, never the corrected
+                  record's own status/actions/findings/next-steps fields,
+                  which stay on the ORIGINAL entry only. A field-level diff
+                  (if this correction ever carries one) already rendered
+                  above via the generic FieldChangeRow. */}
+              {primary.type === 'correction' && primary.note && (
+                <div className="mt-1.5 rounded-lg bg-surface-active p-2.5 text-sm">
+                  <span className="font-medium text-text-primary">תיקון: </span>
+                  <bdi dir="auto" className="whitespace-pre-wrap break-words text-secondary">
+                    {primary.note}
+                  </bdi>
+                </div>
+              )}
+              {primary.note && !update && primary.type !== 'reported_to_ops_change' && primary.type !== 'correction' && (
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-secondary">
                   {primary.note}
                 </p>
@@ -369,8 +442,16 @@ export function Timeline({
                   משך התקלה: {formatDuration(discoveredAt, closedAt)}
                 </p>
               )}
-              {primary.type === 'correction' && primary.refId && (
-                <p className="mt-0.5 text-xs text-muted">מתייחס לרישום קודם (הרישום המקורי נשמר)</p>
+              {primary.type === 'correction' && (
+                <p className="mt-0.5 text-xs text-muted">
+                  {correctedLabel && correctedEventTime ? (
+                    <>
+                      מתייחס ל{correctedLabel} מ־{formatDate(correctedEventTime)} בשעה {formatTime(correctedEventTime)}
+                    </>
+                  ) : (
+                    'מתייחס לרישום קודם (הרישום המקורי נשמר)'
+                  )}
+                </p>
               )}
               <CorrectionAction
                 event={primary}
