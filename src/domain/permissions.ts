@@ -186,3 +186,17 @@ export const PROTECTED_FIELDS = [
   'status',
   'closure',
 ] as const;
+
+/** Roles eligible to be an incident's internal owner (בעל אחריות פנימי) --
+ *  every operational role plus technician; viewer is excluded even when
+ *  active. Mirrors assert_owner_valid's own role check (migration 0039) --
+ *  the database remains authoritative, this exists so OwnerField (the
+ *  single shared owner picker) can filter/group without duplicating the
+ *  rule per call site. Order matches app_role/roleLabels declaration order
+ *  and is also the group display order in OwnerField. */
+export const ELIGIBLE_OWNER_ROLES: Role[] = [
+  'system_admin',
+  'professional_manager',
+  'shift_supervisor',
+  'technician',
+];
