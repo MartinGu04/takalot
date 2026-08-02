@@ -35,6 +35,7 @@ export function CloseDialog({
   const [extError, setExtError] = useState<string | undefined>();
   const [reportedToOps, setReportedToOps] = useState(incident.reportedToOps);
   const [reportedToOpsRecipient, setReportedToOpsRecipient] = useState(incident.reportedToOpsRecipient ?? '');
+  const [note, setNote] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [confirming, setConfirming] = useState(false);
 
@@ -82,6 +83,7 @@ export function CloseDialog({
     // recipient, a combination the user never chose.
     setReportedToOps(incident.reportedToOps);
     setReportedToOpsRecipient(incident.reportedToOpsRecipient ?? '');
+    setNote('');
     setConfirming(false);
     setError(undefined);
     onClose();
@@ -114,6 +116,7 @@ export function CloseDialog({
       externalHandlerContactDetails: extDetails || null,
       reportedToOps,
       reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
+      note,
     });
 
   const proceedToConfirm = () => {
@@ -238,6 +241,20 @@ export function CloseDialog({
               )}
             </Field>
           )}
+          <Field label="הערה נוספת">
+            {(a) => (
+              <>
+                <Textarea
+                  {...a}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  maxLength={600}
+                  placeholder="כל מידע נוסף שכדאי לתעד לצד סגירת התקלה (לא חובה)."
+                />
+                <p className="text-left text-xs text-muted">{note.length}/600</p>
+              </>
+            )}
+          </Field>
           <p className="text-sm text-muted">משך התקלה למועד הסגירה שנבחר: {estimatedDuration}</p>
           {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">

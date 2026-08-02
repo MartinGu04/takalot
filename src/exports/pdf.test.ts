@@ -310,7 +310,7 @@ describe.skipIf(!pdftotextAvailable())('drawn text is never character-reversed o
     const title = narrativeTitle({
       id: 'e', incidentId: 'i', type: 'status_change', actorId: null, actorLabel: null,
       eventTime: '2026-08-01T00:00:00.000Z', serverTime: '2026-08-01T00:00:00.000Z',
-      field: 'status', oldValue: 'new', newValue: 'in_progress', note: null, refId: null,
+      field: 'status', oldValue: 'new', newValue: 'in_progress', note: null, userNote: null, refId: null,
       createdAt: '2026-08-01T00:00:00.000Z', operationId: null,
     });
     const pdf = new HebrewPdf();
@@ -327,7 +327,7 @@ describe.skipIf(!pdftotextAvailable())('drawn text is never character-reversed o
     const title = narrativeTitle({
       id: 'e', incidentId: 'i', type: 'created', actorId: null, actorLabel: null,
       eventTime: '2026-08-01T00:00:00.000Z', serverTime: '2026-08-01T00:00:00.000Z',
-      field: null, oldValue: null, newValue: null, note: null, refId: null,
+      field: null, oldValue: null, newValue: null, note: null, userNote: null, refId: null,
       createdAt: '2026-08-01T00:00:00.000Z', operationId: null,
     });
     expect(title).toBe('התקלה נפתחה');

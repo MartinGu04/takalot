@@ -170,6 +170,10 @@ export const createIncidentSchema = z
     reportedToCommsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable(),
     wisdomReported: z.boolean(),
     wisdomIncidentNumber: z.string().max(100, 'מספר תקלה ב-WISDOM: עד 100 תווים').nullable(),
+    /** Optional free-text "הערה נוספת" -- never overwrites actionsTaken or
+     *  any other generated/required field; stored on its own dedicated
+     *  column, see migration 0038. */
+    note: optionalText(600, 'הערה נוספת'),
   })
   .superRefine((data, ctx) => {
     // Unlike every other flow that shares ownerFields (update/close/assign/
@@ -235,6 +239,10 @@ export const updateIncidentSchema = z
     // see createIncidentSchema).
     currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
     changeReason: z.string().max(500).optional().default(''),
+    /** Optional free-text "הערה נוספת" on this specific update -- stored on
+     *  its own incident_updates column, never mixed with changeReason or any
+     *  other field. See migration 0038. */
+    note: optionalText(600, 'הערה נוספת'),
     ...internalOwnerField,
     ...externalHandlerFields,
     // Update-specific reporting -- three fresh questions about THIS update
@@ -306,6 +314,10 @@ export const technicianUpdateSchema = z.object({
   findings: optionalText(4000, 'ממצאים'),
   nextSteps: optionalText(2000, 'הצעות להמשך'),
   currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
+  /** Optional free-text "הערה נוספת" -- content-only, exactly like every
+   *  other field on this schema; grants no protected-field capability. See
+   *  migration 0038. */
+  note: optionalText(600, 'הערה נוספת'),
 });
 
 export type TechnicianUpdateInput = z.infer<typeof technicianUpdateSchema>;
@@ -318,6 +330,10 @@ export const closeIncidentSchema = z
     resolution: nonBlank(4000, 'הפתרון שבוצע'),
     readiness: readinessSchema,
     followUpNotes: z.string().max(2000).optional().default(''),
+    /** Optional free-text "הערה נוספת" -- never overwrites rootCause/
+     *  resolution/followUpNotes; stored on its own dedicated column at
+     *  every readiness level. See migration 0038. */
+    note: optionalText(600, 'הערה נוספת'),
     ...optionalInternalOwnerField,
     ...externalHandlerFields,
     ...reportedToOpsFields,

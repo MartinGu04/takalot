@@ -315,6 +315,12 @@ export function Timeline({
                       <span className="whitespace-pre-wrap break-words">{update.nextSteps}</span>
                     </p>
                   )}
+                  {update.userNote && (
+                    <p className="mt-1">
+                      <span className="font-medium">הערה נוספת: </span>
+                      <span className="whitespace-pre-wrap break-words">{update.userNote}</span>
+                    </p>
+                  )}
                   {/* Update-specific reporting: fresh answers recorded for
                       THIS update only, never the incident's own opening-time
                       reporting facts. Each line renders only when an answer
@@ -350,6 +356,12 @@ export function Timeline({
               {primary.note && !update && primary.type !== 'reported_to_ops_change' && (
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-secondary">
                   {primary.note}
+                </p>
+              )}
+              {primary.userNote && !update && primary.type !== 'reported_to_ops_change' && (
+                <p className="mt-1 text-sm">
+                  <span className="font-medium">הערה נוספת: </span>
+                  <span className="whitespace-pre-wrap break-words">{primary.userNote}</span>
                 </p>
               )}
               {primary.type === 'closed' && discoveredAt && closedAt && (

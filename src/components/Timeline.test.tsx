@@ -18,6 +18,7 @@ function ev(overrides: Partial<IncidentEvent> & { id: string }): IncidentEvent {
     oldValue: null,
     newValue: null,
     note: null,
+    userNote: null,
     refId: null,
     createdAt: '2026-01-10T08:00:00.000Z',
     operationId: null,
@@ -40,6 +41,7 @@ function upd(overrides: Partial<IncidentUpdate> & { id: string }): IncidentUpdat
     updateReportedToComms: null,
     updateReportedToCommsRecipient: null,
     updateWisdomReported: null,
+    userNote: null,
     createdAt: '2026-01-10T08:00:00.000Z',
     ...overrides,
   };
@@ -279,6 +281,65 @@ describe('Timeline: closure event operational duration', () => {
       />,
     );
     expect(screen.queryByText(/משך התקלה:/)).not.toBeInTheDocument();
+  });
+});
+
+// "הערה נוספת" (migration 0038): a distinct, clearly-labeled optional note,
+// separate from the existing generated note text and from any update's own
+// structured fields -- never shown when absent.
+describe('Timeline: "הערה נוספת" (user note)', () => {
+  it('shows the user note inside a grouped update, labeled, alongside its own structured fields', () => {
+    const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
+    const updates = [upd({ id: 'upd-1', actionsTaken: 'תוכן העדכון', userNote: 'הערה נוספת שהוזנה בעדכון' })];
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
+    expect(screen.getByText('הערה נוספת שהוזנה בעדכון')).toBeInTheDocument();
+  });
+
+  it('shows no "הערה נוספת" line for an update carrying no user note', () => {
+    const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
+    const updates = [upd({ id: 'upd-1', actionsTaken: 'תוכן העדכון', userNote: null })];
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.queryByText('הערה נוספת:')).not.toBeInTheDocument();
+  });
+
+  it('shows the user note on a "created" event, distinct from and alongside its own generated note', () => {
+    const events = [
+      ev({
+        id: 'e-created',
+        type: 'created',
+        operationId: 'op-1',
+        note: 'פעולות שבוצעו עד כה: בדיקה ראשונית',
+        userNote: 'התקלה דווחה טלפונית',
+      }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('פעולות שבוצעו עד כה: בדיקה ראשונית')).toBeInTheDocument();
+    expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
+    expect(screen.getByText('התקלה דווחה טלפונית')).toBeInTheDocument();
+  });
+
+  it('shows the user note on a "closed" event, distinct from and alongside its own generated note', () => {
+    const events = [
+      ev({
+        id: 'e-closed',
+        type: 'closed',
+        operationId: 'op-1',
+        newValue: 'full',
+        note: 'סיבת התקלה: X\nהפתרון שבוצע: Y',
+        userNote: 'הערה נוספת בעת הסגירה',
+      }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
+    expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
+    expect(screen.getByText('הערה נוספת בעת הסגירה')).toBeInTheDocument();
+  });
+
+  it('shows no "הערה נוספת" line for a created/closed event carrying no user note', () => {
+    const events = [ev({ id: 'e-created', type: 'created', operationId: 'op-1', note: 'פעולות שבוצעו עד כה: X', userNote: null })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.queryByText('הערה נוספת:')).not.toBeInTheDocument();
   });
 });
 

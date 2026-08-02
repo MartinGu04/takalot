@@ -46,6 +46,7 @@ function baseCreateInput(overrides: Partial<CreateIncidentInput> = {}): CreateIn
     reportedToCommsRecipient: null,
     wisdomReported: false,
     wisdomIncidentNumber: null,
+    note: '',
     ...overrides,
   };
 }
@@ -310,6 +311,7 @@ describe('closure requirements', () => {
       followUpNotes: '',
       reportedToOps: 'yes',
       reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
+      note: '',
     });
     expect(closed.status).toBe('closed');
     expect(closed.followUpRequired).toBe(false);
@@ -328,6 +330,7 @@ describe('closure requirements', () => {
       followUpNotes: 'להתקין רכיב קבוע בהמשך',
       ownerUserId: DEMO_USERS.tech1,
       reportedToOps: 'no',
+      note: '',
     });
     expect(closed.followUpRequired).toBe(true);
   });
@@ -346,6 +349,7 @@ describe('closure requirements', () => {
       readiness: 'full',
       followUpNotes: '',
       reportedToOps: 'no',
+      note: '',
     });
     expect(closed.status).toBe('closed');
     expect(closed.closedBy).toBe(DEMO_USERS.tech1);
@@ -362,6 +366,7 @@ describe('closure requirements', () => {
       followUpNotes: 'להשלים בהמשך',
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
+      note: '',
     });
     expect(closed.status).toBe('partial_readiness');
     expect(closed.followUpRequired).toBe(true);
@@ -378,6 +383,7 @@ describe('closure requirements', () => {
         readiness: 'full',
         followUpNotes: '',
         reportedToOps: 'no',
+        note: '',
       }),
     ).rejects.toThrow(AppError);
   });
@@ -579,6 +585,7 @@ describe('incomplete-readiness lifecycle', () => {
       followUpNotes: 'להזמין רכיב קבוע',
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
+      note: '',
     });
     expect(result.status).toBe('partial_readiness');
     expect(result.status).not.toBe('closed');
@@ -603,6 +610,7 @@ describe('incomplete-readiness lifecycle', () => {
       followUpNotes: 'להמשיך טיפול',
       ownerUserId: DEMO_USERS.tech1,
       reportedToOps: 'no',
+      note: '',
     });
     expect(result.status).toBe('partial_readiness');
     expect(result.closedAt).toBeNull();
@@ -633,6 +641,7 @@ describe('incomplete-readiness lifecycle', () => {
       readiness: 'full',
       followUpNotes: '',
       reportedToOps: 'no',
+      note: '',
     });
     expect(result.status).toBe('closed');
     expect(result.closedAt).not.toBeNull();
@@ -650,6 +659,7 @@ describe('incomplete-readiness lifecycle', () => {
       followUpNotes: 'להזמין רכיב קבוע',
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
+      note: '',
     });
     expect(partial.status).toBe('partial_readiness');
 
@@ -661,6 +671,7 @@ describe('incomplete-readiness lifecycle', () => {
       readiness: 'full',
       followUpNotes: '',
       reportedToOps: 'no',
+      note: '',
     });
     expect(closed.status).toBe('closed');
     expect(closed.closedAt).not.toBeNull();
@@ -1491,6 +1502,7 @@ describe('technician update restrictions (backend enforced)', () => {
       findings: 'לא נמצא חדש',
       nextSteps: 'המשך מעקב',
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+      note: '',
     });
     expect(updated.version).toBe(incident!.version + 1);
   });
@@ -1505,6 +1517,7 @@ describe('technician update restrictions (backend enforced)', () => {
         findings: '',
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+        note: '',
       }),
     ).rejects.toThrow(AppError);
   });
@@ -1522,6 +1535,7 @@ describe('technician update restrictions (backend enforced)', () => {
         severity: 'low',
         currentStatusText: 'שינוי לא מורשה',
         changeReason: '',
+        note: '',
         ownerUserId: DEMO_USERS.tech1,
         updateReportedToOps: 'not_required',
         updateReportedToOpsRecipient: null,
@@ -1556,6 +1570,7 @@ describe('optimistic concurrency', () => {
       severity: incident!.severity,
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       changeReason: '',
+      note: '',
       ownerUserId: incident!.ownerUserId,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
@@ -1576,6 +1591,7 @@ describe('optimistic concurrency', () => {
         severity: incident!.severity,
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         changeReason: '',
+        note: '',
         ownerUserId: incident!.ownerUserId,
         updateReportedToOps: 'not_required',
         updateReportedToOpsRecipient: null,
@@ -1608,6 +1624,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
       status: incident.status,
       severity: incident.severity,
       changeReason: '',
+      note: '',
       ownerUserId: incident.ownerUserId,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
@@ -1671,6 +1688,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         findings: '',
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+        note: '',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(
@@ -1681,6 +1699,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         findings: '',
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+        note: '',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(
@@ -1691,6 +1710,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         findings: '',
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+        note: '',
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
   });
@@ -2871,6 +2891,7 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
       status: 'in_progress',
       severity: 'critical',
       changeReason: '',
+      note: '',
       ownerUserId: DEMO_USERS.tech1,
       updateReportedToOps: 'not_required',
       updateReportedToOpsRecipient: null,
@@ -2988,6 +3009,202 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
     const created = events.find((e) => e.id === 'ev-1-created');
     expect(created).toBeDefined();
     expect(created!.operationId).toBeNull();
+  });
+});
+
+// "הערה נוספת" (migration 0038): an optional, ≤600-character user note on
+// create/update/technician-update/close. Stored on a dedicated userNote
+// column/field -- never mixed with or overwriting the generated note text
+// (create's actions-taken/comms/WISDOM summary, close's root-cause/
+// resolution summary) or the update-specific changeReason.
+describe('note ("הערה נוספת", migration 0038)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  it('createIncident: note is optional -- an empty default note still succeeds with userNote null', async () => {
+    const created = await repo.createIncident(supervisor1, baseCreateInput());
+    const events = await repo.getIncidentEvents(supervisor1, created.id);
+    const createdEvent = events.find((e) => e.type === 'created');
+    expect(createdEvent!.userNote).toBeNull();
+  });
+
+  it('createIncident: a valid note persists under the "created" event without overwriting the generated note', async () => {
+    const created = await repo.createIncident(supervisor1, baseCreateInput({ note: '  הערה על פתיחת התקלה  ' }));
+    const events = await repo.getIncidentEvents(supervisor1, created.id);
+    const createdEvent = events.find((e) => e.type === 'created');
+    expect(createdEvent!.userNote).toBe('הערה על פתיחת התקלה');
+    expect(createdEvent!.note).toContain('פעולות שבוצעו עד כה');
+  });
+
+  it('createIncident: blank/whitespace-only note is stored as null', async () => {
+    const created = await repo.createIncident(supervisor1, baseCreateInput({ note: '   ' }));
+    const events = await repo.getIncidentEvents(supervisor1, created.id);
+    expect(events.find((e) => e.type === 'created')!.userNote).toBeNull();
+  });
+
+  it('updateIncident: a valid note persists on the incident_updates row, and two separate updates keep two separate notes', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.updateIncident(supervisor1, 'inc-2', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון ראשון',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+      status: before!.status,
+      severity: before!.severity,
+      changeReason: '',
+      note: 'הערה ראשונה',
+      ownerUserId: before!.ownerUserId,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
+    });
+    const afterFirst = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.updateIncident(supervisor1, 'inc-2', {
+      expectedVersion: afterFirst!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'עדכון שני',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+      status: afterFirst!.status,
+      severity: afterFirst!.severity,
+      changeReason: '',
+      note: 'הערה שנייה',
+      ownerUserId: afterFirst!.ownerUserId,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
+    });
+
+    const updates = await repo.getIncidentUpdates(supervisor1, 'inc-2');
+    const first = updates.find((u) => u.actionsTaken === 'עדכון ראשון');
+    const second = updates.find((u) => u.actionsTaken === 'עדכון שני');
+    expect(first!.userNote).toBe('הערה ראשונה');
+    expect(second!.userNote).toBe('הערה שנייה');
+  });
+
+  it('updateIncident: blank/whitespace-only note is stored as null, without disturbing changeReason', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-4');
+    await repo.updateIncident(supervisor1, 'inc-4', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'בדיקה',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+      status: 'in_progress',
+      severity: before!.severity,
+      changeReason: 'סיבת השינוי',
+      note: '   ',
+      ownerUserId: before!.ownerUserId,
+      updateReportedToOps: 'not_required',
+      updateReportedToOpsRecipient: null,
+      updateReportedToComms: 'no',
+      updateReportedToCommsRecipient: null,
+      updateWisdomReported: 'no',
+    });
+    const updates = await repo.getIncidentUpdates(supervisor1, 'inc-4');
+    expect(updates[updates.length - 1].userNote).toBeNull();
+    const events = await repo.getIncidentEvents(supervisor1, 'inc-4');
+    const statusChanges = events.filter((e) => e.type === 'status_change' && e.field === 'status');
+    expect(statusChanges[statusChanges.length - 1].note).toBe('סיבת השינוי');
+  });
+
+  it('technicianUpdate: a valid note persists without gaining any protected-field capability', async () => {
+    const before = await repo.getIncident(tech1, 'inc-1');
+    const updated = await repo.technicianUpdate(tech1, 'inc-1', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'בדיקה טכנית',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+      note: '  הערה של הטכנאי  ',
+    });
+    // No protected field moved -- severity/status/owner are all unchanged.
+    expect(updated.severity).toBe(before!.severity);
+    expect(updated.status).toBe(before!.status);
+    expect(updated.ownerUserId).toBe(before!.ownerUserId);
+
+    const updates = await repo.getIncidentUpdates(tech1, 'inc-1');
+    expect(updates[updates.length - 1].userNote).toBe('הערה של הטכנאי');
+  });
+
+  it('technicianUpdate: blank/whitespace-only note is stored as null', async () => {
+    const before = await repo.getIncident(tech1, 'inc-1');
+    await repo.technicianUpdate(tech1, 'inc-1', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      actionsTaken: 'בדיקה טכנית',
+      findings: '',
+      nextSteps: '',
+      currentStatusText: 'המצב הנוכחי לצורך בדיקה',
+      note: '   ',
+    });
+    const updates = await repo.getIncidentUpdates(tech1, 'inc-1');
+    expect(updates[updates.length - 1].userNote).toBeNull();
+  });
+
+  it('closeIncident (full readiness): note persists without overwriting the generated root-cause/resolution note', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-2');
+    const closed = await repo.closeIncident(supervisor1, 'inc-2', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+      note: '  הערה בעת סגירה מלאה  ',
+    });
+    const events = await repo.getIncidentEvents(supervisor1, closed.id);
+    const closedEvent = events.find((e) => e.type === 'closed');
+    expect(closedEvent!.userNote).toBe('הערה בעת סגירה מלאה');
+    expect(closedEvent!.note).toContain('סיבת התקלה');
+  });
+
+  it('closeIncident (incomplete readiness): note persists on the status_change row without overwriting its generated note', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-3');
+    const partial = await repo.closeIncident(supervisor1, 'inc-3', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      rootCause: 'סיבה',
+      resolution: 'פתרון חלקי',
+      readiness: 'partial',
+      followUpNotes: 'להשלים בהמשך',
+      ownerUserId: DEMO_USERS.tech1,
+      reportedToOps: 'no',
+      note: 'הערה בעת סגירה חלקית',
+    });
+    expect(partial.status).toBe('partial_readiness');
+    const events = await repo.getIncidentEvents(supervisor1, partial.id);
+    const statusChange = events.find((e) => e.type === 'status_change' && e.newValue === 'partial_readiness');
+    expect(statusChange!.userNote).toBe('הערה בעת סגירה חלקית');
+    expect(statusChange!.note).toContain('סיבת התקלה');
+  });
+
+  it('closeIncident: blank/whitespace-only note is stored as null', async () => {
+    const before = await repo.getIncident(supervisor1, 'inc-4');
+    const closed = await repo.closeIncident(supervisor1, 'inc-4', {
+      expectedVersion: before!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      rootCause: 'סיבה',
+      resolution: 'פתרון',
+      readiness: 'full',
+      followUpNotes: '',
+      reportedToOps: 'no',
+      note: '   ',
+    });
+    const events = await repo.getIncidentEvents(supervisor1, closed.id);
+    expect(events.find((e) => e.type === 'closed')!.userNote).toBeNull();
   });
 });
 

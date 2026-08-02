@@ -109,6 +109,7 @@ describe('narrativeTitle', () => {
     oldValue: null,
     newValue: null,
     note: null,
+    userNote: null,
     refId: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     operationId: null,
@@ -134,9 +135,9 @@ describe('actor resolution', () => {
       { id: 'p1', fullName: 'שם מלא', role: 'technician', active: true, createdAt: '2025-01-01T00:00:00.000Z' },
     ];
     const events: IncidentEvent[] = [
-      { id: '1', incidentId: 'i', type: 'created', actorId: null, actorLabel: 'גורם חיצוני', eventTime: '2026-08-01T00:00:00.000Z', serverTime: '2026-08-01T00:00:00.000Z', field: null, oldValue: null, newValue: null, note: null, refId: null, createdAt: '2026-08-01T00:00:00.000Z', operationId: null },
-      { id: '2', incidentId: 'i', type: 'acknowledged', actorId: 'p1', actorLabel: null, eventTime: '2026-08-01T00:01:00.000Z', serverTime: '2026-08-01T00:01:00.000Z', field: null, oldValue: null, newValue: null, note: null, refId: null, createdAt: '2026-08-01T00:01:00.000Z', operationId: null },
-      { id: '3', incidentId: 'i', type: 'follow_up_completed', actorId: null, actorLabel: null, eventTime: '2026-08-01T00:02:00.000Z', serverTime: '2026-08-01T00:02:00.000Z', field: null, oldValue: null, newValue: null, note: null, refId: null, createdAt: '2026-08-01T00:02:00.000Z', operationId: null },
+      { id: '1', incidentId: 'i', type: 'created', actorId: null, actorLabel: 'גורם חיצוני', eventTime: '2026-08-01T00:00:00.000Z', serverTime: '2026-08-01T00:00:00.000Z', field: null, oldValue: null, newValue: null, note: null, userNote: null, refId: null, createdAt: '2026-08-01T00:00:00.000Z', operationId: null },
+      { id: '2', incidentId: 'i', type: 'acknowledged', actorId: 'p1', actorLabel: null, eventTime: '2026-08-01T00:01:00.000Z', serverTime: '2026-08-01T00:01:00.000Z', field: null, oldValue: null, newValue: null, note: null, userNote: null, refId: null, createdAt: '2026-08-01T00:01:00.000Z', operationId: null },
+      { id: '3', incidentId: 'i', type: 'follow_up_completed', actorId: null, actorLabel: null, eventTime: '2026-08-01T00:02:00.000Z', serverTime: '2026-08-01T00:02:00.000Z', field: null, oldValue: null, newValue: null, note: null, userNote: null, refId: null, createdAt: '2026-08-01T00:02:00.000Z', operationId: null },
     ];
     const blocks = buildTimelineBlocks(events, [], profiles);
     expect(blocks[0].performer).toBe('גורם חיצוני');
@@ -168,6 +169,7 @@ describe('IncidentUpdate boolean/enum reporting fields never leak raw values', (
       oldValue: null,
       newValue: null,
       note: null,
+      userNote: null,
       refId: 'u2',
       createdAt: '2026-08-01T00:00:00.000Z',
       operationId: null,

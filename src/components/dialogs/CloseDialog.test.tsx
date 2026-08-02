@@ -226,3 +226,38 @@ describe('CloseDialog: manual numeric editing of the closure time field is relia
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ eventTime: '2026-07-19T13:06:00.000Z' }));
   });
 });
+
+describe('CloseDialog: "הערה נוספת" (optional note)', () => {
+  it('is optional -- submits successfully with no note entered, and with a live character counter', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const incident = makeIncident({ discoveredAt: DISCOVERED_AT });
+    render(<CloseDialog open onClose={() => {}} incident={incident} onSubmit={onSubmit} submitting={false} />);
+
+    const noteField = screen.getByLabelText('הערה נוספת');
+    expect(noteField).toHaveAttribute('maxLength', '600');
+    expect(screen.getByText('0/600')).toBeInTheDocument();
+
+    await fillRequiredFieldsAndSetEventTime(user);
+    await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ note: '' }));
+  });
+
+  it('passes an entered note through to onSubmit and updates the character counter', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const incident = makeIncident({ discoveredAt: DISCOVERED_AT });
+    render(<CloseDialog open onClose={() => {}} incident={incident} onSubmit={onSubmit} submitting={false} />);
+
+    await fillRequiredFieldsAndSetEventTime(user);
+    await user.type(screen.getByLabelText('הערה נוספת'), 'הערה לבדיקה');
+    expect(screen.getByText(`${'הערה לבדיקה'.length}/600`)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ note: 'הערה לבדיקה' }));
+  });
+});

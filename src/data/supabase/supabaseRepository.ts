@@ -566,6 +566,7 @@ export class SupabaseRepository implements Repository {
       oldValue: r.old_value,
       newValue: r.new_value,
       note: r.note,
+      userNote: r.user_note ?? null,
       refId: r.ref_id,
       createdAt: r.created_at,
       operationId: r.operation_id ?? null,
@@ -594,6 +595,7 @@ export class SupabaseRepository implements Repository {
       updateReportedToComms: r.update_reported_to_comms,
       updateReportedToCommsRecipient: r.update_reported_to_comms_recipient,
       updateWisdomReported: r.update_wisdom_reported,
+      userNote: r.user_note ?? null,
       createdAt: r.created_at,
     }));
   }

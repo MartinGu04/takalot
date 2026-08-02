@@ -223,6 +223,10 @@ export interface IncidentUpdate {
   /** Required and shown only when updateReportedToComms is true. */
   updateReportedToCommsRecipient: string | null;
   updateWisdomReported: boolean | null;
+  /** Optional free-text "הערה נוספת" entered with this specific update.
+   *  Distinct from actionsTaken/findings/nextSteps/currentStatusText --
+   *  never generated, never required. Null when omitted or blank. */
+  userNote: string | null;
   createdAt: string;
 }
 
@@ -238,6 +242,14 @@ export interface IncidentEvent {
   oldValue: string | null;
   newValue: string | null;
   note: string | null;
+  /** Optional free-text "הערה נוספת" entered by the actor with this
+   *  specific event (create_incident's 'created' row, close_incident's
+   *  'closed'/partial-readiness 'status_change' row). Always a SEPARATE
+   *  field from `note` above -- `note` already carries generated narrative
+   *  text (or, on update_incident's status/severity-change rows, the
+   *  distinct `changeReason`) and is never overwritten by this. Null when
+   *  omitted or blank, and always null on event types that don't carry it. */
+  userNote: string | null;
   refId: string | null; // e.g. corrected update/event id, handover id
   createdAt: string;
   /** Groups every row one user operation produced (e.g. all the field

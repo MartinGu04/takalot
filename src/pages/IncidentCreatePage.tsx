@@ -31,6 +31,7 @@ type FormValues = {
   reportedToCommsRecipient: string;
   wisdomReported: 'no' | 'yes';
   wisdomIncidentNumber: string;
+  note: string;
 };
 
 function defaultValues(): FormValues {
@@ -52,6 +53,7 @@ function defaultValues(): FormValues {
     reportedToCommsRecipient: '',
     wisdomReported: 'no',
     wisdomIncidentNumber: '',
+    note: '',
   };
 }
 
@@ -97,6 +99,7 @@ export default function IncidentCreatePage() {
   const [recipientError, setRecipientError] = useState<string | undefined>();
   const [commsRecipientError, setCommsRecipientError] = useState<string | undefined>();
   const [wisdomNumberError, setWisdomNumberError] = useState<string | undefined>();
+  const [noteError, setNoteError] = useState<string | undefined>();
   const [validationError, setValidationError] = useState<string | undefined>();
 
   const createMutation = useAppMutation(
@@ -116,6 +119,7 @@ export default function IncidentCreatePage() {
     setRecipientError(undefined);
     setCommsRecipientError(undefined);
     setWisdomNumberError(undefined);
+    setNoteError(undefined);
     setValidationError(undefined);
     const input: CreateIncidentInput = {
       systemId: form.systemId,
@@ -141,6 +145,7 @@ export default function IncidentCreatePage() {
       reportedToCommsRecipient: form.reportedToComms === 'yes' ? form.reportedToCommsRecipient : null,
       wisdomReported: form.wisdomReported === 'yes',
       wisdomIncidentNumber: form.wisdomReported === 'yes' ? form.wisdomIncidentNumber : null,
+      note: form.note,
     };
     const parsed = createIncidentSchema.safeParse(input);
     if (!parsed.success) {
@@ -150,6 +155,7 @@ export default function IncidentCreatePage() {
         else if (issue.path[0] === 'reportedToOpsRecipient') setRecipientError(issue.message);
         else if (issue.path[0] === 'reportedToCommsRecipient') setCommsRecipientError(issue.message);
         else if (issue.path[0] === 'wisdomIncidentNumber') setWisdomNumberError(issue.message);
+        else if (issue.path[0] === 'note') setNoteError(issue.message);
         else setValidationError(issue.message);
       }
       return;
@@ -377,6 +383,21 @@ export default function IncidentCreatePage() {
             )}
           </Field>
         )}
+
+        <Field label="הערה נוספת" error={noteError}>
+          {(a) => (
+            <>
+              <Textarea
+                {...a}
+                rows={2}
+                maxLength={600}
+                placeholder="כל מידע נוסף שכדאי לתעד לצד פתיחת התקלה (לא חובה)."
+                {...register('note')}
+              />
+              <p className="text-left text-xs text-muted">{values.note.length}/600</p>
+            </>
+          )}
+        </Field>
 
         {validationError && (
           <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">
