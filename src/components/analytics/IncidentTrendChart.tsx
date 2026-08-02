@@ -58,30 +58,44 @@ export function IncidentTrendChart({ buckets }: { buckets: AnalyticsBucket[] }) 
               formatter={(name) => (name === 'opened' ? 'נפתחו' : 'נסגרו')}
               wrapperStyle={{ direction: 'rtl', fontSize: 12 }}
             />
+            {/* opened: brand purple, matching the KPI cards' neutral-brand
+                tone; closed: a cool emerald green, clearly distinguishable
+                from purple at a glance and consistent with the KPI cards'
+                green "נסגרו בתקופה" tone -- not the previous neutral gray,
+                which read as "no meaning," not "closed." */}
             <Bar dataKey="opened" name="opened" fill="var(--color-brand-500)" radius={[3, 3, 0, 0]} />
-            <Bar dataKey="closed" name="closed" fill="var(--color-slate-400)" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="closed" name="closed" fill="var(--color-emerald-500)" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <table className="sr-only">
-        <caption>נתוני פתיחה וסגירת תקלות לפי תקופה, יום או שבוע</caption>
-        <thead>
-          <tr>
-            <th scope="col">תאריך</th>
-            <th scope="col">נפתחו</th>
-            <th scope="col">נסגרו</th>
-          </tr>
-        </thead>
-        <tbody>
-          {buckets.map((b) => (
-            <tr key={b.bucketStart}>
-              <td>{formatDate(b.bucketStart)}</td>
-              <td>{b.opened}</td>
-              <td>{b.closed}</td>
+      {/* sr-only on the wrapping div, not the <table> itself: a <table>'s
+          own auto-layout content sizing (driven by its cells' natural
+          width, and up to 90 rows for the 90-day period) overrides the
+          clip-based sr-only technique's width:1px/height:1px when applied
+          directly to a table element, silently rendering it at full size
+          and inflating the page's real height. A block-level div has no
+          such special sizing behavior and reliably clips its table child. */}
+      <div className="sr-only">
+        <table>
+          <caption>נתוני פתיחה וסגירת תקלות לפי תקופה, יום או שבוע</caption>
+          <thead>
+            <tr>
+              <th scope="col">תאריך</th>
+              <th scope="col">נפתחו</th>
+              <th scope="col">נסגרו</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {buckets.map((b) => (
+              <tr key={b.bucketStart}>
+                <td>{formatDate(b.bucketStart)}</td>
+                <td>{b.opened}</td>
+                <td>{b.closed}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

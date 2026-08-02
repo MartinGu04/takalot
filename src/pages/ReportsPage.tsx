@@ -125,9 +125,9 @@ export default function ReportsPage() {
   return (
     <div>
       <h1 className="page-title">ניתוח תקלות</h1>
-      <p className="mt-1 text-secondary">מגמות, ביצועים ונקודות שדורשות תשומת לב</p>
+      <p className="mt-1.5 text-secondary">מגמות, ביצועים ונקודות שדורשות תשומת לב</p>
 
-      <div className="mt-4">
+      <div className="mt-5">
         <AnalyticsFilterBar
           value={filters}
           onChange={handleFilterChange}
@@ -147,55 +147,67 @@ export default function ReportsPage() {
 
       {data && (
         <>
-          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+          {/* Capped at 3 columns (never the full 6-across): the page's own
+              max-w-6xl container leaves each card too narrow past 3-up for
+              a comfortable icon + large number + wrapping Hebrew label to
+              sit in, especially the two duration-string cards. 3x2 gives
+              every card consistent, comfortable proportions at any desktop
+              width instead of shrinking further on ultra-wide screens. */}
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
             <AnalyticsKpiCard
               icon={IconPlus}
               label="נפתחו בתקופה"
               value={data.openedInPeriod}
               context="תקלות שהתגלו בתקופה שנבחרה"
+              tone="brand"
             />
             <AnalyticsKpiCard
               icon={IconCheck}
               label="נסגרו בתקופה"
               value={data.closedInPeriod}
               context="תקלות שנסגרו בתקופה שנבחרה"
+              tone="green"
             />
             <AnalyticsKpiCard
               icon={IconClock}
               label="זמן ממוצע לסגירה"
               value={formatDurationMinutes(data.avgCloseMinutes)}
               context="מרגע הגילוי ועד לסגירה בפועל"
+              tone="blue"
             />
             <AnalyticsKpiCard
               icon={IconPulse}
               label="פתוחות עכשיו"
               value={data.currentlyOpen}
               context="כל התקלות הפעילות כרגע"
+              tone="orange"
             />
             <AnalyticsKpiCard
               icon={IconAlertTriangle}
               label="כמה זמן הן פתוחות"
               value={formatDurationMinutes(data.avgOpenMinutes)}
               context="ממוצע זמן פתיחה של התקלות הפעילות"
+              tone="amber"
             />
             <AnalyticsKpiCard
               icon={IconArrowsExchange}
               label="נפתחו מחדש"
               value={data.reopenedInPeriod}
               context="תקלות שנפתחו מחדש בתקופה שנבחרה"
+              tone="red"
             />
           </div>
 
-          <section className="mt-6" aria-labelledby="analytics-trend-heading">
+          <section className="mt-8" aria-labelledby="analytics-trend-heading">
             <h2 id="analytics-trend-heading" className="section-title">פתיחת וסגירת תקלות</h2>
-            <div className="surface mt-2 p-3 sm:p-4">
+            <div className="surface mt-3 p-4 sm:p-5">
               <IncidentTrendChart buckets={data.buckets} />
             </div>
           </section>
 
-          <section className="mt-6">
+          <section className="mt-8">
             <h2 className="section-title">מערכות עם הכי הרבה תקלות</h2>
-            <div className="mt-2">
+            <div className="mt-3">
               <TopSystemsList rows={data.topSystems} />
             </div>
           </section>
