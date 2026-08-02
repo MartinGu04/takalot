@@ -22,7 +22,7 @@ async function ownerGroups(select: Locator) {
 
 const EXPECTED_ALL_ACTIVE_GROUPS = [
   { label: 'מנהל מערכת', options: ['אלון ברק (דמו)'] },
-  { label: 'נגד / מנהל מקצועי', options: ['דנה לוי (דמו)'] },
+  { label: 'נגד', options: ['דנה לוי (דמו)'] },
   { label: 'אחמ״ש', options: ['יואב כהן (דמו)', 'מאיה רוזן (דמו)'] },
   { label: 'טכנאי', options: ['ליאור אדרי (דמו)', 'עומר פרץ (דמו)'] },
 ];

@@ -47,9 +47,10 @@ describe('OwnerField', () => {
 
 // Eligibility, grouping, and sorting (mirrors assert_owner_valid's role
 // check, migration 0039): only active users in an eligible role are ever
-// offered, grouped by role in the fixed order מנהל מערכת / נגד / מנהל
-// מקצועי / אחמ״ש / טכנאי, sorted alphabetically by fullName within each
-// group using a Hebrew-aware comparison.
+// offered, grouped by role in the fixed order מנהל מערכת / נגד / אחמ״ש /
+// טכנאי (personnelRoleLabels' compact form -- not roleLabels' "נגד / מנהל
+// מקצועי"), sorted alphabetically by fullName within each group using a
+// Hebrew-aware comparison.
 describe('OwnerField: role eligibility, grouping, and sorting', () => {
   const mixedProfiles: Profile[] = [
     { id: 'tech-b', fullName: 'תמר בן דוד', role: 'technician', active: true, createdAt: '' },
@@ -66,9 +67,9 @@ describe('OwnerField: role eligibility, grouping, and sorting', () => {
     return screen.getAllByRole('group').map((g) => g.getAttribute('label') as string);
   }
 
-  it('groups appear in the order מנהל מערכת / נגד / מנהל מקצועי / אחמ״ש / טכנאי', () => {
+  it('groups appear in the order מנהל מערכת / נגד / אחמ״ש / טכנאי', () => {
     render(<OwnerField profiles={mixedProfiles} ownerUserId="" onChange={vi.fn()} />);
-    expect(optgroupLabels()).toEqual(['מנהל מערכת', 'נגד / מנהל מקצועי', 'אחמ״ש', 'טכנאי']);
+    expect(optgroupLabels()).toEqual(['מנהל מערכת', 'נגד', 'אחמ״ש', 'טכנאי']);
   });
 
   it('sorts names alphabetically within each group using a Hebrew-aware comparison', () => {

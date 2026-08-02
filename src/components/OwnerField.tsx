@@ -14,7 +14,7 @@
 // rather than reimplementing the rule.
 import type { Profile } from '../domain/types';
 import { ELIGIBLE_OWNER_ROLES } from '../domain/permissions';
-import { roleLabels } from '../domain/labels';
+import { personnelRoleLabels } from '../domain/labels';
 import { Field, Select } from './ui';
 
 /** Active, role-eligible profiles grouped by role (in ELIGIBLE_OWNER_ROLES
@@ -77,7 +77,7 @@ export function OwnerField({
         <Select {...a} value={ownerUserId} onChange={(e) => onChange(e.target.value)}>
           <option value="">— בחר —</option>
           {groups.map((group) => (
-            <optgroup key={group.role} label={roleLabels[group.role]}>
+            <optgroup key={group.role} label={personnelRoleLabels[group.role]}>
               {group.profiles.map((p) => (
                 <option key={p.id} value={p.id}>{p.fullName}</option>
               ))}

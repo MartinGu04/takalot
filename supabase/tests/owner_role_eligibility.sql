@@ -5,7 +5,9 @@
 -- remains assignable, the pre-existing "inactive owner" rejection and its
 -- exact message are unchanged, and unrelated lifecycle behavior (terminal-
 -- state guard, partial-readiness continuation-owner requirement) is
--- unaffected.
+-- unaffected. Sections 1-2 also stand as the "existing assert_owner_valid
+-- role enforcement remains unchanged" regression coverage. Section 6
+-- separately exercises 0039's fail-closed migration-apply-time preflight.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -278,6 +280,113 @@ begin
   end;
 
   reset role;
+end $$;
+
+-- =====================================================================
+-- 6. Migration 0039's own fail-closed preflight (the "do $$ ... $$" block
+--    that runs BEFORE assert_owner_valid is replaced, guarding against
+--    existing non-terminal incidents already owned by an ineligible role).
+--    By the time this suite runs, the migration is already applied, so its
+--    schema effects are what's left to observe -- the block below is an
+--    intentional, exact copy of the migration's own preflight query, kept
+--    in sync by hand with supabase/migrations/0039_owner_role_eligibility.sql.
+--    If that query ever changes, this block must change with it.
+-- =====================================================================
+
+-- 6a. A non-terminal incident owned by the (role-ineligible) viewer c2
+--     blocks the preflight, with a count and an instruction to reassign.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+                       operational_impact, owner_user_id, discovered_at, created_by, updated_by,
+                       next_update_due, version)
+values ('00000000-0000-0000-0000-00000000c920', 'H-920', '00000000-0000-0000-0000-00000000c101',
+        '00000000-0000-0000-0000-00000000c102', 'd', 'medium', 'in_progress', 'i',
+        '00000000-0000-0000-0000-0000000000c2', now() - interval '2 days',
+        '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000c1',
+        now() + interval '4 hours', 1);
+
+do $$
+declare
+  v_bad_count int;
+begin
+  select count(*) into v_bad_count
+  from incidents i
+  join profiles p on p.id = i.owner_user_id
+  where not is_incident_terminal(i.status)
+    and p.role not in ('system_admin', 'professional_manager', 'shift_supervisor', 'technician');
+
+  begin
+    if v_bad_count > 0 then
+      raise exception
+        'preflight: % active incident(s) are currently assigned to an internal owner whose role is not eligible to be an internal owner (system_admin, professional_manager, shift_supervisor, or technician). '
+        'Reassign each one via assign_incident (to an active, eligible internal owner) before this migration can be applied. '
+        'This preflight does not and will not reassign or rewrite any historical data itself.',
+        v_bad_count;
+    end if;
+    insert into results (test, result, detail) values
+      ('preflight: a non-terminal incident owned by a viewer blocks the migration', 'FAIL', 'did not raise, bad_count=' || v_bad_count);
+  exception when others then
+    insert into results (test, result, detail) values
+      ('preflight: a non-terminal incident owned by a viewer blocks the migration',
+        case when sqlerrm like 'preflight: 1 active incident%not eligible%' and sqlerrm like '%Reassign each one via assign_incident%'
+          then 'PASS' else 'FAIL' end, sqlerrm);
+  end;
+end $$;
+
+-- `incidents` blocks DELETE outright (trg_incidents_no_delete, 0001) --
+-- close this fixture out (a real, ordinary UPDATE, which IS allowed) rather
+-- than leaving a non-terminal viewer-owned row behind to contaminate 6c's
+-- baseline check below.
+update incidents set status = 'closed', closed_at = now(), closed_by = '00000000-0000-0000-0000-0000000000c1',
+  root_cause = 'סיבה', resolution = 'פתרון', readiness_at_close = 'full'
+  where id = '00000000-0000-0000-0000-00000000c920';
+
+-- 6b. A TERMINAL (closed) incident historically owned by the same viewer
+--     does not block the preflight -- a closed incident's owner is a
+--     historical fact, not a live assignment.
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+                       operational_impact, owner_user_id, discovered_at, created_by, updated_by,
+                       closed_at, closed_by, root_cause, resolution, readiness_at_close, version)
+values ('00000000-0000-0000-0000-00000000c921', 'H-921', '00000000-0000-0000-0000-00000000c101',
+        '00000000-0000-0000-0000-00000000c102', 'd', 'medium', 'closed', 'i',
+        '00000000-0000-0000-0000-0000000000c2', now() - interval '3 days',
+        '00000000-0000-0000-0000-0000000000c1', '00000000-0000-0000-0000-0000000000c1',
+        now() - interval '1 day', '00000000-0000-0000-0000-0000000000c1', 'סיבה', 'פתרון', 'full', 1);
+
+do $$
+declare
+  v_bad_count int;
+begin
+  select count(*) into v_bad_count
+  from incidents i
+  join profiles p on p.id = i.owner_user_id
+  where not is_incident_terminal(i.status)
+    and p.role not in ('system_admin', 'professional_manager', 'shift_supervisor', 'technician');
+
+  insert into results (test, result, detail) values
+    ('preflight: a terminal (closed) incident historically owned by a viewer does not block the migration',
+      case when v_bad_count = 0 then 'PASS' else 'FAIL' end, 'bad_count=' || v_bad_count);
+end $$;
+
+-- c921 is already terminal from the moment it's inserted above -- unlike
+-- c920 (6a) it never needs to be closed out; nothing further to do here.
+
+-- 6c. Baseline: every incident in this file's fixtures (and whatever
+--     assign_incident/close_incident reassignments sections 1-5 above
+--     already performed) is owned exclusively by eligible active roles --
+--     the preflight does not block on eligible ownership.
+do $$
+declare
+  v_bad_count int;
+begin
+  select count(*) into v_bad_count
+  from incidents i
+  join profiles p on p.id = i.owner_user_id
+  where not is_incident_terminal(i.status)
+    and p.role not in ('system_admin', 'professional_manager', 'shift_supervisor', 'technician');
+
+  insert into results (test, result, detail) values
+    ('preflight: eligible active ownership does not block the migration',
+      case when v_bad_count = 0 then 'PASS' else 'FAIL' end, 'bad_count=' || v_bad_count);
 end $$;
 
 select * from results order by id;
