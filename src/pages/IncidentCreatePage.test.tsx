@@ -697,7 +697,37 @@ describe('IncidentCreatePage: WhatsApp notification-copy modal (post-creation)',
       within(dialog).getByText(/כרגע AVARIA עדיין לא שולחת התראות אוטומטיות לוואטסאפ/),
     ).toBeInTheDocument();
     const message = within(dialog).getByRole('group', { name: 'תוכן ההודעה להעתקה' }).textContent ?? '';
-    expect(message).toMatch(/^🟡 נפתחה תקלה בחומרה בינונית \d{4}-\d{3} במערכת מערכת אלפא על ידי אלון ברק \(דמו\)$/);
+    const escapedOrigin = window.location.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    expect(message).toMatch(
+      new RegExp(
+        `^🟡 נפתחה תקלה בחומרה בינונית \\d{4}-\\d{3} במערכת מערכת אלפא על ידי אלון ברק \\(דמו\\)\\n\\nלצפייה בתקלה:\\n${escapedOrigin}/incidents/[^\\s]+$`,
+      ),
+    );
     expect(message).not.toContain('עומר פרץ'); // the editable owner field's value must never appear as the actor
+  });
+
+  it('appends a direct link to the newly created incident, using the current origin and the server-persisted id (not the displayed incident number)', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillMinimalValidForm(user);
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'התקלה נפתחה בהצלחה' });
+    const message = within(dialog).getByRole('group', { name: 'תוכן ההודעה להעתקה' }).textContent ?? '';
+    const [opening, blank, label, url] = message.split('\n');
+    expect(blank).toBe('');
+    expect(label).toBe('לצפייה בתקלה:');
+    expect(url.startsWith(`${window.location.origin}/incidents/`)).toBe(true);
+
+    const incidentId = url.replace(`${window.location.origin}/incidents/`, '');
+    expect(incidentId).not.toBe(''); // a real persisted id, not an empty/missing value
+    const incidentNumber = opening.match(/\d{4}-\d{3}/)?.[0];
+    expect(incidentId).not.toBe(incidentNumber); // never the displayed human-readable number
+
+    // The same complete message (link included) is what actually gets copied.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.click(within(dialog).getByRole('button', { name: 'העתקת הודעה' }));
+    expect(writeText).toHaveBeenCalledWith(message);
   });
 });
