@@ -2,29 +2,20 @@
 import { useMemo } from 'react';
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
-import { IncidentFilterBar, ALL_STATUSES, type FilterState } from '../components/IncidentFilterBar';
+import { IncidentFilterBar, type FilterState } from '../components/IncidentFilterBar';
 import { IncidentCard } from '../components/incident';
 import { Button, EmptyState, ErrorState, Select, Spinner, useToast } from '../components/ui';
 import { ExportMenu } from '../components/ExportMenu';
 import { useUrlState } from '../lib/useUrlState';
-import type { IncidentStatus, Severity, Incident } from '../domain/types';
-import { isOpen } from '../domain/types';
+import type { Severity, Incident } from '../domain/types';
 import type { IncidentSort } from '../data/repository';
 import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadBlob } from '../exports/table';
 
 const PAGE_SIZE = 20;
 
-// Closed and cancelled incidents belong in the archive, never in the active
-// incidents list -- including closed incidents with incomplete readiness,
-// which surface instead in the dashboard's dedicated section. Reopened
-// incidents (and every other non-terminal status) are not terminal, so they
-// remain active here.
-const ACTIVE_STATUS_OPTIONS = ALL_STATUSES.filter(isOpen);
-
 function filtersFromUrl(url: ReturnType<typeof useUrlState>): FilterState {
   return {
     search: url.get('q') ?? '',
-    status: url.getList('status') as IncidentStatus[],
     severity: url.getList('severity') as Severity[],
     ownerUserId: url.get('owner'),
     systemId: url.get('system'),
@@ -93,7 +84,6 @@ export default function IncidentsPage() {
     // cause of severity/owner/etc. filters silently failing to apply).
     url.setMany({
       q: next.search,
-      status: next.status,
       severity: next.severity,
       owner: next.ownerUserId,
       system: next.systemId,
@@ -142,7 +132,6 @@ export default function IncidentsPage() {
           profiles={profiles}
           systems={systems}
           locations={locations}
-          statusOptions={ACTIVE_STATUS_OPTIONS}
         />
       </div>
 

@@ -90,7 +90,7 @@ export function ArchiveDateFilter({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => (open ? setOpen(false) : openPanel())}
-        className={`flex min-h-11 w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+        className={`flex min-h-9 w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-sm font-medium transition-colors ${
           active
             ? 'border-brand-300 bg-brand-50 text-brand-900 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200 dark:hover:bg-brand-900/60'
             : 'border-hairline-strong bg-surface text-text-primary hover:bg-surface-hover'

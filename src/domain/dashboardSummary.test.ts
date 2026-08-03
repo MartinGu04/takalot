@@ -62,7 +62,7 @@ describe('summarizeDashboard: metric grounding', () => {
     expect(s.criticalOrHigh.map((i) => i.id).sort()).toEqual(['critical1', 'high-ok']);
   });
 
-  it('a cancelled incident (Chapter 2 terminal status) is excluded from open/criticalOrHigh, but DOES appear in recentTerminal', () => {
+  it('a cancelled incident (Chapter 2 terminal status) is excluded from open/criticalOrHigh, and also excluded from recentTerminal', () => {
     const incidents = [
       makeIncident({
         id: 'cancelled-critical',
@@ -75,9 +75,9 @@ describe('summarizeDashboard: metric grounding', () => {
     const s = summarizeDashboard(incidents);
     expect(s.open.map((i) => i.id)).toEqual(['open1']);
     expect(s.criticalOrHigh).toEqual([]);
-    // "נסגרו לאחרונה" covers every terminal outcome -- closed AND cancelled --
-    // not literally status === 'closed'.
-    expect(s.recentTerminal.map((i) => i.id)).toEqual(['cancelled-critical']);
+    // "נסגרו לאחרונה" is closed-only -- a cancelled incident belongs in the
+    // archive, never in this home-page section or its count.
+    expect(s.recentTerminal).toEqual([]);
   });
 });
 
@@ -135,7 +135,7 @@ describe('summarizeDashboard: recentTerminal', () => {
     expect(s.recentTerminal.map((i) => i.id)).toEqual(['closed-new', 'closed-mid', 'closed-old']);
   });
 
-  it('interleaves closed and cancelled incidents by their own terminal timestamp, newest first', () => {
+  it('excludes cancelled incidents entirely, even when interleaved with closed ones -- only closed incidents appear, newest closedAt first', () => {
     const incidents = [
       makeIncident({ id: 'closed-old', status: 'closed', closedAt: '2026-01-01T00:00:00.000Z' }),
       makeIncident({ id: 'cancelled-newest', status: 'cancelled', cancelledAt: '2026-01-09T00:00:00.000Z' }),
@@ -143,12 +143,7 @@ describe('summarizeDashboard: recentTerminal', () => {
       makeIncident({ id: 'cancelled-old', status: 'cancelled', cancelledAt: '2026-01-02T00:00:00.000Z' }),
     ];
     const s = summarizeDashboard(incidents);
-    expect(s.recentTerminal.map((i) => i.id)).toEqual([
-      'cancelled-newest',
-      'closed-mid',
-      'cancelled-old',
-      'closed-old',
-    ]);
+    expect(s.recentTerminal.map((i) => i.id)).toEqual(['closed-mid', 'closed-old']);
   });
 
   it('caps at the given limit (3-5 useful items, not the whole archive)', () => {

@@ -1,11 +1,11 @@
 // Archive: terminal incidents only -- closed AND cancelled. Search, filters
-// (outcome, system, date range), root-cause/solution text search, and
-// export. No deletion action anywhere on this page.
+// (outcome, system, assignee, date range), and export. No deletion action
+// anywhere on this page.
 import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useAppMutation, repo } from '../data/hooks';
 import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
-import { EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
-import { SystemOptions } from '../components/ReferenceDataOptions';
+import { EmptyState, ErrorState, Input, Select, Spinner, useToast, filterFieldClass, filterControlClass } from '../components/ui';
+import { SystemOptions, EligibleOwnerOptions } from '../components/ReferenceDataOptions';
 import { ExportMenu } from '../components/ExportMenu';
 import { ArchiveDateFilter } from '../components/ArchiveDateFilter';
 import { useUrlState } from '../lib/useUrlState';
@@ -14,10 +14,12 @@ import { incidentsExportFilename, incidentsToCsv, incidentsToXlsxBlob, downloadB
 
 export default function ArchivePage() {
   const url = useUrlState();
+  // The general search already covers root cause and resolution text (see
+  // the placeholder below and the repositories' search implementation), so
+  // there is no separate dedicated field for either.
   const search = url.get('q') ?? '';
-  const rootCauseText = url.get('rootCause') ?? '';
-  const resolutionText = url.get('resolution') ?? '';
   const systemId = url.get('system');
+  const ownerUserId = url.get('owner');
   // Terminal outcome. The archive's default scope is both outcomes; 'closed'
   // and 'cancelled' narrow it to one. Reached from the dashboard's closed
   // counter and "לכל הארכיון" link, and clearable here like any other filter.
@@ -28,24 +30,17 @@ export default function ArchivePage() {
   const session = useSession();
   const toast = useToast();
 
-  // Debounced local drafts: typing must never be interrupted by the
+  // Debounced local draft: typing must never be interrupted by the
   // URL/query round-trip that committing a filter value triggers.
   const [searchDraft, setSearchDraft] = useDebouncedField(search, (next) => url.set('q', next));
-  const [rootCauseDraft, setRootCauseDraft] = useDebouncedField(rootCauseText, (next) =>
-    url.set('rootCause', next),
-  );
-  const [resolutionDraft, setResolutionDraft] = useDebouncedField(resolutionText, (next) =>
-    url.set('resolution', next),
-  );
 
   const { data: incidents, isLoading, isError, refetch } = useIncidents(
     {
       terminalOnly: true,
       status: outcome ? [outcome] : undefined,
       search,
-      rootCauseText: rootCauseText || undefined,
-      resolutionText: resolutionText || undefined,
       systemId: systemId || undefined,
+      ownerUserId: ownerUserId || undefined,
       createdFrom: createdFrom ? new Date(createdFrom).toISOString() : undefined,
       createdTo: createdTo ? new Date(createdTo + 'T23:59:59').toISOString() : undefined,
     },
@@ -62,7 +57,7 @@ export default function ArchivePage() {
       const ctx = { profiles: profiles ?? [], systems: systems ?? [], locations: locations ?? [], now };
       await repo().recordExport(session, {
         exportType: kind === 'xlsx' ? 'incidents_xlsx' : 'incidents_csv',
-        filtersDescription: `ארכיון: ${JSON.stringify({ search, systemId, createdFrom, createdTo })}`,
+        filtersDescription: `ארכיון: ${JSON.stringify({ search, systemId, ownerUserId, createdFrom, createdTo })}`,
       });
       const rows = incidents ?? [];
       if (rows.length === 0) {
@@ -102,17 +97,23 @@ export default function ArchivePage() {
         )}
       </div>
 
-      <div className="surface mt-3 flex flex-col gap-3 p-3">
+      <div className="surface mt-2 flex flex-col gap-2 p-2">
         <Input
+          className={filterFieldClass}
           placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור, סיבת התקלה או הפתרון שבוצע…"
           value={searchDraft}
           onChange={(e) => setSearchDraft(e.target.value)}
           aria-label="חיפוש בארכיון"
         />
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {/* Desktop: one compact row of four equal columns, right-to-left as
+            תוצאה -> מערכת -> גורם מטפל -> תאריך. A real grid (not flex +
+            shrink-to-content) so each control reliably fills its own column
+            instead of the browser resolving a `w-full`/`w-auto` conflict on
+            its own -- two columns on tablet, one on mobile. */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Select
             aria-label="סינון לפי תוצאה"
-            className="min-w-0"
+            className={filterControlClass}
             value={outcome ?? ''}
             onChange={(e) => url.set('outcome', e.target.value || undefined)}
           >
@@ -122,7 +123,7 @@ export default function ArchivePage() {
           </Select>
           <Select
             aria-label="סינון לפי מערכת"
-            className="min-w-0"
+            className={filterControlClass}
             value={systemId ?? ''}
             onChange={(e) => url.set('system', e.target.value || undefined)}
           >
@@ -135,26 +136,21 @@ export default function ArchivePage() {
                 reason, rather than a new visual treatment. */}
             <SystemOptions systems={systems} includeArchived />
           </Select>
-          <Input
-            className="min-w-0"
-            placeholder="חיפוש בסיבת התקלה…"
-            value={rootCauseDraft}
-            onChange={(e) => setRootCauseDraft(e.target.value)}
+          <Select
+            aria-label="סינון לפי גורם מטפל"
+            className={filterControlClass}
+            value={ownerUserId ?? ''}
+            onChange={(e) => url.set('owner', e.target.value || undefined)}
+          >
+            <option value="">כל הגורמים המטפלים</option>
+            <EligibleOwnerOptions profiles={profiles} />
+          </Select>
+          <ArchiveDateFilter
+            from={createdFrom}
+            to={createdTo}
+            onApply={(nextFrom, nextTo) => url.setMany({ from: nextFrom, to: nextTo })}
+            onClear={() => url.setMany({ from: undefined, to: undefined })}
           />
-          <Input
-            className="min-w-0"
-            placeholder="חיפוש בפתרון שבוצע…"
-            value={resolutionDraft}
-            onChange={(e) => setResolutionDraft(e.target.value)}
-          />
-          <div className="min-w-0">
-            <ArchiveDateFilter
-              from={createdFrom}
-              to={createdTo}
-              onApply={(nextFrom, nextTo) => url.setMany({ from: nextFrom, to: nextTo })}
-              onClear={() => url.setMany({ from: undefined, to: undefined })}
-            />
-          </div>
         </div>
       </div>
 

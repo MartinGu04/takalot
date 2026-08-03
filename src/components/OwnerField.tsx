@@ -7,37 +7,15 @@
 // shift_supervisor, technician) are offered -- viewer is excluded even when
 // active, and a tombstoned/deleted profile is always inactive by
 // construction (profiles_deleted_implies_inactive, migration 0012), so the
-// `active` filter alone already excludes it. This is the ONE place that
-// filters/groups/sorts owner candidates -- every caller (incident creation,
-// full update, technician's own assign/reassign flow, incomplete-readiness
-// closure's continuation owner, reopening) renders this shared component
-// rather than reimplementing the rule.
+// `active` filter alone already excludes it. The actual filter/group/sort
+// rule lives once in domain/permissions.ts's groupEligibleOwners (rendered
+// here via EligibleOwnerOptions) -- every caller (incident creation, full
+// update, technician's own assign/reassign flow, incomplete-readiness
+// closure's continuation owner, reopening, and the incidents/archive
+// assignee filters) shares that one rule rather than reimplementing it.
 import type { Profile } from '../domain/types';
-import { ELIGIBLE_OWNER_ROLES } from '../domain/permissions';
-import { personnelRoleLabels } from '../domain/labels';
 import { Field, Select } from './ui';
-
-/** Active, role-eligible profiles grouped by role (in ELIGIBLE_OWNER_ROLES
- *  order) and sorted alphabetically by fullName within each group, using a
- *  Hebrew-aware comparison -- matching the sort convention already used
- *  elsewhere in this codebase (e.g. localRepository.ts's own profile/
- *  reference-name sorts). A role with no eligible members is omitted
- *  entirely, never an empty group. */
-function groupEligibleOwners(profiles: Profile[] | undefined): Array<{ role: Profile['role']; profiles: Profile[] }> {
-  const byRole = new Map<Profile['role'], Profile[]>();
-  for (const p of profiles ?? []) {
-    if (!p.active || !ELIGIBLE_OWNER_ROLES.includes(p.role)) continue;
-    const list = byRole.get(p.role);
-    if (list) list.push(p);
-    else byRole.set(p.role, [p]);
-  }
-  return ELIGIBLE_OWNER_ROLES.map((role) => ({ role, profiles: byRole.get(role) ?? [] }))
-    .filter((group) => group.profiles.length > 0)
-    .map((group) => ({
-      role: group.role,
-      profiles: [...group.profiles].sort((a, b) => a.fullName.localeCompare(b.fullName, 'he')),
-    }));
-}
+import { EligibleOwnerOptions } from './ReferenceDataOptions';
 
 export function OwnerField({
   profiles,
@@ -61,7 +39,6 @@ export function OwnerField({
    *  silently dropped fact. Takes priority over `hint` when both apply. */
   legacyExternalName?: string | null;
 }) {
-  const groups = groupEligibleOwners(profiles);
   return (
     <Field
       label="בעל אחריות פנימי"
@@ -76,13 +53,7 @@ export function OwnerField({
       {(a) => (
         <Select {...a} value={ownerUserId} onChange={(e) => onChange(e.target.value)}>
           <option value="">— בחר —</option>
-          {groups.map((group) => (
-            <optgroup key={group.role} label={personnelRoleLabels[group.role]}>
-              {group.profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.fullName}</option>
-              ))}
-            </optgroup>
-          ))}
+          <EligibleOwnerOptions profiles={profiles} />
         </Select>
       )}
     </Field>

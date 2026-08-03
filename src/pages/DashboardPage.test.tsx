@@ -136,10 +136,10 @@ describe('information architecture: urgent, open, recently-closed', () => {
     );
   });
 
-  it('"נסגרו לאחרונה" includes a cancelled incident alongside closed ones, each with its own status label', async () => {
+  it('"נסגרו לאחרונה" excludes a cancelled incident entirely -- only genuinely closed incidents ever appear there', async () => {
     // Wraps (not replaces) listIncidents: the dashboard's own real closed
-    // fixtures (inc-5/inc-6) must remain present -- only a synthetic
-    // cancelled incident, more recent than either, is appended.
+    // fixtures (inc-5/inc-6) must remain present -- a synthetic cancelled
+    // incident, more recent than either, is appended and must NOT surface.
     const { LocalDemoRepository } = await import('../data/local/localRepository');
     const original = LocalDemoRepository.prototype.listIncidents;
     const spy = vi
@@ -166,12 +166,13 @@ describe('information architecture: urgent, open, recently-closed', () => {
     await loginAs('login-u-admin');
     const closedHeading = within(main()).getByRole('heading', { name: 'נסגרו לאחרונה' });
     const closedSection = closedHeading.closest('section') as HTMLElement;
-    expect(within(closedSection).getByText('2026-999')).toBeInTheDocument();
-    expect(within(closedSection).getByText('בוטלה')).toBeInTheDocument();
-    // The three real closed fixtures are unaffected -- four rows total now.
+    expect(within(closedSection).queryByText('2026-999')).not.toBeInTheDocument();
+    expect(within(closedSection).queryByText('בוטלה')).not.toBeInTheDocument();
+    // The three real closed fixtures are unaffected -- still three rows, not
+    // four -- the cancelled one never entered the list at all.
     const links = within(closedSection).getAllByRole('link');
     const numberLinks = links.filter((l) => l.getAttribute('href')?.startsWith('/incidents/'));
-    expect(numberLinks.length).toBe(4);
+    expect(numberLinks.length).toBe(3);
 
     spy.mockRestore();
   });
@@ -246,7 +247,7 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
     }
   });
 
-  it('excludes cancelled incidents even while the section itself lists one', async () => {
+  it('excludes cancelled incidents from both the section and its counter', async () => {
     const { LocalDemoRepository } = await import('../data/local/localRepository');
     const original = LocalDemoRepository.prototype.listIncidents;
     const spy = vi
@@ -274,9 +275,10 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
       const closedSection = within(main())
         .getByRole('heading', { name: 'נסגרו לאחרונה' })
         .closest('section') as HTMLElement;
-      // The cancelled incident is visible in the section...
-      expect(within(closedSection).getByText('בוטלה')).toBeInTheDocument();
-      // ...but the counter still reports only the three genuinely closed ones.
+      // The cancelled incident never appears in the section...
+      expect(within(closedSection).queryByText('בוטלה')).not.toBeInTheDocument();
+      expect(within(closedSection).queryByText('2026-999')).not.toBeInTheDocument();
+      // ...and the counter still reports only the three genuinely closed ones.
       expect(within(main()).getByTestId('closed-total')).toHaveTextContent('3');
     } finally {
       spy.mockRestore();
