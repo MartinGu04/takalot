@@ -18,9 +18,12 @@ export interface DashboardSummary {
    *  anything already in `needsAttention` so no incident renders as a full
    *  card in two sections at once. */
   openRest: Incident[];
-  /** "נסגרו לאחרונה" -- the most recently reached TERMINAL incidents (both
-   *  closed and cancelled -- an incident's operational life is over either
-   *  way), newest terminal-timestamp first, capped at `limit`. */
+  /** "נסגרו לאחרונה" -- the most recently closed incidents ONLY (status ===
+   *  'closed'). Cancelled incidents are a different outcome -- no root
+   *  cause/resolution, never "resolved" -- so they never belong in this
+   *  home-page section, even though they're just as terminal and still show
+   *  up in the archive alongside closed incidents. Newest closedAt first,
+   *  capped at `limit`. */
   recentTerminal: Incident[];
 }
 
@@ -39,8 +42,8 @@ export function summarizeDashboard(incidents: Incident[], recentTerminalLimit = 
   const openRest = sortByPriority(open.filter((i) => !needsAttentionIds.has(i.id)));
 
   const recentTerminal = incidents
-    .filter((i) => !isOpen(i.status))
-    .sort((a, b) => (terminalAt(b) ?? '').localeCompare(terminalAt(a) ?? ''))
+    .filter((i) => i.status === 'closed')
+    .sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? ''))
     .slice(0, recentTerminalLimit);
 
   return { open, criticalOrHigh, needsAttention, openRest, recentTerminal };

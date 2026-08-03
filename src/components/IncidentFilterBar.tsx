@@ -1,12 +1,11 @@
-import type { IncidentStatus, Severity, Profile, SystemRecord, LocationRecord } from '../domain/types';
-import { severityLabels, statusLabels } from '../domain/labels';
+import type { Severity, Profile, SystemRecord, LocationRecord } from '../domain/types';
+import { severityLabels } from '../domain/labels';
 import { SystemOptions, LocationOptions } from './ReferenceDataOptions';
-import { Input, Select, Badge } from './ui';
+import { Input, Select, Badge, filterFieldClass, filterControlClass } from './ui';
 import { useDebouncedField } from '../lib/useDebouncedField';
 
 export interface FilterState {
   search: string;
-  status: IncidentStatus[];
   severity: Severity[];
   ownerUserId?: string;
   systemId?: string;
@@ -15,11 +14,6 @@ export interface FilterState {
   createdTo?: string;
 }
 
-export const ALL_STATUSES: IncidentStatus[] = [
-  'new', 'acknowledged', 'in_progress', 'waiting_external', 'waiting_test',
-  'monitoring', 'partial_readiness', 'resolved_pending_close', 'closed', 'reopened',
-  'cancelled', 'waiting_equipment', 'waiting_information', 'waiting_validation',
-];
 export const ALL_SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 
 function toggle<T>(arr: T[], value: T): T[] {
@@ -32,7 +26,6 @@ export function IncidentFilterBar({
   profiles,
   systems,
   locations,
-  statusOptions = ALL_STATUSES,
   extra,
 }: {
   value: FilterState;
@@ -40,7 +33,6 @@ export function IncidentFilterBar({
   profiles?: Profile[];
   systems?: SystemRecord[];
   locations?: LocationRecord[];
-  statusOptions?: IncidentStatus[];
   extra?: React.ReactNode;
 }) {
   // Debounced local draft: typing must never be interrupted by the
@@ -50,9 +42,6 @@ export function IncidentFilterBar({
   );
 
   const chips: { key: string; label: string; onRemove: () => void }[] = [];
-  value.status.forEach((s) =>
-    chips.push({ key: `s-${s}`, label: statusLabels[s], onRemove: () => onChange({ ...value, status: toggle(value.status, s) }) }),
-  );
   value.severity.forEach((s) =>
     chips.push({ key: `sv-${s}`, label: severityLabels[s], onRemove: () => onChange({ ...value, severity: toggle(value.severity, s) }) }),
   );
@@ -69,16 +58,22 @@ export function IncidentFilterBar({
     chips.push({ key: 'location', label, onRemove: () => onChange({ ...value, locationId: undefined }) });
   }
   return (
-    <div className="surface flex flex-col gap-3 p-3">
+    <div className="surface flex flex-col gap-2 p-2">
       <Input
+        className={filterFieldClass}
         placeholder="חיפוש לפי מספר, מערכת, מיקום, תיאור או גורם מטפל…"
         value={searchDraft}
         onChange={(e) => setSearchDraft(e.target.value)}
         aria-label="חיפוש תקלות"
       />
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* Desktop: one compact row, right-to-left as חומרה -> מערכת/עמדה ->
+          גורם מטפל -> מיקום. Each control shrinks to its own content
+          (filterControlClass) instead of stretching to fill a grid column,
+          and wraps cleanly on narrower screens instead of overflowing. */}
+      <div className="flex flex-wrap gap-2">
         <Select
           aria-label="סינון לפי חומרה"
+          className={filterControlClass}
           value=""
           onChange={(e) => {
             if (e.target.value) onChange({ ...value, severity: toggle(value.severity, e.target.value as Severity) });
@@ -92,21 +87,17 @@ export function IncidentFilterBar({
           ))}
         </Select>
         <Select
-          aria-label="סינון לפי סטטוס"
-          value=""
-          onChange={(e) => {
-            if (e.target.value) onChange({ ...value, status: toggle(value.status, e.target.value as IncidentStatus) });
-          }}
+          aria-label="סינון לפי מערכת"
+          className={filterControlClass}
+          value={value.systemId ?? ''}
+          onChange={(e) => onChange({ ...value, systemId: e.target.value || undefined })}
         >
-          <option value="">הוספת סטטוס…</option>
-          {statusOptions.map((s) => (
-            <option key={s} value={s} disabled={value.status.includes(s)}>
-              {statusLabels[s]}
-            </option>
-          ))}
+          <option value="">מערכת / עמדה…</option>
+          <SystemOptions systems={systems} includeArchived />
         </Select>
         <Select
           aria-label="סינון לפי גורם מטפל"
+          className={filterControlClass}
           value={value.ownerUserId ?? ''}
           onChange={(e) => onChange({ ...value, ownerUserId: e.target.value || undefined })}
         >
@@ -116,15 +107,8 @@ export function IncidentFilterBar({
           ))}
         </Select>
         <Select
-          aria-label="סינון לפי מערכת"
-          value={value.systemId ?? ''}
-          onChange={(e) => onChange({ ...value, systemId: e.target.value || undefined })}
-        >
-          <option value="">מערכת / עמדה…</option>
-          <SystemOptions systems={systems} includeArchived />
-        </Select>
-        <Select
           aria-label="סינון לפי מיקום"
+          className={filterControlClass}
           value={value.locationId ?? ''}
           onChange={(e) => onChange({ ...value, locationId: e.target.value || undefined })}
         >
@@ -161,7 +145,6 @@ export function IncidentFilterBar({
             onClick={() =>
               onChange({
                 search: value.search,
-                status: [],
                 severity: [],
               })
             }

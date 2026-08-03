@@ -98,6 +98,18 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   },
 );
 
+// ---------- Compact filter-bar sizing ----------
+/** Shorter height and tighter padding than the default Input/Select sizing
+ *  above, for the dense archive/incidents filter rows. Deliberately kept
+ *  separate from `inputBase` (never changes it) so every ordinary create/
+ *  edit form and dialog field elsewhere keeps its existing taller,
+ *  full-width sizing untouched. */
+export const filterFieldClass = 'min-h-9 px-2 py-1.5';
+/** Same compact sizing, plus shrink-to-content width -- for a dropdown or
+ *  trigger button sitting in a filter row, which shouldn't stretch wider
+ *  than its own label the way a full-width form field does. */
+export const filterControlClass = `${filterFieldClass} w-auto min-w-0`;
+
 /**
  * A reliable `<input type="datetime-local">` for manual keyboard editing --
  * regular number row and numeric keypad alike.

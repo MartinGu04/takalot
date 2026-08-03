@@ -390,3 +390,62 @@ describe('Archive: system filter (replaces the removed כשירות בסגירה
     expect(params.get('system')).toBe('sys-beta');
   });
 });
+
+describe('Archive: compact filter row (dedicated cause/solution search removed, assignee filter added)', () => {
+  it('no longer renders the dedicated incident-cause or implemented-solution search fields', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    expect(within(main()).queryByPlaceholderText('חיפוש בסיבת התקלה…')).not.toBeInTheDocument();
+    expect(within(main()).queryByPlaceholderText('חיפוש בפתרון שבוצע…')).not.toBeInTheDocument();
+    // The general search's own placeholder still documents that it covers
+    // root cause and resolution text -- that behavior is preserved, only
+    // the two separate dedicated fields are gone.
+    expect(within(main()).getByLabelText('חיפוש בארכיון')).toHaveAttribute(
+      'placeholder',
+      expect.stringContaining('סיבת התקלה או הפתרון שבוצע'),
+    );
+  });
+
+  it('retains the general search and exactly the four required filters, in right-to-left order: תוצאה, מערכת, גורם מטפל, תאריך', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    expect(within(main()).getByLabelText('חיפוש בארכיון')).toBeInTheDocument();
+    const outcome = within(main()).getByLabelText('סינון לפי תוצאה');
+    const system = within(main()).getByLabelText('סינון לפי מערכת');
+    const owner = within(main()).getByLabelText('סינון לפי גורם מטפל');
+    const date = within(main()).getByRole('button', { name: 'סינון לפי תאריך' });
+    // Document order (right-to-left under the page's RTL direction is source
+    // order): outcome -> system -> owner -> date.
+    const position = outcome.compareDocumentPosition(system);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(system.compareDocumentPosition(owner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(owner.compareDocumentPosition(date) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the assignee filter narrows the archive to that owner\'s incidents and is reversible', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    // inc-5 is owned by עומר פרץ (דמו); inc-9 has no internal owner at all.
+    expect(await within(main()).findByText(INC5_TEXT)).toBeInTheDocument();
+    expect(within(main()).getByText(INC9_TEXT)).toBeInTheDocument();
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי גורם מטפל'), 'עומר פרץ (דמו)');
+
+    expect(await within(main()).findByText(INC5_TEXT)).toBeInTheDocument();
+    expect(within(main()).queryByText(INC9_TEXT)).not.toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).get('owner')).toBe('u-tech-1');
+
+    await user.selectOptions(within(main()).getByLabelText('סינון לפי גורם מטפל'), '');
+    expect(await within(main()).findByText(INC9_TEXT)).toBeInTheDocument();
+    expect(new URLSearchParams(window.location.search).has('owner')).toBe(false);
+  });
+});
