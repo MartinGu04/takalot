@@ -224,7 +224,7 @@ export function Badge({
   children,
   className,
 }: {
-  color?: 'red' | 'orange' | 'green' | 'blue' | 'brand' | 'neutral';
+  color?: 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'brand' | 'neutral';
   children: ReactNode;
   className?: string;
 }) {
@@ -232,6 +232,12 @@ export function Badge({
     red: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200 border border-red-200 dark:border-red-800',
     orange:
       'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200 border border-orange-200 dark:border-orange-800',
+    // Restrained yellow/gold -- medium severity's own identity, distinct
+    // from high's orange and never neon/glowing: same restrained
+    // bg-100/text-900 (light) and bg-950/text-200 (dark) pairing as every
+    // other severity color, just a different hue.
+    yellow:
+      'bg-yellow-100 text-yellow-900 dark:bg-yellow-950 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800',
     green:
       'bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-200 border border-green-200 dark:border-green-800',
     blue: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200 border border-blue-200 dark:border-blue-800',
