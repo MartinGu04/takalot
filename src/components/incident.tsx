@@ -71,20 +71,28 @@ export function IncidentCard({
   systemName,
   locationName,
   now,
+  live = false,
 }: {
   incident: Incident;
   profiles: Profile[] | undefined;
   systemName: string;
   locationName: string;
   now: Date;
+  /** True only in the current-state/home view, where open incidents
+   *  represent live operational activity. Gates the slow "alive" pulse for
+   *  critical/high cards -- the incidents and archive pages always render
+   *  static severity styling regardless of severity. */
+  live?: boolean;
 }) {
   const critical = incident.severity === 'critical';
-  const accentClass = critical ? 'incident-card-accent-critical' : '';
+  const high = incident.severity === 'high';
+  const accentClass = critical ? 'incident-card-accent-critical' : high ? 'incident-card-accent-high' : '';
+  const pulseClass = live && critical ? 'incident-card-pulse-critical' : live && high ? 'incident-card-pulse-high' : '';
   const ownerLabel = ownerDisplay(incident, profiles);
   return (
     <Link
       to={`/incidents/${incident.id}`}
-      className={`incident-card group ${accentClass}`}
+      className={`incident-card group ${accentClass} ${pulseClass}`}
     >
       {/* Contextual "open" affordance -- purely decorative on top of the
           card-wide link, so it only needs to be visible on hover/focus, not
