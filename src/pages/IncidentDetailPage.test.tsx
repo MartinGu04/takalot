@@ -777,8 +777,37 @@ describe('IncidentDetailPage: WhatsApp notification-copy modal (post-closure)', 
       within(notification).getByText(/כרגע AVARIA עדיין לא שולחת התראות אוטומטיות לוואטסאפ/),
     ).toBeInTheDocument();
     const message = within(notification).getByRole('group', { name: 'תוכן ההודעה להעתקה' }).textContent ?? '';
-    expect(message).toBe(`✅ תקלה ${incidentNumber} במערכת מערכת אלפא נסגרה על ידי אלון ברק (דמו) לאחר ${expectedDuration}`);
+    const incidentId = window.location.pathname.split('/').pop();
+    expect(incidentId).toBeTruthy();
+    expect(message).toBe(
+      `✅ תקלה ${incidentNumber} במערכת מערכת אלפא נסגרה על ידי אלון ברק (דמו) לאחר ${expectedDuration}\n\nלצפייה בתקלה:\n${window.location.origin}/incidents/${incidentId}`,
+    );
     expect(message).not.toContain('עומר פרץ'); // inc-1's owner (tech1) -- never the actor
+  });
+
+  it('appends a direct link built from the current origin and the closed incident\'s persisted id (not the displayed number)', async () => {
+    const user = await openIncidentDetailAsAdmin();
+    const incidentId = window.location.pathname.split('/').pop();
+    expect(incidentId).toBeTruthy();
+
+    await user.click(await within(main()).findByRole('button', { name: 'סגירת תקלה' }));
+    const closeDialog = await screen.findByRole('dialog', { name: 'סגירת תקלה' });
+    await fillCloseDialogMinimalFields(user, closeDialog);
+    await user.click(within(closeDialog).getByRole('button', { name: 'המשך לאישור סגירה' }));
+    await user.click(await within(closeDialog).findByRole('button', { name: 'אישור סגירת תקלה' }));
+
+    const notification = await screen.findByRole('dialog', { name: 'התקלה נסגרה בהצלחה' });
+    const message = within(notification).getByRole('group', { name: 'תוכן ההודעה להעתקה' }).textContent ?? '';
+    const lines = message.split('\n');
+    expect(lines.at(-2)).toBe('לצפייה בתקלה:');
+    expect(lines.at(-1)).toBe(`${window.location.origin}/incidents/${incidentId}`);
+    expect(lines.at(-3)).toBe(''); // exactly one blank line before the label
+
+    // The same complete message (link included) is what actually gets copied.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.click(within(notification).getByRole('button', { name: 'העתקת הודעה' }));
+    expect(writeText).toHaveBeenCalledWith(message);
   });
 
   it('does not appear when the close request fails', async () => {
