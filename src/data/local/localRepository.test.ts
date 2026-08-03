@@ -2556,15 +2556,17 @@ describe('export permission enforcement', () => {
 });
 
 describe('reference-data management parity (migration 0024)', () => {
-  it('creates trimmed systems and locations at the deterministic end of their separate namespaces', async () => {
+  it('creates trimmed systems and locations at the deterministic end of their category', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    const system = await repo.createSystem(admin, '  מערכת חדשה  ');
-    const location = await repo.createLocation(admin, '  מערכת חדשה  ');
+    const system = await repo.createSystem(admin, '  מערכת חדשה  ', 'platforms');
+    const location = await repo.createLocation(admin, '  מערכת חדשה  ', 'unit_internal');
 
     expect(system.name).toBe('מערכת חדשה');
     expect(location.name).toBe('מערכת חדשה'); // separate namespaces
-    expect((await repo.listSystems()).at(-1)).toMatchObject({ id: system.id, displayOrder: system.displayOrder });
-    expect((await repo.listLocations()).at(-1)).toMatchObject({ id: location.id, displayOrder: location.displayOrder });
+    const systemsInCategory = (await repo.listSystems()).filter((s) => s.category === 'platforms');
+    const locationsInCategory = (await repo.listLocations()).filter((l) => l.category === 'unit_internal');
+    expect(systemsInCategory.at(-1)).toMatchObject({ id: system.id, displayOrder: system.displayOrder });
+    expect(locationsInCategory.at(-1)).toMatchObject({ id: location.id, displayOrder: location.displayOrder });
 
     const logs = await repo.listAuditLogs(admin, {});
     expect(logs.some((log) => log.action === 'system_created' && log.entityId === system.id)).toBe(true);
@@ -2573,35 +2575,35 @@ describe('reference-data management parity (migration 0024)', () => {
 
   it('rejects unauthorized and inactive administrators authoritatively', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    await expect(repo.createSystem(supervisor1, 'אסור')).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    await expect(repo.createLocation(viewer, 'אסור')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(repo.createSystem(supervisor1, 'אסור', 'other')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(repo.createLocation(viewer, 'אסור', 'other')).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     const storage = new MemoryStorage();
     const seeded = buildSeed(FIXED_NOW);
     seeded.profiles.find((profile) => profile.id === DEMO_USERS.admin)!.active = false;
     storage.save(seeded);
     const inactiveRepo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
-    await expect(inactiveRepo.createSystem(admin, 'אסור')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(inactiveRepo.createSystem(admin, 'אסור', 'other')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('rejects empty, whitespace-only, and overlong names', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    await expect(repo.createSystem(admin, '')).rejects.toMatchObject({ code: 'VALIDATION' });
-    await expect(repo.createLocation(admin, '   ')).rejects.toMatchObject({ code: 'VALIDATION' });
-    await expect(repo.createSystem(admin, 'א'.repeat(121))).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(repo.createSystem(admin, '', 'other')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(repo.createLocation(admin, '   ', 'other')).rejects.toMatchObject({ code: 'VALIDATION' });
+    await expect(repo.createSystem(admin, 'א'.repeat(121), 'other')).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
   it('reserves normalized names globally, including inactive rows, while keeping namespaces separate', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    const system = await repo.createSystem(admin, 'Control Alpha');
+    const system = await repo.createSystem(admin, 'Control Alpha', 'other');
     await repo.setSystemArchived(admin, system.id, true);
 
-    await expect(repo.createSystem(admin, '  control alpha  ')).rejects.toMatchObject({
+    await expect(repo.createSystem(admin, '  control alpha  ', 'other')).rejects.toMatchObject({
       code: 'CONFLICT',
       message: expect.stringContaining('להפעיל מחדש'),
     });
-    await expect(repo.createLocation(admin, 'CONTROL ALPHA')).resolves.toMatchObject({ name: 'CONTROL ALPHA' });
-    await expect(repo.createLocation(admin, ' control alpha ')).rejects.toMatchObject({
+    await expect(repo.createLocation(admin, 'CONTROL ALPHA', 'other')).resolves.toMatchObject({ name: 'CONTROL ALPHA' });
+    await expect(repo.createLocation(admin, ' control alpha ', 'other')).rejects.toMatchObject({
       code: 'CONFLICT',
       message: expect.stringContaining('להפעיל מחדש'),
     });
@@ -2609,7 +2611,7 @@ describe('reference-data management parity (migration 0024)', () => {
 
   it('renames without changing the stable id and rejects a normalized duplicate or missing id', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    const record = await repo.createSystem(admin, 'שם לפני');
+    const record = await repo.createSystem(admin, 'שם לפני', 'other');
     await repo.renameSystem(admin, record.id, '  שם אחרי  ');
 
     expect((await repo.listSystems()).find((system) => system.id === record.id)?.name).toBe('שם אחרי');
@@ -2619,34 +2621,53 @@ describe('reference-data management parity (migration 0024)', () => {
     await expect(repo.renameLocation(admin, 'missing', 'שם')).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('sorts equal order values deterministically and safely moves up/down at every boundary', async () => {
+  it('sorts equal order values deterministically within a category and safely moves up/down at every boundary', async () => {
     const storage = new MemoryStorage();
     const seeded = buildSeed(FIXED_NOW);
-    seeded.systems.forEach((system) => {
-      system.displayOrder = 50;
-    });
+    // sys-beta and sys-pos-a are both seeded in the 'station_systems'
+    // category (see seed.ts) -- an equal displayOrder here is a genuine
+    // same-category tie, unlike setting it across every system regardless
+    // of category, which per-category ordering makes meaningless.
+    for (const system of seeded.systems) {
+      if (system.category === 'station_systems') system.displayOrder = 50;
+    }
     storage.save(seeded);
     const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
 
-    const firstRead = (await repo.listSystems()).map((system) => system.id);
-    expect((await repo.listSystems()).map((system) => system.id)).toEqual(firstRead);
+    const stationSystems = () => repo.listSystems().then((all) => all.filter((s) => s.category === 'station_systems'));
+    const firstRead = (await stationSystems()).map((system) => system.id);
+    expect((await stationSystems()).map((system) => system.id)).toEqual(firstRead);
 
     const firstId = firstRead[0];
     await repo.moveSystem(admin, firstId, 'up');
-    expect((await repo.listSystems())[0].id).toBe(firstId);
+    expect((await stationSystems())[0].id).toBe(firstId);
 
-    const secondId = (await repo.listSystems())[1].id;
+    const secondId = (await stationSystems())[1].id;
     await repo.moveSystem(admin, secondId, 'up');
-    expect((await repo.listSystems())[0].id).toBe(secondId);
+    expect((await stationSystems())[0].id).toBe(secondId);
     await repo.moveSystem(admin, secondId, 'down');
-    expect((await repo.listSystems())[1].id).toBe(secondId);
+    expect((await stationSystems())[1].id).toBe(secondId);
 
-    const locations = await repo.listLocations();
+    const locations = (await repo.listLocations()).filter((l) => l.category === 'unit_internal');
     const lastId = locations.at(-1)!.id;
+    const unitLocations = () => repo.listLocations().then((all) => all.filter((l) => l.category === 'unit_internal'));
     await repo.moveLocation(admin, lastId, 'down');
-    expect((await repo.listLocations()).at(-1)!.id).toBe(lastId);
+    expect((await unitLocations()).at(-1)!.id).toBe(lastId);
     await repo.moveLocation(admin, lastId, 'up');
-    expect((await repo.listLocations()).at(-2)!.id).toBe(lastId);
+    expect((await unitLocations()).at(-2)!.id).toBe(lastId);
+  });
+
+  it("never changes another category's display order when moving a record", async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const computingBefore = (await repo.listSystems()).find((s) => s.category === 'computing')!;
+    const infraBefore = (await repo.listSystems()).find((s) => s.category === 'infrastructure')!;
+
+    await repo.moveSystem(admin, 'sys-pos-a', 'up'); // station_systems only
+
+    const computingAfter = (await repo.listSystems()).find((s) => s.id === computingBefore.id)!;
+    const infraAfter = (await repo.listSystems()).find((s) => s.id === infraBefore.id)!;
+    expect(computingAfter.displayOrder).toBe(computingBefore.displayOrder);
+    expect(infraAfter.displayOrder).toBe(infraBefore.displayOrder);
   });
 
   it('deactivates selectors, preserves historical rendering, and reactivation restores availability', async () => {
@@ -2678,13 +2699,13 @@ describe('reference-data management parity (migration 0024)', () => {
 
   it('physically deletes never-used rows, frees their names, and archives referenced rows instead', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    const unusedSystem = await repo.createSystem(admin, 'זמני למחיקה');
-    const unusedLocation = await repo.createLocation(admin, 'מיקום זמני למחיקה');
+    const unusedSystem = await repo.createSystem(admin, 'זמני למחיקה', 'other');
+    const unusedLocation = await repo.createLocation(admin, 'מיקום זמני למחיקה', 'other');
 
     await expect(repo.deleteSystem(admin, unusedSystem.id)).resolves.toBe('deleted');
     await expect(repo.deleteLocation(admin, unusedLocation.id)).resolves.toBe('deleted');
-    const systemsAfterDelete = await repo.listSystems();
-    const locationsAfterDelete = await repo.listLocations();
+    const systemsAfterDelete = (await repo.listSystems()).filter((s) => s.category === 'other');
+    const locationsAfterDelete = (await repo.listLocations()).filter((l) => l.category === 'other');
     expect(systemsAfterDelete.some((system) => system.id === unusedSystem.id)).toBe(false);
     expect(systemsAfterDelete.map((system) => system.displayOrder)).toEqual(
       systemsAfterDelete.map((_, index) => index + 1),
@@ -2692,8 +2713,8 @@ describe('reference-data management parity (migration 0024)', () => {
     expect(locationsAfterDelete.map((location) => location.displayOrder)).toEqual(
       locationsAfterDelete.map((_, index) => index + 1),
     );
-    await expect(repo.createSystem(admin, ' זמני למחיקה ')).resolves.toMatchObject({ name: 'זמני למחיקה' });
-    await expect(repo.createLocation(admin, ' מיקום זמני למחיקה ')).resolves.toMatchObject({
+    await expect(repo.createSystem(admin, ' זמני למחיקה ', 'other')).resolves.toMatchObject({ name: 'זמני למחיקה' });
+    await expect(repo.createLocation(admin, ' מיקום זמני למחיקה ', 'other')).resolves.toMatchObject({
       name: 'מיקום זמני למחיקה',
     });
 
@@ -2715,32 +2736,71 @@ describe('reference-data management parity (migration 0024)', () => {
   });
 
   describe('batch drag-and-drop reorder (reorderSystems/reorderLocations)', () => {
-    it('applies the exact submitted order in one call and persists it across a fresh instance (refresh parity)', async () => {
+    it('applies the exact submitted order in one call, scoped to one category, and persists it across a fresh instance (refresh parity)', async () => {
       const storage = new MemoryStorage();
       const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
-      const systemIds = (await repo.listSystems()).map((s) => s.id);
+      // sys-beta/sys-pos-a (station_systems) and loc-1/loc-control
+      // (unit_internal) are the seeded categories with 2+ members.
+      const systemIds = (await repo.listSystems())
+        .filter((s) => s.category === 'station_systems')
+        .map((s) => s.id);
       const reversed = [...systemIds].reverse();
 
       await repo.reorderSystems(admin, reversed);
-      expect((await repo.listSystems()).map((s) => s.id)).toEqual(reversed);
-      expect((await repo.listSystems()).map((s) => s.displayOrder)).toEqual(
+      const stationSystems = () => repo.listSystems().then((all) => all.filter((s) => s.category === 'station_systems'));
+      expect((await stationSystems()).map((s) => s.id)).toEqual(reversed);
+      expect((await stationSystems()).map((s) => s.displayOrder)).toEqual(
         systemIds.map((_, index) => index + 1),
       );
 
       // A fresh repository instance backed by the same storage (simulating a
       // page refresh) must observe the exact same persisted order.
       const refreshed = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
-      expect((await refreshed.listSystems()).map((s) => s.id)).toEqual(reversed);
+      expect(
+        (await refreshed.listSystems()).filter((s) => s.category === 'station_systems').map((s) => s.id),
+      ).toEqual(reversed);
 
-      const locationIds = (await repo.listLocations()).map((l) => l.id);
+      const locationIds = (await repo.listLocations())
+        .filter((l) => l.category === 'unit_internal')
+        .map((l) => l.id);
       const rotated = [...locationIds.slice(1), locationIds[0]];
       await repo.reorderLocations(admin, rotated);
-      expect((await repo.listLocations()).map((l) => l.id)).toEqual(rotated);
+      expect(
+        (await repo.listLocations()).filter((l) => l.category === 'unit_internal').map((l) => l.id),
+      ).toEqual(rotated);
+    });
+
+    it("never changes another category's display order when reordering one category", async () => {
+      const repo = newRepo({ now: FIXED_NOW });
+      const otherCategoriesBefore = (await repo.listSystems()).filter((s) => s.category !== 'station_systems');
+      const stationIds = (await repo.listSystems())
+        .filter((s) => s.category === 'station_systems')
+        .map((s) => s.id);
+
+      await repo.reorderSystems(admin, [...stationIds].reverse());
+
+      const otherCategoriesAfter = (await repo.listSystems()).filter((s) => s.category !== 'station_systems');
+      expect(otherCategoriesAfter).toEqual(otherCategoriesBefore);
+    });
+
+    it('rejects a cross-category id list without moving any record between categories', async () => {
+      const repo = newRepo({ now: FIXED_NOW });
+      const before = await repo.listSystems();
+      // sys-alpha (platforms) + the two station_systems ids spans two
+      // categories -- must be rejected, not silently treated as a
+      // category change for sys-alpha.
+      const stationIds = before.filter((s) => s.category === 'station_systems').map((s) => s.id);
+      await expect(
+        repo.reorderSystems(admin, ['sys-alpha', ...stationIds]),
+      ).rejects.toMatchObject({ code: 'VALIDATION' });
+      expect(await repo.listSystems()).toEqual(before);
     });
 
     it('writes an audit entry for a successful reorder', async () => {
       const repo = newRepo({ now: FIXED_NOW });
-      const systemIds = (await repo.listSystems()).map((s) => s.id);
+      const systemIds = (await repo.listSystems())
+        .filter((s) => s.category === 'station_systems')
+        .map((s) => s.id);
       await repo.reorderSystems(admin, [...systemIds].reverse());
       const logs = await repo.listAuditLogs(admin, {});
       expect(logs.some((log) => log.action === 'systems_reordered')).toBe(true);
@@ -2748,7 +2808,9 @@ describe('reference-data management parity (migration 0024)', () => {
 
     it('rejects unauthorized and inactive administrators authoritatively', async () => {
       const repo = newRepo({ now: FIXED_NOW });
-      const systemIds = (await repo.listSystems()).map((s) => s.id);
+      const systemIds = (await repo.listSystems())
+        .filter((s) => s.category === 'station_systems')
+        .map((s) => s.id);
       await expect(repo.reorderSystems(supervisor1, systemIds)).rejects.toMatchObject({
         code: 'FORBIDDEN',
       });
@@ -2758,11 +2820,11 @@ describe('reference-data management parity (migration 0024)', () => {
     it('rejects empty, duplicated, incomplete, and unknown id lists without changing any order', async () => {
       const repo = newRepo({ now: FIXED_NOW });
       const before = await repo.listSystems();
-      const systemIds = before.map((s) => s.id);
+      const systemIds = before.filter((s) => s.category === 'station_systems').map((s) => s.id);
 
       await expect(repo.reorderSystems(admin, [])).rejects.toMatchObject({ code: 'VALIDATION' });
       await expect(
-        repo.reorderSystems(admin, [systemIds[0], systemIds[0], ...systemIds.slice(1)]),
+        repo.reorderSystems(admin, [systemIds[0], systemIds[0]]),
       ).rejects.toMatchObject({ code: 'VALIDATION' });
       await expect(repo.reorderSystems(admin, systemIds.slice(1))).rejects.toMatchObject({
         code: 'VALIDATION',
@@ -2782,6 +2844,7 @@ describe('reference-data management parity (migration 0024)', () => {
       id: 'legacy-duplicate',
       name: ' מערכת אלפא ',
       archived: true,
+      category: 'other',
       displayOrder: 99,
       createdAt: FIXED_NOW.toISOString(),
     });
@@ -2808,7 +2871,45 @@ describe('reference-data management parity (migration 0024)', () => {
     const systems = await repo.listSystems();
     expect(systems.map((system) => system.id).sort()).toEqual(originalSystemIds);
     expect(systems.every((system) => Number.isInteger(system.displayOrder) && system.displayOrder > 0)).toBe(true);
-    expect(storage.load()?.referenceDataSchemaVersion).toBe(1);
+    // Schema version lands on 2 (not just 1): the order backfill runs first
+    // and marks 1, then the category backfill immediately runs too (this
+    // demo db predates categories entirely) and advances it to 2.
+    expect(storage.load()?.referenceDataSchemaVersion).toBe(2);
+  });
+
+  it('backfills old persisted demo rows with category "other" without removing, renaming, or reordering them', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    // Faithful pre-category snapshot: back then every system/location was one
+    // single global list, so displayOrder was globally sequential -- not the
+    // per-category values the current seed uses.
+    seeded.systems.forEach((system, index) => {
+      system.displayOrder = index + 1;
+    });
+    seeded.locations.forEach((location, index) => {
+      location.displayOrder = index + 1;
+    });
+    seeded.referenceDataSchemaVersion = 1; // ordering already backfilled; category is not
+    const originalSystems = seeded.systems.map((system) => ({ id: system.id, displayOrder: system.displayOrder, archived: system.archived }));
+    const originalLocations = seeded.locations.map((location) => ({ id: location.id, displayOrder: location.displayOrder, archived: location.archived }));
+    for (const record of [...seeded.systems, ...seeded.locations]) {
+      delete (record as Partial<typeof record>).category;
+    }
+    storage.save(seeded);
+
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    const systems = await repo.listSystems();
+    const locations = await repo.listLocations();
+    expect(systems.every((system) => system.category === 'other')).toBe(true);
+    expect(locations.every((location) => location.category === 'other')).toBe(true);
+    // ids, order, and active state are all untouched by the backfill.
+    expect(
+      systems.map((system) => ({ id: system.id, displayOrder: system.displayOrder, archived: system.archived })).sort((a, b) => a.id.localeCompare(b.id)),
+    ).toEqual([...originalSystems].sort((a, b) => a.id.localeCompare(b.id)));
+    expect(
+      locations.map((location) => ({ id: location.id, displayOrder: location.displayOrder, archived: location.archived })).sort((a, b) => a.id.localeCompare(b.id)),
+    ).toEqual([...originalLocations].sort((a, b) => a.id.localeCompare(b.id)));
+    expect(storage.load()?.referenceDataSchemaVersion).toBe(2);
   });
 });
 

@@ -11,17 +11,19 @@ import type {
   Incident,
   IncidentEvent,
   IncidentUpdate,
+  LocationCategory,
   LocationRecord,
   PendingPersonnel,
   PersonnelEntry,
   Profile,
   Role,
+  SystemCategory,
   SystemRecord,
   EventType,
 } from '../../domain/types';
 import { isOpen } from '../../domain/types';
 import { computeIncidentAnalytics, type AnalyticsFilters, type IncidentAnalytics } from '../../domain/analyticsSummary';
-import { reportedToOpsLabels } from '../../domain/labels';
+import { LOCATION_CATEGORY_ORDER, SYSTEM_CATEGORY_ORDER, reportedToOpsLabels } from '../../domain/labels';
 import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
 import { sortByPriority } from '../../domain/overdue';
@@ -80,12 +82,34 @@ function normalizedReferenceName(name: string): string {
   return name.trim().toLocaleLowerCase('he-IL');
 }
 
+/**
+ * Ordering WITHIN one category: displayOrder, then a deterministic
+ * name/id tie-break. Never compares category -- every call site either
+ * already filtered to one category, or (listSystems/listLocations) applies
+ * categoryListingRank first via compareReferenceRecordsForListing below.
+ */
 function compareReferenceRecords(a: ReferenceRecord, b: ReferenceRecord): number {
   return (
     a.displayOrder - b.displayOrder ||
     normalizedReferenceName(a.name).localeCompare(normalizedReferenceName(b.name), 'he') ||
     a.id.localeCompare(b.id)
   );
+}
+
+/** Fixed category display rank, mirroring the database enum's declaration
+ *  order (system_category/location_category, migration 0041). */
+function categoryRank(order: readonly string[], category: string): number {
+  const index = order.indexOf(category);
+  return index === -1 ? order.length : index;
+}
+
+/** Full listing order: fixed category order first, then compareReferenceRecords
+ *  within that category. Only used by listSystems/listLocations -- every
+ *  other reference-data operation below is explicitly scoped to a single
+ *  category and never needs to rank across categories. */
+function compareReferenceRecordsForListing(order: readonly string[]) {
+  return (a: ReferenceRecord, b: ReferenceRecord): number =>
+    categoryRank(order, a.category) - categoryRank(order, b.category) || compareReferenceRecords(a, b);
 }
 
 function parseOrThrow<S extends ZodTypeAny>(schema: S, input: unknown): z.infer<S> {
@@ -132,6 +156,7 @@ export class LocalDemoRepository implements Repository {
     if (loaded && loaded.seededAt) {
       this.db = loaded;
       this.backfillReferenceDataOrder();
+      this.backfillReferenceDataCategory();
     } else if (options.autoSeed !== false) {
       this.db = buildSeed(this.now());
       this.persist();
@@ -160,31 +185,61 @@ export class LocalDemoRepository implements Repository {
    * Demo databases persisted before reference-data ordering have no
    * displayOrder. Backfill them in place using their former visible order
    * (name, then id). No record is removed, renamed, merged, or reactivated.
+   *
+   * Scoped per category (grouping by each record's current `category`
+   * value, including `undefined` as its own group for data that predates
+   * categories entirely -- backfillReferenceDataCategory runs right after
+   * this and assigns those 'other'): ordering is independent per category,
+   * so this must never renumber across a category boundary. Only actual
+   * drift triggers a change -- an already-correctly-ordered database is
+   * never rewritten just because its schema version marker is stale.
    */
   private backfillReferenceDataOrder(): void {
-    let changed = this.db.referenceDataSchemaVersion !== 1;
+    let changed = false;
     for (const records of [this.db.systems, this.db.locations]) {
-      const allOrdersValid = records.every(
-        (record) => Number.isInteger(record.displayOrder) && record.displayOrder > 0,
-      );
-      const ordered = [...records].sort(
-        allOrdersValid
-          ? compareReferenceRecords
-          : (a, b) =>
-              normalizedReferenceName(a.name).localeCompare(normalizedReferenceName(b.name), 'he') ||
-              a.id.localeCompare(b.id),
-      );
-      if (ordered.some((record, index) => record.displayOrder !== index + 1)) {
-        ordered.forEach((record, index) => {
-          record.displayOrder = index + 1;
-        });
-        changed = true;
+      const categories = new Set(records.map((record) => record.category));
+      for (const category of categories) {
+        const inCategory = records.filter((record) => record.category === category);
+        const allOrdersValid = inCategory.every(
+          (record) => Number.isInteger(record.displayOrder) && record.displayOrder > 0,
+        );
+        const ordered = [...inCategory].sort(
+          allOrdersValid
+            ? compareReferenceRecords
+            : (a, b) =>
+                normalizedReferenceName(a.name).localeCompare(normalizedReferenceName(b.name), 'he') ||
+                a.id.localeCompare(b.id),
+        );
+        if (ordered.some((record, index) => record.displayOrder !== index + 1)) {
+          ordered.forEach((record, index) => {
+            record.displayOrder = index + 1;
+          });
+          changed = true;
+        }
       }
     }
     if (changed) {
       this.db.referenceDataSchemaVersion = 1;
       this.persist();
     }
+  }
+
+  /**
+   * Demo databases persisted before fixed categories existed have no
+   * `category` field. Backfill them in place to 'other' -- exactly the same
+   * data transition migration 0041 applies to pre-existing hosted rows. No
+   * record is removed, renamed, reordered across categories, or reactivated.
+   */
+  private backfillReferenceDataCategory(): void {
+    if (this.db.referenceDataSchemaVersion === 2) return;
+    for (const record of this.db.systems) {
+      if (!record.category) record.category = 'other';
+    }
+    for (const record of this.db.locations) {
+      if (!record.category) record.category = 'other';
+    }
+    this.db.referenceDataSchemaVersion = 2;
+    this.persist();
   }
 
   // --- session & permission helpers ---
@@ -358,11 +413,15 @@ export class LocalDemoRepository implements Repository {
   // --- configuration ---
 
   async listSystems(): Promise<SystemRecord[]> {
-    return [...this.db.systems].sort(compareReferenceRecords).map((record) => ({ ...record }));
+    return [...this.db.systems]
+      .sort(compareReferenceRecordsForListing(SYSTEM_CATEGORY_ORDER))
+      .map((record) => ({ ...record }));
   }
 
   async listLocations(): Promise<LocationRecord[]> {
-    return [...this.db.locations].sort(compareReferenceRecords).map((record) => ({ ...record }));
+    return [...this.db.locations]
+      .sort(compareReferenceRecordsForListing(LOCATION_CATEGORY_ORDER))
+      .map((record) => ({ ...record }));
   }
 
   private requireName(name: string): string {
@@ -396,9 +455,14 @@ export class LocalDemoRepository implements Repository {
     if (direction !== 'up' && direction !== 'down') {
       throw new AppError('VALIDATION', 'כיוון ההזזה אינו תקין.');
     }
-    const ordered = [...records].sort(compareReferenceRecords);
+    const target = records.find((record) => record.id === id);
+    if (!target) throw new AppError('NOT_FOUND', notFoundMessage);
+
+    // Scoped to the target's own category: neighbor lookup and gap
+    // canonicalization never touch another category's records.
+    const sameCategory = records.filter((record) => record.category === target.category);
+    const ordered = [...sameCategory].sort(compareReferenceRecords);
     const recordIndex = ordered.findIndex((record) => record.id === id);
-    if (recordIndex === -1) throw new AppError('NOT_FOUND', notFoundMessage);
 
     // Canonicalize first so legacy equal/gapped order values cannot make a
     // move ambiguous. The secondary name/id ordering above is deterministic.
@@ -426,10 +490,12 @@ export class LocalDemoRepository implements Repository {
 
   /**
    * Batch reorder mirroring the reorder_systems/reorder_locations RPCs
-   * (migration 0035): orderedIds must be exactly the full, duplicate-free
-   * set of existing ids for this entity type, in their new order. Rejects
-   * anything malformed before touching any displayOrder, so a rejected
-   * attempt never leaves a partial reorder behind.
+   * (migration 0041): orderedIds must be exactly the full, duplicate-free
+   * set of ids of ONE category (never spanning more than one -- that is
+   * also what stops this from being used to smuggle a category change), in
+   * their new order. Rejects anything malformed before touching any
+   * displayOrder, so a rejected attempt never leaves a partial reorder
+   * behind, and never touches another category's records.
    */
   private reorderReferenceData<T extends ReferenceRecord>(
     records: T[],
@@ -444,14 +510,16 @@ export class LocalDemoRepository implements Repository {
     if (uniqueIds.size !== orderedIds.length) {
       throw new AppError('VALIDATION', 'רשימת הסידור מכילה מזהים כפולים.');
     }
-    const recordIds = new Set(records.map((record) => record.id));
-    if (uniqueIds.size !== recordIds.size || orderedIds.some((id) => !recordIds.has(id))) {
-      throw new AppError(
-        'VALIDATION',
-        entityType === 'system'
-          ? 'רשימת הסידור אינה תואמת את המערכות / העמדות הקיימות.'
-          : 'רשימת הסידור אינה תואמת את המיקומים הקיימים.',
-      );
+    const mismatchMessage =
+      entityType === 'system'
+        ? 'רשימת הסידור אינה תואמת את המערכות / העמדות הקיימות.'
+        : 'רשימת הסידור אינה תואמת את המיקומים הקיימים.';
+    const category = records.find((record) => record.id === orderedIds[0])?.category;
+    if (!category) throw new AppError('VALIDATION', mismatchMessage);
+    const categoryRecords = records.filter((record) => record.category === category);
+    const categoryIds = new Set(categoryRecords.map((record) => record.id));
+    if (uniqueIds.size !== categoryIds.size || orderedIds.some((id) => !categoryIds.has(id))) {
+      throw new AppError('VALIDATION', mismatchMessage);
     }
 
     orderedIds.forEach((id, index) => {
@@ -464,15 +532,33 @@ export class LocalDemoRepository implements Repository {
     this.persist();
   }
 
-  async createSystem(session: Session, name: string): Promise<SystemRecord> {
+  private requireSystemCategory(category: unknown): SystemCategory {
+    if (typeof category !== 'string' || !SYSTEM_CATEGORY_ORDER.includes(category as SystemCategory)) {
+      throw new AppError('VALIDATION', 'סוג מערכת / עמדה אינו תקין.');
+    }
+    return category as SystemCategory;
+  }
+
+  private requireLocationCategory(category: unknown): LocationCategory {
+    if (typeof category !== 'string' || !LOCATION_CATEGORY_ORDER.includes(category as LocationCategory)) {
+      throw new AppError('VALIDATION', 'סוג מיקום אינו תקין.');
+    }
+    return category as LocationCategory;
+  }
+
+  async createSystem(session: Session, name: string, category: SystemCategory): Promise<SystemRecord> {
     const actor = this.requireCap(session, 'manage_config');
     const validName = this.requireName(name);
+    const validCategory = this.requireSystemCategory(category);
     this.requireAvailableName(this.db.systems, validName, SYSTEM_NAME_CONFLICT_MSG);
     const record: SystemRecord = {
       id: newId(),
       name: validName,
       archived: false,
-      displayOrder: Math.max(0, ...this.db.systems.map((item) => item.displayOrder)) + 1,
+      category: validCategory,
+      displayOrder:
+        Math.max(0, ...this.db.systems.filter((item) => item.category === validCategory).map((item) => item.displayOrder)) +
+        1,
       createdAt: this.now().toISOString(),
     };
     this.db.systems.push(record);
@@ -520,6 +606,33 @@ export class LocalDemoRepository implements Repository {
     this.reorderReferenceData(this.db.systems, orderedIds, actor.id, 'system');
   }
 
+  async setSystemCategory(session: Session, id: string, category: SystemCategory): Promise<void> {
+    const actor = this.requireCap(session, 'manage_config');
+    const record = this.db.systems.find((s) => s.id === id);
+    if (!record) throw new AppError('NOT_FOUND', 'המערכת לא נמצאה.');
+    const validCategory = this.requireSystemCategory(category);
+    if (record.category === validCategory) return;
+    const before = record.category;
+    record.category = validCategory;
+    record.displayOrder =
+      Math.max(0, ...this.db.systems.filter((item) => item.category === validCategory && item.id !== id).map((item) => item.displayOrder)) +
+      1;
+    // Close the gap left in the source category so its remaining records
+    // keep a contiguous, deterministic order -- mirrors set_system_category
+    // (migration 0041). Never touches the destination category.
+    [...this.db.systems]
+      .filter((system) => system.category === before)
+      .sort(compareReferenceRecords)
+      .forEach((system, position) => {
+        system.displayOrder = position + 1;
+      });
+    this.audit(actor.id, 'system_category_changed', 'system', id, {
+      before: JSON.stringify({ category: before }),
+      after: JSON.stringify({ category: record.category }),
+    });
+    this.persist();
+  }
+
   async deleteSystem(session: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
     const actor = this.requireCap(session, 'manage_config');
     const index = this.db.systems.findIndex((system) => system.id === id);
@@ -536,23 +649,32 @@ export class LocalDemoRepository implements Repository {
       return 'archived';
     }
     this.db.systems.splice(index, 1);
-    [...this.db.systems].sort(compareReferenceRecords).forEach((system, position) => {
-      system.displayOrder = position + 1;
-    });
+    [...this.db.systems]
+      .filter((system) => system.category === record.category)
+      .sort(compareReferenceRecords)
+      .forEach((system, position) => {
+        system.displayOrder = position + 1;
+      });
     this.audit(actor.id, 'system_deleted', 'system', id, { before: JSON.stringify(record) });
     this.persist();
     return 'deleted';
   }
 
-  async createLocation(session: Session, name: string): Promise<LocationRecord> {
+  async createLocation(session: Session, name: string, category: LocationCategory): Promise<LocationRecord> {
     const actor = this.requireCap(session, 'manage_config');
     const validName = this.requireName(name);
+    const validCategory = this.requireLocationCategory(category);
     this.requireAvailableName(this.db.locations, validName, LOCATION_NAME_CONFLICT_MSG);
     const record: LocationRecord = {
       id: newId(),
       name: validName,
       archived: false,
-      displayOrder: Math.max(0, ...this.db.locations.map((item) => item.displayOrder)) + 1,
+      category: validCategory,
+      displayOrder:
+        Math.max(
+          0,
+          ...this.db.locations.filter((item) => item.category === validCategory).map((item) => item.displayOrder),
+        ) + 1,
       createdAt: this.now().toISOString(),
     };
     this.db.locations.push(record);
@@ -600,6 +722,37 @@ export class LocalDemoRepository implements Repository {
     this.reorderReferenceData(this.db.locations, orderedIds, actor.id, 'location');
   }
 
+  async setLocationCategory(session: Session, id: string, category: LocationCategory): Promise<void> {
+    const actor = this.requireCap(session, 'manage_config');
+    const record = this.db.locations.find((l) => l.id === id);
+    if (!record) throw new AppError('NOT_FOUND', 'המיקום לא נמצא.');
+    const validCategory = this.requireLocationCategory(category);
+    if (record.category === validCategory) return;
+    const before = record.category;
+    record.category = validCategory;
+    record.displayOrder =
+      Math.max(
+        0,
+        ...this.db.locations
+          .filter((item) => item.category === validCategory && item.id !== id)
+          .map((item) => item.displayOrder),
+      ) + 1;
+    // Close the gap left in the source category -- mirrors
+    // set_location_category (migration 0041). Never touches the
+    // destination category.
+    [...this.db.locations]
+      .filter((location) => location.category === before)
+      .sort(compareReferenceRecords)
+      .forEach((location, position) => {
+        location.displayOrder = position + 1;
+      });
+    this.audit(actor.id, 'location_category_changed', 'location', id, {
+      before: JSON.stringify({ category: before }),
+      after: JSON.stringify({ category: record.category }),
+    });
+    this.persist();
+  }
+
   async deleteLocation(session: Session, id: string): Promise<ReferenceDataDeleteOutcome> {
     const actor = this.requireCap(session, 'manage_config');
     const index = this.db.locations.findIndex((location) => location.id === id);
@@ -616,9 +769,12 @@ export class LocalDemoRepository implements Repository {
       return 'archived';
     }
     this.db.locations.splice(index, 1);
-    [...this.db.locations].sort(compareReferenceRecords).forEach((location, position) => {
-      location.displayOrder = position + 1;
-    });
+    [...this.db.locations]
+      .filter((location) => location.category === record.category)
+      .sort(compareReferenceRecords)
+      .forEach((location, position) => {
+        location.displayOrder = position + 1;
+      });
     this.audit(actor.id, 'location_deleted', 'location', id, { before: JSON.stringify(record) });
     this.persist();
     return 'deleted';

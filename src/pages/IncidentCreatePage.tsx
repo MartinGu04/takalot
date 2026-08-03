@@ -7,6 +7,7 @@ import { useAuth, useSession } from '../auth/AuthContext';
 import { Button, Field, Input, Select, Textarea } from '../components/ui';
 import { ExternalPartyFields } from '../components/ExternalPartyFields';
 import { OwnerField } from '../components/OwnerField';
+import { SystemOptions, LocationOptions } from '../components/ReferenceDataOptions';
 import { NotificationCopyDialog } from '../components/dialogs/NotificationCopyDialog';
 import { severityLabels, reportedToOpsLabels } from '../domain/labels';
 import { buildIncidentOpenedMessage } from '../domain/notificationMessage';
@@ -192,9 +193,7 @@ export default function IncidentCreatePage() {
             {(a) => (
               <Select {...a} {...register('systemId', { required: 'יש לבחור מערכת / עמדה' })}>
                 <option value="">— בחירה —</option>
-                {systems?.filter((s) => !s.archived).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
+                <SystemOptions systems={systems} />
               </Select>
             )}
           </Field>
@@ -202,9 +201,7 @@ export default function IncidentCreatePage() {
             {(a) => (
               <Select {...a} {...register('locationId', { required: 'יש לבחור מיקום' })}>
                 <option value="">— בחירה —</option>
-                {locations?.filter((l) => !l.archived).map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
+                <LocationOptions locations={locations} />
               </Select>
             )}
           </Field>

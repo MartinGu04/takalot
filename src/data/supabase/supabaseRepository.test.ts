@@ -74,7 +74,7 @@ describe('SupabaseRepository RPC error mapping (wrap)', () => {
 
   it('maps controlled reference-data conflicts without leaking the internal prefix', async () => {
     await expect(
-      repoWithRpcError('conflict: כבר קיימת מערכת / עמדה בשם זה').createSystem(session, 'שם'),
+      repoWithRpcError('conflict: כבר קיימת מערכת / עמדה בשם זה').createSystem(session, 'שם', 'other'),
     ).rejects.toMatchObject({
       code: 'CONFLICT',
       message: 'כבר קיימת מערכת / עמדה בשם זה',
@@ -83,7 +83,7 @@ describe('SupabaseRepository RPC error mapping (wrap)', () => {
 
   it('keeps permission, validation, conflict, and not-found mapping on reference-data RPCs', async () => {
     await expect(
-      repoWithRpcError('permission: אין הרשאה לנהל מערכות ומיקומים').createLocation(session, 'שם'),
+      repoWithRpcError('permission: אין הרשאה לנהל מערכות ומיקומים').createLocation(session, 'שם', 'other'),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await expect(
       repoWithRpcError('validation: כיוון ההזזה אינו תקין').moveSystem(session, 'system-1', 'up'),
@@ -94,12 +94,18 @@ describe('SupabaseRepository RPC error mapping (wrap)', () => {
     await expect(
       repoWithRpcError('not_found: המערכת / העמדה לא נמצאה').deleteSystem(session, 'system-1'),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'המערכת / העמדה לא נמצאה' });
+    await expect(
+      repoWithRpcError('validation: סוג מערכת / עמדה אינו תקין').setSystemCategory(session, 'system-1', 'other'),
+    ).rejects.toMatchObject({ code: 'VALIDATION', message: 'סוג מערכת / עמדה אינו תקין' });
+    await expect(
+      repoWithRpcError('validation: סוג מיקום אינו תקין').setLocationCategory(session, 'location-1', 'other'),
+    ).rejects.toMatchObject({ code: 'VALIDATION', message: 'סוג מיקום אינו תקין' });
   });
 
   it('sanitizes unexpected PostgreSQL details only on reference-data RPCs', async () => {
     const raw = 'duplicate key value violates unique constraint systems_name_normalized_unique (SQLSTATE 23505)';
     try {
-      await repoWithRpcError(raw).createSystem(session, 'שם');
+      await repoWithRpcError(raw).createSystem(session, 'שם', 'other');
       throw new Error('expected rejection');
     } catch (error) {
       const appError = error as AppError;
@@ -142,6 +148,7 @@ describe('SupabaseRepository reference-data RPC parity', () => {
               id: 'system-1',
               name: 'מערכת',
               archived: false,
+              category: 'computing',
               display_order: 7,
               created_at: '2026-07-29T10:00:00.000Z',
             },
@@ -156,20 +163,23 @@ describe('SupabaseRepository reference-data RPC parity', () => {
       fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0],
     );
 
-    await expect(repo.createSystem(session, ' מערכת ')).resolves.toMatchObject({
+    await expect(repo.createSystem(session, ' מערכת ', 'computing')).resolves.toMatchObject({
       id: 'system-1',
+      category: 'computing',
       displayOrder: 7,
     });
     await repo.renameSystem(session, 'system-1', 'שם חדש');
     await repo.setSystemArchived(session, 'system-1', true);
     await repo.moveSystem(session, 'system-1', 'down');
+    await repo.setSystemCategory(session, 'system-1', 'infrastructure');
     await expect(repo.deleteSystem(session, 'system-1')).resolves.toBe('deleted');
 
     expect(calls).toEqual([
-      { fn: 'create_system', args: { p_name: ' מערכת ' } },
+      { fn: 'create_system', args: { p_name: ' מערכת ', p_category: 'computing' } },
       { fn: 'rename_system', args: { p_system_id: 'system-1', p_name: 'שם חדש' } },
       { fn: 'set_system_active', args: { p_system_id: 'system-1', p_active: false } },
       { fn: 'move_system', args: { p_system_id: 'system-1', p_direction: 'down' } },
+      { fn: 'set_system_category', args: { p_system_id: 'system-1', p_category: 'infrastructure' } },
       { fn: 'delete_system', args: { p_system_id: 'system-1' } },
     ]);
   });
@@ -185,6 +195,7 @@ describe('SupabaseRepository reference-data RPC parity', () => {
               id: 'location-1',
               name: 'מיקום',
               archived: false,
+              category: 'field_side',
               display_order: 4,
               created_at: '2026-07-29T10:00:00.000Z',
             },
@@ -199,10 +210,11 @@ describe('SupabaseRepository reference-data RPC parity', () => {
       fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0],
     );
 
-    await repo.createLocation(session, 'מיקום');
+    await repo.createLocation(session, 'מיקום', 'field_side');
     await repo.renameLocation(session, 'location-1', 'מיקום חדש');
     await repo.setLocationArchived(session, 'location-1', false);
     await repo.moveLocation(session, 'location-1', 'up');
+    await repo.setLocationCategory(session, 'location-1', 'external_sites');
     await expect(repo.deleteLocation(session, 'location-1')).resolves.toBe('archived');
 
     expect(calls).toEqual([
@@ -210,6 +222,7 @@ describe('SupabaseRepository reference-data RPC parity', () => {
       'rename_location',
       'set_location_active',
       'move_location',
+      'set_location_category',
       'delete_location',
     ]);
   });

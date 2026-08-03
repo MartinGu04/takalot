@@ -36,18 +36,18 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   ];
 
   db.systems = [
-    { id: 'sys-alpha', name: 'מערכת אלפא', archived: false, displayOrder: 1, createdAt: at(-hours(24 * 90)) },
-    { id: 'sys-beta', name: 'מערכת בטא', archived: false, displayOrder: 2, createdAt: at(-hours(24 * 90)) },
-    { id: 'sys-gamma', name: 'מערכת גמא', archived: false, displayOrder: 3, createdAt: at(-hours(24 * 90)) },
-    { id: 'sys-pos-a', name: 'עמדה א׳', archived: false, displayOrder: 4, createdAt: at(-hours(24 * 90)) },
-    { id: 'sys-pos-b', name: 'עמדה ב׳', archived: true, displayOrder: 5, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-alpha', name: 'מערכת אלפא', archived: false, category: 'platforms', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-beta', name: 'מערכת בטא', archived: false, category: 'station_systems', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-gamma', name: 'מערכת גמא', archived: false, category: 'computing', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-pos-a', name: 'עמדה א׳', archived: false, category: 'station_systems', displayOrder: 2, createdAt: at(-hours(24 * 90)) },
+    { id: 'sys-pos-b', name: 'עמדה ב׳', archived: true, category: 'infrastructure', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
   ];
 
   db.locations = [
-    { id: 'loc-1', name: 'אתר 1', archived: false, displayOrder: 1, createdAt: at(-hours(24 * 90)) },
-    { id: 'loc-2', name: 'אתר 2', archived: false, displayOrder: 2, createdAt: at(-hours(24 * 90)) },
-    { id: 'loc-3', name: 'אתר 3', archived: false, displayOrder: 3, createdAt: at(-hours(24 * 90)) },
-    { id: 'loc-control', name: 'חדר בקרה ראשי', archived: false, displayOrder: 4, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-1', name: 'אתר 1', archived: false, category: 'unit_internal', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-2', name: 'אתר 2', archived: false, category: 'field_side', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-3', name: 'אתר 3', archived: false, category: 'external_bases', displayOrder: 1, createdAt: at(-hours(24 * 90)) },
+    { id: 'loc-control', name: 'חדר בקרה ראשי', archived: false, category: 'unit_internal', displayOrder: 2, createdAt: at(-hours(24 * 90)) },
   ];
 
   interface SeedIncident {

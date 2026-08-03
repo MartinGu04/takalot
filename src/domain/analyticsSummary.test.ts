@@ -84,11 +84,11 @@ function makeEvent(overrides: Partial<IncidentEvent> = {}): IncidentEvent {
 }
 
 function makeSystem(id: string, name: string): SystemRecord {
-  return { id, name, archived: false, displayOrder: 1, createdAt: daysAgo(400) };
+  return { id, name, archived: false, category: 'other', displayOrder: 1, createdAt: daysAgo(400) };
 }
 
 function makeLocation(id: string, name: string): LocationRecord {
-  return { id, name, archived: false, displayOrder: 1, createdAt: daysAgo(400) };
+  return { id, name, archived: false, category: 'other', displayOrder: 1, createdAt: daysAgo(400) };
 }
 
 const baseFilters: AnalyticsFilters = { periodDays: 30 };

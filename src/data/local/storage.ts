@@ -21,8 +21,11 @@ export interface StoredNotification extends AppNotification {
 
 export interface DemoDatabase {
   seededAt: string | null;
-  /** Added with reference-data ordering. Older demo databases are backfilled in place. */
-  referenceDataSchemaVersion?: 1;
+  /** 1: reference-data ordering (displayOrder) backfilled. 2: reference-data
+   *  category backfilled. Older demo databases are backfilled in place --
+   *  see LocalDemoRepository's backfillReferenceDataOrder/
+   *  backfillReferenceDataCategory. */
+  referenceDataSchemaVersion?: 1 | 2;
   profiles: Profile[];
   systems: SystemRecord[];
   locations: LocationRecord[];
@@ -43,7 +46,7 @@ export interface DemoDatabase {
 export function emptyDatabase(): DemoDatabase {
   return {
     seededAt: null,
-    referenceDataSchemaVersion: 1,
+    referenceDataSchemaVersion: 2,
     profiles: [],
     systems: [],
     locations: [],

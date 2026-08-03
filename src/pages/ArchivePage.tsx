@@ -5,6 +5,7 @@ import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useA
 import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
 import { EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
+import { SystemOptions } from '../components/ReferenceDataOptions';
 import { ExportMenu } from '../components/ExportMenu';
 import { ArchiveDateFilter } from '../components/ArchiveDateFilter';
 import { useUrlState } from '../lib/useUrlState';
@@ -132,9 +133,7 @@ export default function ArchivePage() {
                 incident must still be findable. Same "(בארכיון)" suffix
                 convention IncidentFilterBar already uses for the same
                 reason, rather than a new visual treatment. */}
-            {systems?.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}{s.archived ? ' (בארכיון)' : ''}</option>
-            ))}
+            <SystemOptions systems={systems} includeArchived />
           </Select>
           <Input
             className="min-w-0"

@@ -5,6 +5,7 @@
 import type { AnalyticsFilters, AnalyticsPeriodDays } from '../../domain/analyticsSummary';
 import type { LocationRecord, Severity, SystemRecord } from '../../domain/types';
 import { severityLabels } from '../../domain/labels';
+import { SystemOptions, LocationOptions } from '../ReferenceDataOptions';
 import { Button, Select } from '../ui';
 
 const PERIODS: AnalyticsPeriodDays[] = [7, 30, 90];
@@ -61,12 +62,7 @@ export function AnalyticsFilterBar({
           onChange={(e) => onChange({ ...value, systemId: e.target.value || undefined })}
         >
           <option value="">כל המערכות</option>
-          {systems?.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-              {s.archived ? ' (בארכיון)' : ''}
-            </option>
-          ))}
+          <SystemOptions systems={systems} includeArchived />
         </Select>
         <Select
           aria-label="סינון לפי מיקום"
@@ -75,12 +71,7 @@ export function AnalyticsFilterBar({
           onChange={(e) => onChange({ ...value, locationId: e.target.value || undefined })}
         >
           <option value="">כל המיקומים</option>
-          {locations?.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-              {l.archived ? ' (בארכיון)' : ''}
-            </option>
-          ))}
+          <LocationOptions locations={locations} includeArchived />
         </Select>
         <Select
           aria-label="סינון לפי חומרה"

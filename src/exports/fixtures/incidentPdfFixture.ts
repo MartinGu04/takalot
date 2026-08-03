@@ -24,11 +24,11 @@ export const fixtureProfiles: Profile[] = [
 ];
 
 export const fixtureSystems: SystemRecord[] = [
-  { id: 'system-net2000', name: 'NET2000', archived: false, displayOrder: 1, createdAt: '2025-01-01T00:00:00.000Z' },
+  { id: 'system-net2000', name: 'NET2000', archived: false, category: 'computing', displayOrder: 1, createdAt: '2025-01-01T00:00:00.000Z' },
 ];
 
 export const fixtureLocations: LocationRecord[] = [
-  { id: 'location-hq', name: 'מטה', archived: false, displayOrder: 1, createdAt: '2025-01-01T00:00:00.000Z' },
+  { id: 'location-hq', name: 'מטה', archived: false, category: 'unit_internal', displayOrder: 1, createdAt: '2025-01-01T00:00:00.000Z' },
 ];
 
 export const fixtureIncident: Incident = {

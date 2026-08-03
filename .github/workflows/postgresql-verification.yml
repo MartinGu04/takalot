@@ -50,6 +50,10 @@ jobs:
         if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
         run: bash supabase/tests/reference_data_migration_atomicity.sh
 
+      - name: Verify reference-data category backfill
+        if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
+        run: bash supabase/tests/reference_data_category_backfill.sh
+
       - name: Verify reference-data concurrency
         if: ${{ !cancelled() && steps.postgresql.outcome == 'success' }}
         run: bash supabase/tests/reference_data_concurrency.sh

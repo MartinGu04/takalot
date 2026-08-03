@@ -1,6 +1,6 @@
 // System administrator screen: systems/positions, locations, audit log.
 // User/personnel management lives on the dedicated כוח אדם page (/personnel).
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -23,10 +23,13 @@ import { CSS } from '@dnd-kit/utilities';
 import { useSession } from '../auth/AuthContext';
 import { useProfiles, useSystems, useLocations, useAuditLogs, useAppMutation, repo } from '../data/hooks';
 import { hasCapability } from '../domain/permissions';
-import { Badge, Button, Dialog, EmptyState, ErrorState, Field, Input, Spinner, useToast } from '../components/ui';
+import { LOCATION_CATEGORY_ORDER, SYSTEM_CATEGORY_ORDER, locationCategoryLabels, systemCategoryLabels } from '../domain/labels';
+import { Badge, Button, Dialog, EmptyState, ErrorState, Field, Input, Select, Spinner, useToast } from '../components/ui';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { IconTrash } from '../components/icons';
-import type { LocationRecord, SystemRecord } from '../domain/types';
+import { ChangeCategoryDialog } from '../components/dialogs/ChangeCategoryDialog';
+import { ActionMenu, type ActionMenuItem } from '../components/ActionMenu';
+import { IconGripVertical } from '../components/icons';
+import type { LocationCategory, LocationRecord, SystemCategory, SystemRecord } from '../domain/types';
 import { formatDateTime } from '../lib/time';
 
 type ConfigKind = 'systems' | 'locations';
@@ -37,25 +40,25 @@ const CONFIG_COPY = {
     singular: 'מערכת / עמדה',
     plural: 'מערכות / עמדות',
     createLabel: 'שם מערכת / עמדה חדשה',
-    empty: 'עדיין לא הוגדרו מערכות / עמדות',
     created: 'המערכת / העמדה נוספה בהצלחה.',
     deleted: 'המערכת / העמדה נמחקה לצמיתות משום שלא הייתה בשימוש.',
     archivedByDelete: 'המערכת / העמדה נמצאת בשימוש ולכן הועברה למצב לא פעיל ולא נמחקה.',
+    searchLabel: 'חיפוש במערכות / עמדות',
   },
   locations: {
     singular: 'מיקום',
     plural: 'מיקומים',
     createLabel: 'שם מיקום חדש',
-    empty: 'עדיין לא הוגדרו מיקומים',
     created: 'המיקום נוסף בהצלחה.',
     deleted: 'המיקום נמחק לצמיתות משום שלא היה בשימוש.',
     archivedByDelete: 'המיקום נמצא בשימוש ולכן הועבר למצב לא פעיל ולא נמחק.',
+    searchLabel: 'חיפוש במיקומים',
   },
 } as const;
 
 const DRAG_SCREEN_READER_INSTRUCTIONS = {
   draggable:
-    'לחצו על מקש הרווח כדי להתחיל בגרירה של הפריט. השתמשו בחצים למעלה ולמטה כדי להעביר את הפריט למיקום אחר ברשימה, לחצו שוב על הרווח כדי לשמור את המיקום החדש, או על מקש Escape כדי לבטל את הגרירה ולחזור למיקום הקודם.',
+    'לחצו על מקש הרווח כדי להתחיל בגרירה של הפריט. השתמשו בחצים למעלה ולמטה כדי להעביר את הפריט למיקום אחר בתוך הקטגוריה, לחצו שוב על הרווח כדי לשמור את המיקום החדש, או על מקש Escape כדי לבטל את הגרירה ולחזור למיקום הקודם. לא ניתן להעביר פריט לקטגוריה אחרת בגרירה -- לשם כך יש להשתמש בפעולת השינוי סוג.',
 };
 
 function usePrefersReducedMotion(): boolean {
@@ -65,6 +68,13 @@ function usePrefersReducedMotion(): boolean {
   }, []);
 }
 
+/**
+ * Compact drag handle: grip-dots icon only, no permanent border/background/
+ * square -- the hit target (size-9, touch-none) stays large enough for
+ * reliable mouse/touch dragging without consuming its own row or widening
+ * the card. Keyboard focus gets the app-wide :focus-visible ring (see
+ * index.css) automatically, with no bespoke styling needed here.
+ */
 function DragHandle({
   recordName,
   disabled,
@@ -84,27 +94,35 @@ function DragHandle({
       disabled={disabled}
       aria-label={`גרירה לשינוי סדר עבור ${recordName}`}
       title="גרירה לשינוי סדר"
-      className="inline-flex min-h-11 w-11 shrink-0 touch-none items-center justify-center self-start rounded-lg border border-hairline-strong bg-surface text-lg leading-none text-text-secondary shadow-soft hover:bg-surface-hover active:cursor-grabbing lg:self-center disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex size-9 shrink-0 touch-none items-center justify-center rounded-lg text-text-muted hover:text-text-primary active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
       style={{ cursor: disabled ? undefined : 'grab' }}
     >
-      <span aria-hidden="true">⠿</span>
+      <IconGripVertical className="size-4.5" />
     </button>
   );
 }
 
+/** Compact single-row card: drag handle (right, RTL) -- identity/status
+ *  (center) -- three-dot actions menu (left, RTL). Replaces the old
+ *  bordered drag-handle square and the always-visible rename/deactivate/
+ *  delete button row entirely. */
 function ConfigRow({
   record,
   canReorder,
+  canManage,
   busy,
   onOpenRename,
+  onOpenChangeCategory,
   onReactivate,
   onDeactivateRequest,
   onDeleteRequest,
 }: {
   record: ConfigRecord;
   canReorder: boolean;
+  canManage: boolean;
   busy: boolean;
   onOpenRename: () => void;
+  onOpenChangeCategory: () => void;
   onReactivate: () => void;
   onDeactivateRequest: () => void;
   onDeleteRequest: () => void;
@@ -115,6 +133,15 @@ function ConfigRow({
   });
   const prefersReducedMotion = usePrefersReducedMotion();
 
+  const items: ActionMenuItem[] = [
+    { label: 'שינוי שם', onSelect: onOpenRename, disabled: busy },
+    { label: 'שינוי סוג', onSelect: onOpenChangeCategory, disabled: busy },
+    record.archived
+      ? { label: 'הפעלה מחדש', onSelect: onReactivate, disabled: busy }
+      : { label: 'השבתה', onSelect: onDeactivateRequest, disabled: busy },
+    { label: 'מחיקה', destructive: true, onSelect: onDeleteRequest, disabled: busy },
+  ];
+
   return (
     <article
       ref={setNodeRef}
@@ -122,78 +149,154 @@ function ConfigRow({
         transform: CSS.Transform.toString(transform),
         transition: prefersReducedMotion ? undefined : transition,
       }}
-      className={`surface p-4 ${isDragging ? 'relative z-10 shadow-lg ring-2 ring-brand-500 dark:ring-brand-400' : ''}`}
+      className={`flex items-center gap-2 px-3 py-2.5 ${
+        isDragging ? 'relative z-10 rounded-lg bg-surface shadow-lg ring-2 ring-brand-500 dark:ring-brand-400' : ''
+      }`}
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        {canReorder && (
-          <DragHandle
-            recordName={record.name}
-            disabled={busy}
-            attributes={attributes}
-            listeners={listeners}
-          />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className={`break-words font-semibold ${record.archived ? 'text-muted' : ''}`}>
-              {record.name}
-            </h2>
-            <Badge color={record.archived ? 'neutral' : 'green'}>
-              {record.archived ? 'לא פעיל' : 'פעיל'}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs text-muted">סדר תצוגה: {record.displayOrder}</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:justify-end">
-          <Button variant="accent" className="px-2.5!" disabled={busy} onClick={onOpenRename}>
-            שינוי שם
-          </Button>
-          {record.archived ? (
-            <Button variant="success" className="px-2!" disabled={busy} onClick={onReactivate}>
-              הפעלה מחדש
-            </Button>
-          ) : (
-            <Button variant="warning" className="px-2!" disabled={busy} onClick={onDeactivateRequest}>
-              השבתה
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            className="size-11 shrink-0 border border-transparent bg-transparent p-0! text-red-700! shadow-none hover:border-red-300! hover:bg-red-50! hover:text-red-800! focus-visible:border-red-300! focus-visible:bg-red-50! focus-visible:outline-red-600 dark:text-red-400! dark:hover:border-red-900! dark:hover:bg-red-950/40! dark:hover:text-red-300! dark:focus-visible:border-red-900! dark:focus-visible:bg-red-950/40! dark:focus-visible:outline-red-400"
-            disabled={busy}
-            aria-label={`מחיקת ${record.name}`}
-            title={`מחיקת ${record.name}`}
-            onClick={onDeleteRequest}
-          >
-            <IconTrash className="size-5" />
-          </Button>
+      {canReorder && (
+        <DragHandle recordName={record.name} disabled={busy} attributes={attributes} listeners={listeners} />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className={`truncate text-sm font-medium ${record.archived ? 'text-muted' : 'text-text-primary'}`}>
+            {record.name}
+          </p>
+          <Badge color={record.archived ? 'neutral' : 'green'}>{record.archived ? 'לא פעיל' : 'פעיל'}</Badge>
         </div>
       </div>
+      {canManage && <ActionMenu label={`פעולות עבור ${record.name}`} items={items} />}
     </article>
+  );
+}
+
+/** One fixed-category section: heading with a live item count, a compact
+ *  empty state when the category currently has no (matching) records, or a
+ *  self-contained sortable list otherwise. Every category gets its own
+ *  DndContext/SortableContext scope -- dragging can reorder only within
+ *  this list and never presents another category as a drop target. */
+function CategorySection({
+  categoryKey,
+  label,
+  records,
+  canReorder,
+  canManage,
+  busy,
+  searching,
+  onDragEnd,
+  onOpenRename,
+  onOpenChangeCategory,
+  onReactivate,
+  onDeactivateRequest,
+  onDeleteRequest,
+}: {
+  categoryKey: string;
+  label: string;
+  records: ConfigRecord[];
+  canReorder: boolean;
+  canManage: boolean;
+  busy: boolean;
+  searching: boolean;
+  onDragEnd: (event: DragEndEvent) => void;
+  onOpenRename: (record: ConfigRecord) => void;
+  onOpenChangeCategory: (record: ConfigRecord) => void;
+  onReactivate: (record: ConfigRecord) => void;
+  onDeactivateRequest: (record: ConfigRecord) => void;
+  onDeleteRequest: (record: ConfigRecord) => void;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const recordName = (id: string) => records.find((record) => record.id === String(id))?.name ?? '';
+  const announcements: Announcements = {
+    onDragStart({ active }) {
+      return `הוחל בגרירת ${recordName(String(active.id))} בתוך ${label}.`;
+    },
+    onDragOver({ active, over }) {
+      if (!over) return `${recordName(String(active.id))} אינו ממוקם מעל פריט אחר כרגע.`;
+      if (over.id === active.id) return `${recordName(String(active.id))} חזר למיקומו המקורי.`;
+      return `${recordName(String(active.id))} ממוקם כעת במקום ${recordName(String(over.id))}.`;
+    },
+    onDragEnd({ active, over }) {
+      if (!over || over.id === active.id) return `הגרירה של ${recordName(String(active.id))} בוטלה.`;
+      return `הסדר עודכן: ${recordName(String(active.id))} הועבר למיקום חדש בתוך ${label}.`;
+    },
+    onDragCancel({ active }) {
+      return `הגרירה של ${recordName(String(active.id))} בוטלה, הסדר הקודם נשמר.`;
+    },
+  };
+  const headingId = `config-category-${categoryKey}`;
+
+  return (
+    <section aria-labelledby={headingId}>
+      <h2 id={headingId} className="px-1 text-xs font-bold tracking-wide text-muted uppercase">
+        {label} ({records.length})
+      </h2>
+      {records.length === 0 ? (
+        <div className="mt-1.5 rounded-lg border border-dashed border-hairline-strong bg-surface/60 px-3 py-3 text-center text-xs text-muted">
+          {searching ? 'אין תוצאות התואמות לחיפוש בקטגוריה זו' : 'אין פריטים בקטגוריה זו'}
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+          accessibility={{ announcements, screenReaderInstructions: DRAG_SCREEN_READER_INSTRUCTIONS }}
+        >
+          <SortableContext items={records.map((record) => record.id)} strategy={verticalListSortingStrategy}>
+            <div className="surface mt-1.5 divide-y divide-hairline" aria-label={`רשימת ${label}`}>
+              {records.map((record) => (
+                <ConfigRow
+                  key={record.id}
+                  record={record}
+                  canReorder={canReorder}
+                  canManage={canManage}
+                  busy={busy}
+                  onOpenRename={() => onOpenRename(record)}
+                  onOpenChangeCategory={() => onOpenChangeCategory(record)}
+                  onReactivate={() => onReactivate(record)}
+                  onDeactivateRequest={() => onDeactivateRequest(record)}
+                  onDeleteRequest={() => onDeleteRequest(record)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+    </section>
   );
 }
 
 function ConfigTab({ kind }: { kind: ConfigKind }) {
   const session = useSession();
-  const canReorder = hasCapability(session.role, 'manage_config');
+  const canManage = hasCapability(session.role, 'manage_config');
   const systemsQ = useSystems();
   const locationsQ = useLocations();
   const query = kind === 'systems' ? systemsQ : locationsQ;
-  const data = query.data;
+  const data = query.data as ConfigRecord[] | undefined;
   const copy = CONFIG_COPY[kind];
+  const categoryOrder: string[] = kind === 'systems' ? SYSTEM_CATEGORY_ORDER : LOCATION_CATEGORY_ORDER;
+  const categoryLabels: Record<string, string> = kind === 'systems' ? systemCategoryLabels : locationCategoryLabels;
   const toast = useToast();
+
+  const [search, setSearch] = useState('');
   const [name, setName] = useState('');
+  const [category, setCategory] = useState(categoryOrder[0]);
   const [renaming, setRenaming] = useState<ConfigRecord | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [changingCategory, setChangingCategory] = useState<ConfigRecord | null>(null);
   const [confirming, setConfirming] = useState<
     { type: 'deactivate' | 'delete'; record: ConfigRecord } | null
   >(null);
   const [orderedRecords, setOrderedRecords] = useState<ConfigRecord[]>([]);
   const previousOrderRef = useRef<ConfigRecord[]>([]);
 
-  const create = useAppMutation(
-    (n: string) => (kind === 'systems' ? repo().createSystem(session, n) : repo().createLocation(session, n)),
+  const create = useAppMutation<{ name: string; category: string }, ConfigRecord>(
+    (vars) =>
+      kind === 'systems'
+        ? repo().createSystem(session, vars.name, vars.category as SystemCategory)
+        : repo().createLocation(session, vars.name, vars.category as LocationCategory),
     {
       successText: copy.created,
       invalidate: [[kind]],
@@ -249,6 +352,17 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
       },
     },
   );
+  const changeCategory = useAppMutation(
+    (vars: { id: string; category: string }) =>
+      kind === 'systems'
+        ? repo().setSystemCategory(session, vars.id, vars.category as SystemCategory)
+        : repo().setLocationCategory(session, vars.id, vars.category as LocationCategory),
+    {
+      successText: 'הסוג עודכן בהצלחה.',
+      invalidate: [[kind]],
+      onSuccess: () => setChangingCategory(null),
+    },
+  );
 
   useEffect(() => {
     if (reorder.isPending) return;
@@ -257,11 +371,16 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
   }, [data, reorder.isPending]);
 
   const busy =
-    create.isPending || rename.isPending || setArchived.isPending || remove.isPending || reorder.isPending;
+    create.isPending ||
+    rename.isPending ||
+    setArchived.isPending ||
+    remove.isPending ||
+    reorder.isPending ||
+    changeCategory.isPending;
 
   const submitCreate = (event: FormEvent) => {
     event.preventDefault();
-    if (name.trim() && !create.isPending) create.mutate(name);
+    if (name.trim() && category && !create.isPending) create.mutate({ name, category });
   };
 
   const openRename = (record: ConfigRecord) => {
@@ -269,67 +388,45 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
     setRenameValue(record.name);
   };
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  const searching = search.trim().length > 0;
+  const visibleRecords = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return orderedRecords;
+    return orderedRecords.filter((record) => record.name.toLowerCase().includes(q));
+  }, [orderedRecords, search]);
+
+  const groups = useMemo(
+    () =>
+      categoryOrder.map((cat) => ({
+        category: cat,
+        records: visibleRecords.filter((record) => record.category === cat),
+      })),
+    [categoryOrder, visibleRecords],
   );
 
-  const recordName = (id: string) => orderedRecords.find((record) => record.id === String(id))?.name ?? '';
-
-  const announcements: Announcements = {
-    onDragStart({ active }) {
-      return `הוחל בגרירת ${recordName(String(active.id))}.`;
-    },
-    onDragOver({ active, over }) {
-      if (!over) return `${recordName(String(active.id))} אינו ממוקם מעל פריט אחר כרגע.`;
-      if (over.id === active.id) return `${recordName(String(active.id))} חזר למיקומו המקורי.`;
-      return `${recordName(String(active.id))} ממוקם כעת במקום ${recordName(String(over.id))}.`;
-    },
-    onDragEnd({ active, over }) {
-      if (!over || over.id === active.id) return `הגרירה של ${recordName(String(active.id))} בוטלה.`;
-      return `הסדר עודכן: ${recordName(String(active.id))} הועבר למיקום חדש.`;
-    },
-    onDragCancel({ active }) {
-      return `הגרירה של ${recordName(String(active.id))} בוטלה, הסדר הקודם נשמר.`;
-    },
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = (categoryRecords: ConfigRecord[]) => (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     if (reorder.isPending) return;
-    const oldIndex = orderedRecords.findIndex((record) => record.id === active.id);
-    const newIndex = orderedRecords.findIndex((record) => record.id === over.id);
+    const oldIndex = categoryRecords.findIndex((record) => record.id === active.id);
+    const newIndex = categoryRecords.findIndex((record) => record.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     previousOrderRef.current = orderedRecords;
-    const next = arrayMove(orderedRecords, oldIndex, newIndex);
+    const reorderedCategory = arrayMove(categoryRecords, oldIndex, newIndex);
+    const reorderedIds = new Set(reorderedCategory.map((record) => record.id));
+    let cursor = 0;
+    const next = orderedRecords.map((record) =>
+      reorderedIds.has(record.id) ? reorderedCategory[cursor++] : record,
+    );
     setOrderedRecords(next);
-    reorder.mutate(next.map((record) => record.id));
-  };
-
-  const rows = (): ReactNode => {
-    const items = orderedRecords;
-    if (items.length === 0) return null;
-    return items.map((record) => (
-      <ConfigRow
-        key={record.id}
-        record={record}
-        canReorder={canReorder}
-        busy={busy}
-        onOpenRename={() => openRename(record)}
-        onReactivate={() => setArchived.mutate({ id: record.id, archived: false })}
-        onDeactivateRequest={() => setConfirming({ type: 'deactivate', record })}
-        onDeleteRequest={() => setConfirming({ type: 'delete', record })}
-      />
-    ));
+    reorder.mutate(reorderedCategory.map((record) => record.id));
   };
 
   return (
     <div>
       <form
         onSubmit={submitCreate}
-        className="surface mb-4 grid grid-cols-1 items-start gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto]"
+        className="surface mb-4 grid grid-cols-1 items-start gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto]"
       >
         <Field label={copy.createLabel} required hint="השם נשמר לאחר הסרת רווחים בתחילתו ובסופו.">
           {(a) => (
@@ -342,6 +439,22 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
             />
           )}
         </Field>
+        <Field label="סוג" required>
+          {(a) => (
+            <Select
+              {...a}
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              disabled={create.isPending}
+            >
+              {categoryOrder.map((cat) => (
+                <option key={cat} value={cat}>
+                  {categoryLabels[cat]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
         <Button
           type="submit"
           className="sm:mt-[1.625rem]"
@@ -351,28 +464,41 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
         </Button>
       </form>
 
+      <div className="mb-4">
+        <Input
+          type="search"
+          aria-label={copy.searchLabel}
+          placeholder={`${copy.searchLabel}…`}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </div>
+
       {query.isLoading ? (
         <Spinner label={`טוען ${copy.plural}…`} />
       ) : query.isError ? (
         <ErrorState message={`שגיאה בטעינת ${copy.plural}.`} onRetry={() => query.refetch()} />
-      ) : (data ?? []).length === 0 ? (
-        <EmptyState title={copy.empty} subtitle="ניתן להוסיף את הפריט הראשון בטופס למעלה." />
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-          accessibility={{ announcements, screenReaderInstructions: DRAG_SCREEN_READER_INSTRUCTIONS }}
-        >
-          <SortableContext
-            items={orderedRecords.map((record) => record.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="flex flex-col gap-3" aria-label={`רשימת ${copy.plural}`}>
-              {rows()}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <div className="flex flex-col gap-5">
+          {groups.map((group) => (
+            <CategorySection
+              key={group.category}
+              categoryKey={group.category}
+              label={categoryLabels[group.category]}
+              records={group.records}
+              canReorder={canManage && !searching}
+              canManage={canManage}
+              busy={busy}
+              searching={searching}
+              onDragEnd={handleDragEnd(group.records)}
+              onOpenRename={openRename}
+              onOpenChangeCategory={setChangingCategory}
+              onReactivate={(record) => setArchived.mutate({ id: record.id, archived: false })}
+              onDeactivateRequest={(record) => setConfirming({ type: 'deactivate', record })}
+              onDeleteRequest={(record) => setConfirming({ type: 'delete', record })}
+            />
+          ))}
+        </div>
       )}
 
       <Dialog open={!!renaming} onClose={() => !rename.isPending && setRenaming(null)} title={`שינוי שם ${copy.singular}`}>
@@ -406,6 +532,19 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
           </div>
         </form>
       </Dialog>
+
+      {changingCategory && (
+        <ChangeCategoryDialog
+          open
+          recordName={changingCategory.name}
+          currentCategory={changingCategory.category}
+          categoryOrder={categoryOrder}
+          categoryLabels={categoryLabels}
+          submitting={changeCategory.isPending}
+          onClose={() => !changeCategory.isPending && setChangingCategory(null)}
+          onSubmit={(nextCategory) => changeCategory.mutate({ id: changingCategory.id, category: nextCategory })}
+        />
+      )}
 
       <ConfirmDialog
         open={confirming?.type === 'deactivate'}
