@@ -1,6 +1,6 @@
 // Central permission matrix. The data layer (local demo backend and Supabase RLS)
 // enforces these rules; the UI only uses them to hide unavailable actions.
-import type { Role, Incident } from './types';
+import type { Role, Incident, Profile } from './types';
 import { isOpen } from './types';
 
 export type Capability =
@@ -200,3 +200,28 @@ export const ELIGIBLE_OWNER_ROLES: Role[] = [
   'shift_supervisor',
   'technician',
 ];
+
+/** Active, role-eligible profiles grouped by role (in ELIGIBLE_OWNER_ROLES
+ *  order) and sorted alphabetically by fullName within each group, using a
+ *  Hebrew-aware comparison -- matching the sort convention already used
+ *  elsewhere in this codebase (e.g. localRepository.ts's own profile/
+ *  reference-name sorts). A role with no eligible members is omitted
+ *  entirely, never an empty group. This is the ONE place that filters/
+ *  groups/sorts owner candidates -- every caller (OwnerField's internal-
+ *  owner picker, and the incidents/archive assignee filters) renders from
+ *  this shared grouping rather than reimplementing the rule. */
+export function groupEligibleOwners(profiles: Profile[] | undefined): Array<{ role: Role; profiles: Profile[] }> {
+  const byRole = new Map<Role, Profile[]>();
+  for (const p of profiles ?? []) {
+    if (!p.active || !ELIGIBLE_OWNER_ROLES.includes(p.role)) continue;
+    const list = byRole.get(p.role);
+    if (list) list.push(p);
+    else byRole.set(p.role, [p]);
+  }
+  return ELIGIBLE_OWNER_ROLES.map((role) => ({ role, profiles: byRole.get(role) ?? [] }))
+    .filter((group) => group.profiles.length > 0)
+    .map((group) => ({
+      role: group.role,
+      profiles: [...group.profiles].sort((a, b) => a.fullName.localeCompare(b.fullName, 'he')),
+    }));
+}

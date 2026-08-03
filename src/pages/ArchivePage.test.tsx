@@ -448,4 +448,61 @@ describe('Archive: compact filter row (dedicated cause/solution search removed, 
     expect(await within(main()).findByText(INC9_TEXT)).toBeInTheDocument();
     expect(new URLSearchParams(window.location.search).has('owner')).toBe(false);
   });
+
+  it('lays the four filters out on a real four-column grid, not a flex row that could force full-width vertical stacking', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    const outcome = within(main()).getByLabelText('סינון לפי תוצאה');
+    const system = within(main()).getByLabelText('סינון לפי מערכת');
+    const owner = within(main()).getByLabelText('סינון לפי גורם מטפל');
+    const date = within(main()).getByRole('button', { name: 'סינון לפי תאריך' });
+    const row = outcome.parentElement as HTMLElement;
+
+    // All four controls share the same row/grid container.
+    expect(row.contains(system)).toBe(true);
+    expect(row.contains(owner)).toBe(true);
+    expect(row.contains(date)).toBe(true);
+    // A real responsive grid -- one column on mobile, two on tablet, four on
+    // desktop -- not a flex-wrap row relying on each control shrinking to
+    // its own content to avoid stacking full-width.
+    expect(row.className).toMatch(/\bgrid\b/);
+    expect(row.className).toMatch(/grid-cols-1/);
+    expect(row.className).toMatch(/sm:grid-cols-2/);
+    expect(row.className).toMatch(/lg:grid-cols-4/);
+    expect(row.className).not.toMatch(/flex-wrap/);
+    // Every control fills its own grid column (the ordinary w-full default)
+    // rather than fighting that with a shrink-to-content override that only
+    // reliably wins by accident.
+    for (const control of [outcome, system, owner, date]) {
+      expect(control.className).toMatch(/\bw-full\b/);
+      expect(control.className).not.toMatch(/\bw-auto\b/);
+    }
+  });
+
+  it('groups the assignee filter into the four eligible-role categories, matching the internal-owner picker', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    const ownerSelect = within(main()).getByLabelText('סינון לפי גורם מטפל');
+    const groupLabels = within(ownerSelect)
+      .getAllByRole('group')
+      .map((g) => g.getAttribute('label'));
+    expect(groupLabels).toEqual(['מנהל מערכת', 'נגד', 'אחמ״ש', 'טכנאי']);
+  });
+
+  it('never offers a viewer-only user as an assignee, even though the profile is active', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-admin'));
+    await goToArchive(user);
+
+    const ownerSelect = within(main()).getByLabelText('סינון לפי גורם מטפל');
+    expect(within(ownerSelect).queryByRole('option', { name: /רוני שגיא/ })).not.toBeInTheDocument();
+    expect(within(ownerSelect).queryByRole('group', { name: 'צפייה בלבד' })).not.toBeInTheDocument();
+  });
 });

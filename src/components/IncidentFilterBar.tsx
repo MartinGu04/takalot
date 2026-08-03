@@ -1,6 +1,6 @@
 import type { Severity, Profile, SystemRecord, LocationRecord } from '../domain/types';
 import { severityLabels } from '../domain/labels';
-import { SystemOptions, LocationOptions } from './ReferenceDataOptions';
+import { SystemOptions, LocationOptions, EligibleOwnerOptions } from './ReferenceDataOptions';
 import { Input, Select, Badge, filterFieldClass, filterControlClass } from './ui';
 import { useDebouncedField } from '../lib/useDebouncedField';
 
@@ -66,11 +66,12 @@ export function IncidentFilterBar({
         onChange={(e) => setSearchDraft(e.target.value)}
         aria-label="חיפוש תקלות"
       />
-      {/* Desktop: one compact row, right-to-left as חומרה -> מערכת/עמדה ->
-          גורם מטפל -> מיקום. Each control shrinks to its own content
-          (filterControlClass) instead of stretching to fill a grid column,
-          and wraps cleanly on narrower screens instead of overflowing. */}
-      <div className="flex flex-wrap gap-2">
+      {/* Desktop: one compact row of four equal columns, right-to-left as
+          חומרה -> מערכת/עמדה -> גורם מטפל -> מיקום. A real grid (not flex +
+          shrink-to-content) so each control reliably fills its own column
+          instead of the browser resolving a `w-full`/`w-auto` conflict on
+          its own -- two columns on tablet, one on mobile. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Select
           aria-label="סינון לפי חומרה"
           className={filterControlClass}
@@ -101,10 +102,8 @@ export function IncidentFilterBar({
           value={value.ownerUserId ?? ''}
           onChange={(e) => onChange({ ...value, ownerUserId: e.target.value || undefined })}
         >
-          <option value="">גורם מטפל…</option>
-          {profiles?.filter((p) => p.active).map((p) => (
-            <option key={p.id} value={p.id}>{p.fullName}</option>
-          ))}
+          <option value="">כל הגורמים המטפלים</option>
+          <EligibleOwnerOptions profiles={profiles} />
         </Select>
         <Select
           aria-label="סינון לפי מיקום"

@@ -105,10 +105,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
  *  edit form and dialog field elsewhere keeps its existing taller,
  *  full-width sizing untouched. */
 export const filterFieldClass = 'min-h-9 px-2 py-1.5';
-/** Same compact sizing, plus shrink-to-content width -- for a dropdown or
- *  trigger button sitting in a filter row, which shouldn't stretch wider
- *  than its own label the way a full-width form field does. */
-export const filterControlClass = `${filterFieldClass} w-auto min-w-0`;
+/** Same compact sizing, for a dropdown or trigger button that sits inside a
+ *  fixed-column filter grid (see IncidentFilterBar/ArchivePage) rather than
+ *  stretching across a whole flex row -- deliberately still `w-full` (the
+ *  `inputBase` default): filling its own grid cell is exactly the desired
+ *  width, and a grid cell is a reliable way to get that instead of trying
+ *  to win a `w-full`/`w-auto` cascade-order conflict on the same element. */
+export const filterControlClass = filterFieldClass;
 
 /**
  * A reliable `<input type="datetime-local">` for manual keyboard editing --

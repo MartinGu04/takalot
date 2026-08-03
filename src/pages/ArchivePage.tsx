@@ -5,7 +5,7 @@ import { useIncidents, useLocations, useProfiles, useSystems, useCanExport, useA
 import { useSession } from '../auth/AuthContext';
 import { IncidentCard } from '../components/incident';
 import { EmptyState, ErrorState, Input, Select, Spinner, useToast, filterFieldClass, filterControlClass } from '../components/ui';
-import { SystemOptions } from '../components/ReferenceDataOptions';
+import { SystemOptions, EligibleOwnerOptions } from '../components/ReferenceDataOptions';
 import { ExportMenu } from '../components/ExportMenu';
 import { ArchiveDateFilter } from '../components/ArchiveDateFilter';
 import { useUrlState } from '../lib/useUrlState';
@@ -105,12 +105,12 @@ export default function ArchivePage() {
           onChange={(e) => setSearchDraft(e.target.value)}
           aria-label="חיפוש בארכיון"
         />
-        {/* Desktop: one compact row, right-to-left as תוצאה -> מערכת ->
-            גורם מטפל -> תאריך. Each control shrinks to its own content
-            (filterControlClass) instead of stretching to fill a grid
-            column, and wraps cleanly on narrower screens instead of
-            overflowing. */}
-        <div className="flex flex-wrap gap-2">
+        {/* Desktop: one compact row of four equal columns, right-to-left as
+            תוצאה -> מערכת -> גורם מטפל -> תאריך. A real grid (not flex +
+            shrink-to-content) so each control reliably fills its own column
+            instead of the browser resolving a `w-full`/`w-auto` conflict on
+            its own -- two columns on tablet, one on mobile. */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Select
             aria-label="סינון לפי תוצאה"
             className={filterControlClass}
@@ -143,9 +143,7 @@ export default function ArchivePage() {
             onChange={(e) => url.set('owner', e.target.value || undefined)}
           >
             <option value="">כל הגורמים המטפלים</option>
-            {profiles?.filter((p) => p.active).map((p) => (
-              <option key={p.id} value={p.id}>{p.fullName}</option>
-            ))}
+            <EligibleOwnerOptions profiles={profiles} />
           </Select>
           <ArchiveDateFilter
             from={createdFrom}

@@ -15,8 +15,9 @@
 // exactly as they did with a flat option list, because they are properties
 // of the native <select> itself, not of how its options are grouped.
 import { groupLocationsByCategory, groupSystemsByCategory } from '../domain/referenceDataCategories';
-import { locationCategoryLabels, systemCategoryLabels } from '../domain/labels';
-import type { LocationRecord, SystemRecord } from '../domain/types';
+import { groupEligibleOwners } from '../domain/permissions';
+import { locationCategoryLabels, systemCategoryLabels, personnelRoleLabels } from '../domain/labels';
+import type { LocationRecord, Profile, SystemRecord } from '../domain/types';
 
 export function SystemOptions({
   systems,
@@ -44,6 +45,26 @@ export function SystemOptions({
           </optgroup>
         ) : null,
       )}
+    </>
+  );
+}
+
+/** Active, role-eligible internal owners grouped by role -- same grouping
+ *  (groupEligibleOwners) and role-order/labels (personnelRoleLabels) as
+ *  OwnerField's own internal-owner picker, reused here so an assignee
+ *  filter never re-derives its own eligibility/grouping rule. A viewer, an
+ *  inactive user, or a role with no eligible members simply never appears. */
+export function EligibleOwnerOptions({ profiles }: { profiles: Profile[] | undefined }) {
+  const groups = groupEligibleOwners(profiles);
+  return (
+    <>
+      {groups.map((group) => (
+        <optgroup key={group.role} label={personnelRoleLabels[group.role]}>
+          {group.profiles.map((p) => (
+            <option key={p.id} value={p.id}>{p.fullName}</option>
+          ))}
+        </optgroup>
+      ))}
     </>
   );
 }
