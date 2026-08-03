@@ -244,6 +244,55 @@ body {
   .incident-card-accent-critical {
     @apply border-s-2 border-s-red-500 bg-red-50/30 dark:border-s-red-500 dark:bg-red-950/10;
   }
+  /* Same treatment, amber/orange hue -- gives high-severity cards a clear,
+     restrained identity of their own instead of reading as a plain/medium
+     card with only a small badge to tell them apart. */
+  .incident-card-accent-high {
+    @apply border-s-2 border-s-orange-500 bg-orange-50/30 dark:border-s-orange-500 dark:bg-orange-950/10;
+  }
+}
+
+/* ---------- Live severity pulse (current-state/home view only) ---------- */
+/* A slow, restrained "alive" cue for open critical/high incidents on the
+   current-state view -- never on the static incidents/archive lists, which
+   only ever get the plain accent classes above. Only the outer glow and the
+   accent border breathe; text, badges, position, scale, and overall card
+   opacity never move, so the card stays fully readable at every point in
+   the cycle. `animation-fill-mode` is deliberately left at its default
+   ('none'): once an iteration finishes (immediately, under reduced motion --
+   see below), the card reverts to its plain static accent styling rather
+   than freezing mid-glow. */
+@layer components {
+  .incident-card-pulse-critical {
+    animation: incident-pulse-critical 3.2s ease-in-out infinite;
+  }
+  .incident-card-pulse-high {
+    animation: incident-pulse-high 3.2s ease-in-out infinite;
+  }
+}
+
+@keyframes incident-pulse-critical {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.22), var(--shadow-soft);
+    border-inline-start-color: var(--color-red-500);
+  }
+  50% {
+    box-shadow: 0 0 10px 1px rgba(239, 68, 68, 0.32), var(--shadow-soft);
+    border-inline-start-color: var(--color-red-400);
+  }
+}
+
+@keyframes incident-pulse-high {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.22), var(--shadow-soft);
+    border-inline-start-color: var(--color-orange-500);
+  }
+  50% {
+    box-shadow: 0 0 10px 1px rgba(249, 115, 22, 0.32), var(--shadow-soft);
+    border-inline-start-color: var(--color-orange-400);
+  }
 }
 
 /* ---------- Motion ---------- */
@@ -272,6 +321,15 @@ body {
   .incident-card:hover,
   .incident-card:focus-visible {
     transform: none;
+  }
+  /* Belt-and-suspenders alongside the blanket animation-duration override
+     above: guarantees the live pulse's outer glow never lingers, leaving
+     only the plain static accent border/tint (identical to the incidents
+     page) when the user has reduced motion enabled. */
+  .incident-card-pulse-critical,
+  .incident-card-pulse-high {
+    animation: none;
+    box-shadow: var(--shadow-soft);
   }
 }
 

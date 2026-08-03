@@ -1,7 +1,7 @@
 // IncidentCard: focused unit tests for the critical-severity visual
 // accent (independent of any specific seeded data).
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { IncidentCard, StatusBadge } from './incident';
 import { statusLabels } from '../domain/labels';
@@ -56,24 +56,73 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
   };
 }
 
-function renderCard(incident: Incident) {
+function renderCard(incident: Incident, live = false) {
+  cleanup();
   render(
     <MemoryRouter>
-      <IncidentCard incident={incident} profiles={[]} systemName="מערכת" locationName="אתר" now={NOW} />
+      <IncidentCard
+        incident={incident}
+        profiles={[]}
+        systemName="מערכת"
+        locationName="אתר"
+        now={NOW}
+        live={live}
+      />
     </MemoryRouter>,
   );
   return screen.getByRole('link').className;
 }
 
-describe('IncidentCard: critical-severity accent', () => {
+describe('IncidentCard: severity accent (static, both contexts)', () => {
   it('a critical incident gets the critical (red) accent', () => {
     const className = renderCard(makeIncident({ severity: 'critical' }));
     expect(className).toMatch(/incident-card-accent-critical/);
   });
 
-  it('a non-critical incident gets no accent class at all', () => {
+  it('a high incident gets the high (amber/orange) accent, distinct from critical', () => {
     const className = renderCard(makeIncident({ severity: 'high' }));
-    expect(className).not.toMatch(/incident-card-accent/);
+    expect(className).toMatch(/incident-card-accent-high/);
+    expect(className).not.toMatch(/incident-card-accent-critical/);
+  });
+
+  it('medium and low incidents get no accent class at all', () => {
+    for (const severity of ['medium', 'low'] as const) {
+      const className = renderCard(makeIncident({ severity }));
+      expect(className).not.toMatch(/incident-card-accent/);
+    }
+  });
+});
+
+describe('IncidentCard: live pulse (current-state/home view only)', () => {
+  it('a critical incident in the live/current-state context gets the animated critical pulse, on top of the static red accent', () => {
+    const className = renderCard(makeIncident({ severity: 'critical' }), true);
+    expect(className).toMatch(/incident-card-accent-critical/);
+    expect(className).toMatch(/incident-card-pulse-critical/);
+  });
+
+  it('a high incident in the live/current-state context gets the animated amber/orange pulse, on top of the static amber/orange accent', () => {
+    const className = renderCard(makeIncident({ severity: 'high' }), true);
+    expect(className).toMatch(/incident-card-accent-high/);
+    expect(className).toMatch(/incident-card-pulse-high/);
+  });
+
+  it('a critical incident on a static page (live=false, e.g. the incidents/archive pages) stays red with no pulse', () => {
+    const className = renderCard(makeIncident({ severity: 'critical' }), false);
+    expect(className).toMatch(/incident-card-accent-critical/);
+    expect(className).not.toMatch(/incident-card-pulse/);
+  });
+
+  it('a high incident on a static page (live=false) stays amber/orange with no pulse', () => {
+    const className = renderCard(makeIncident({ severity: 'high' }), false);
+    expect(className).toMatch(/incident-card-accent-high/);
+    expect(className).not.toMatch(/incident-card-pulse/);
+  });
+
+  it('medium and low incidents never get a pulse class, even in the live/current-state context', () => {
+    for (const severity of ['medium', 'low'] as const) {
+      const className = renderCard(makeIncident({ severity }), true);
+      expect(className).not.toMatch(/incident-card-pulse/);
+    }
   });
 });
 

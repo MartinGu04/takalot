@@ -191,6 +191,7 @@ export default function DashboardPage() {
       systemName={systemName(incident.systemId)}
       locationName={locationName(incident.locationId)}
       now={now}
+      live
     />
   );
 
