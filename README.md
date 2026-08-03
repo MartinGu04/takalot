@@ -1,295 +1,485 @@
-# Nexus — מערכת ניהול ומעקב תקלות
+<p align="center">
+  <img src="public/branding/avaria-logo-full.png" alt="AVARIA" width="360">
+</p>
 
-An internal, Hebrew-first, RTL, mobile-first incident-tracking tool. Its single
-purpose: make it obvious at every moment which incidents are open, who owns
-them, what's been done, what's next, and what the next shift must accept.
+# AVARIA — מערכת ניהול ומעקב תקלות
 
-**This is a prototype/engineering foundation. It is not approved for
-operational, classified, military, or production use.** All demo data is
-fictional. Real deployment requires a separate security and authorization
-review — see [Known limitations](#known-limitations).
+AVARIA is an internal, Hebrew-first, RTL, mobile-first incident-tracking
+application. Its job is to make it obvious at every moment which incidents
+are open, who owns them, what's been done, what's next, and what the next
+shift needs to accept — for a unit operating systems across multiple sites.
 
-## Stack
+**This is a prototype / engineering foundation, not approved for real
+operational, classified, or production use.** The demo mode shown at login
+says so explicitly ("אב־טיפוס להדגמה בלבד"), and every scrap of demo data
+is fictional. See [Current limitations](#current-limitations) before
+considering any real deployment.
 
-React + TypeScript + Vite, Tailwind CSS, React Hook Form + Zod, TanStack
-Query, React Router. Data layer is an abstraction (`src/data/repository.ts`)
-with two implementations:
+## Contents
 
-- **Local demo repository** (`src/data/local`) — runs entirely in the browser
-  (localStorage), but *enforces the same rules a real backend would*:
-  permissions, status transitions, optimistic concurrency, atomic incident
-  numbering, and an append-only audit log. It is not a UI convenience layer.
-- **Supabase repository** (`src/data/supabase`) — the production data layer:
-  real Google authentication (Supabase Auth) and the hosted database, via the
-  SQL schema, RPCs, and RLS in `supabase/migrations/`.
+- [Project overview](#project-overview)
+- [Implemented capabilities](#implemented-capabilities)
+- [Roles and permissions](#roles-and-permissions)
+- [Technology stack](#technology-stack)
+- [Local development](#local-development)
+- [Available scripts](#available-scripts)
+- [Database and migrations](#database-and-migrations)
+- [Testing and validation](#testing-and-validation)
+- [Project structure](#project-structure)
+- [Deployment](#deployment)
+- [Security and data integrity](#security-and-data-integrity)
+- [Current limitations](#current-limitations)
 
-Mode selection (`src/data/appMode.ts`) is strict:
+## Project overview
 
-- Valid `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` → **supabase mode**.
-- `VITE_DEMO_MODE=true` → **demo mode** (explicit development/test fallback;
-  shows the persistent "מצב הדגמה" banner + demo-only role switcher).
-- No configuration in a dev/test build → demo mode (development fallback).
-- No or partial configuration in a **production build** → a hard
-  configuration-error screen. Production **never** silently falls back to
-  demo data. A key that looks like a server secret (`sb_secret_…`, or a JWT
-  with `role=service_role`) is refused outright.
+A shift-based operations team needs one place to answer: what's broken right
+now, who's handling it, is it getting worse, and what does the next shift
+need to know before they take over? AVARIA is that place — a single
+incident record moves through a defined lifecycle (opened → worked →
+closed/cancelled/reopened), every change is captured on an append-only
+timeline, and the current-state dashboard is derived from that live data on
+every visit rather than a static snapshot.
 
-### Authentication and authorization (supabase mode)
+The product is Hebrew-first and right-to-left throughout, including PDF/Excel
+exports, and is built mobile-first so it's usable from a phone during a
+shift, not just from a desk.
 
-Sign-in is Google OAuth via Supabase Auth. **Identity is not authorization**:
-after Google proves who you are, you must also match an **active row in
-`public.profiles`** (readable under RLS only by active members). No profile →
-a clear unauthorized-access screen with logout; profiles are provisioned by
-an administrator only and are never auto-created by a successful login.
-Application roles come from that profiles row — the database is the source
-of truth.
+## Implemented capabilities
 
-## Setup and run
+### Incident lifecycle
+
+- **Creation** — system/location, discovery time, description, severity,
+  operational impact, actions already taken, an internal owner (required),
+  an optional external handling party, and opening-time reporting questions
+  (reported to the operations room, reported to communications, opened in
+  WISDOM). New incidents always start `בטיפול` (in progress).
+- **Updates** — a full update (status/severity/impact/owner, restricted to
+  operational roles) or a technician's restricted content-only update
+  (current status text, actions taken, findings, next steps — no protected
+  fields), each optionally answering the same reporting questions again.
+- **Closure** — requires root cause and resolution; an incomplete-readiness
+  closure keeps the incident open under "כשירות חלקית" with mandatory
+  follow-up notes instead of actually closing it. A genuine close records
+  duration and readiness.
+- **Reopening** — a closed incident can be reopened with a reason and an
+  owner (role-gated — see [Roles and permissions](#roles-and-permissions)).
+- **Cancellation** — a separate terminal outcome from closure (no root
+  cause/resolution expected), reachable from the incident's overflow menu.
+- **Corrections** — any update, status/severity/impact/assignment change can
+  be amended after the fact via a dedicated correction, recorded as its own
+  audit entry rather than silently rewriting history.
+
+### Timeline and history
+
+Every incident renders a single chronological, grouped timeline: creation,
+acknowledgement, every update (with its own reporting answers), status/
+severity/impact/assignment changes (explicit before/after values, never
+color-only), closure, reopening, cancellation, corrections, and any
+handover it was included in. Multiple field changes from one user action are
+grouped as one entry instead of several disconnected rows.
+
+### Current-state dashboard
+
+The home view ("מצב נוכחי") shows a live open/critical-or-high summary,
+a "needs attention now" section (open + critical), the rest of the open
+incidents, and a compact "recently closed" strip (closed only, never
+cancelled) linking to the full archive.
+
+### Incidents and archive
+
+- **Incidents** (`/incidents`) — every open incident, with search, filters
+  (severity, system/station, assignee, location), five sort orders,
+  pagination, and export.
+- **Archive** (`/archive`) — every closed **and** cancelled incident, with an
+  outcome filter to narrow to just one, plus system/assignee/date-range
+  filters and export. General search also matches root cause and resolution
+  text.
+
+### Systems, locations, and personnel
+
+- **Reference data** (`/admin`) — systems/stations and locations, each
+  grouped into fixed product-defined categories. Create, rename, recategorize,
+  drag-reorder within a category, deactivate/reactivate, and delete (an
+  in-use record is archived instead of deleted, automatically). Also hosts a
+  read-only, filterable audit-log view.
+- **Personnel** (`/personnel`) — real user/access management in personnel
+  terms: pending (not-yet-signed-in) entries, active users, and inactive/
+  deleted users, grouped by role. Pre-provision a person by name, email, and
+  role; edit, rename, activate/deactivate, or permanently delete (which also
+  removes their Google sign-in access). A strict role-ceiling model governs
+  who can register or manage whom, and the last active system administrator
+  can never be demoted, deactivated, or deleted.
+
+### Analytics
+
+The reports page (`/reports`, "ניתוח תקלות") shows, for a selected period
+(7/30/90 days) and optional system/location/severity filter: opened/closed
+counts, average close time, currently-open count, average open duration,
+reopened count, an opened-vs-closed trend chart, and the top systems and
+locations by incident count.
+
+### Shift handovers
+
+A handover (`/handovers`) snapshots every currently open incident (plus any
+closed-but-incomplete-follow-up one) at the moment it's created, names an
+incoming supervisor/manager/admin, and carries an optional general note plus
+per-incident notes. The named recipient accepts it once; anyone can append a
+free-text addendum afterward.
+
+### Exports
+
+- Incident list (Incidents or Archive, respecting active filters) — `.xlsx`
+  and UTF-8 CSV-with-BOM, Hebrew headers, Asia/Jerusalem-formatted dates.
+- A single incident — full PDF (creation/closure details, owner history,
+  complete timeline), Hebrew RTL via an embedded Alef font.
+- A single handover — full PDF (participants, timestamps, every included
+  incident's snapshot).
+
+Every export call records an audit entry **before** the file is produced —
+an unauthorized export never generates a file, because the backend check
+runs and throws first.
+
+### What this is *not*
+
+- **No real WhatsApp send.** After creating or genuinely closing an
+  incident, a dialog offers a pre-built Hebrew message with a "copy" button
+  (`navigator.clipboard.writeText`) for pasting into a WhatsApp group by
+  hand. The app has no way to know whether the message was actually pasted
+  or sent anywhere.
+- **No incident-list PDF and no handover XLSX/CSV** — only the four export
+  combinations listed above exist.
+- Department logos shown in the desktop header are purely decorative unit
+  branding, not an interactive feature.
+
+## Roles and permissions
+
+| Role (`Role` value) | Hebrew label |
+|---|---|
+| `system_admin` | מנהל מערכת |
+| `professional_manager` | נגד / מנהל מקצועי |
+| `shift_supervisor` | אחמ״ש |
+| `technician` | טכנאי |
+| `viewer` | צפייה בלבד |
+
+(The personnel page and the internal-owner picker use a shorter label for
+`professional_manager` — "נגד" — everywhere else the fuller label above is
+used.)
+
+| Capability | מנהל מערכת | נגד / מנהל מקצועי | אחמ״ש | טכנאי | צפייה בלבד |
+|---|:---:|:---:|:---:|:---:|:---:|
+| View all incidents | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Create, close, or reassign an incident's owner | ✓ | ✓ | ✓ | ✓ | – |
+| Acknowledge, fully update, change severity, cancel, or complete follow-up on an incident | ✓ | ✓ | ✓ | – | – |
+| Create or accept a shift handover; manage personnel | ✓ | ✓ | ✓ | – | – |
+| Technical update (own assigned incidents only) | – | – | – | ✓ | – |
+| Reopen a closed incident | ✓ | ✓ | only if backend policy allows it | – | – |
+| Export (PDF/XLSX/CSV) | ✓ | ✓ | ✓ | – | only with an explicit backend grant |
+| Manage systems/locations reference data | ✓ | – | – | – | – |
+| View full audit log | ✓ | incidents/handovers/exports only | – | – | – |
+
+A few things this table doesn't show on its own:
+
+- **Registering or managing personnel is a strict hierarchy**: a system
+  administrator may reach any role, including other system administrators;
+  a professional manager or shift supervisor may each only reach roles
+  strictly below their own (never a peer or their own role) — down to
+  technicians and viewers. Technicians and viewers cannot register or
+  manage anyone.
+- **A viewer can never be an incident's internal owner**, even if active.
+- Reopening by a shift supervisor and export access for a viewer are
+  **backend policy decisions**, not frontend toggles, and both default to off.
+
+`src/domain/permissions.ts` is the single source of truth for this table;
+see [Security and data integrity](#security-and-data-integrity) for how
+it's enforced end to end.
+
+## Technology stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | React 18 + TypeScript, Vite, Tailwind CSS v4, React Router, TanStack Query, React Hook Form + Zod |
+| Data layer | An abstraction (`src/data/repository.ts`) with two implementations — a local in-browser demo repository and a real Supabase repository — selected at runtime, never mixed |
+| Backend / database | Supabase (PostgreSQL): SQL schema, `SECURITY DEFINER` RPCs, and Row-Level Security policies in `supabase/migrations/` |
+| Authentication | Google OAuth via Supabase Auth |
+| Exports | `jspdf` (PDF, embedded Hebrew font) and `xlsx` (Excel), plus a hand-written UTF-8 CSV writer |
+| Hosting | Vercel (static SPA build), `vercel.json` rewrites every path to `index.html` |
+| Testing | Vitest + Testing Library (unit/component), Playwright (end-to-end), a GitHub Actions workflow that runs the SQL migration test suite against a disposable PostgreSQL 16 instance |
+
+## Local development
+
+### Prerequisites
+
+- Node.js and npm (no specific version is pinned in this repository — use a
+  current LTS Node release).
+
+### Install
 
 ```bash
 npm install
-VITE_DEMO_MODE=true npm run dev   # http://localhost:5173, explicit demo mode
 ```
 
-(Plain `npm run dev` with no env vars also falls back to demo in
-development.) Pick any demo user on the login screen — role is shown next to
-the name.
+### Run in demo mode (no backend required)
+
+```bash
+VITE_DEMO_MODE=true npm run dev
+```
+
+Open <http://localhost:5173> and pick any fictional demo user on the login
+screen — their role is shown next to their name. Plain `npm run dev` with no
+environment variables also falls back to demo mode in a development build.
+
+### Run against a real Supabase project
+
+Create a gitignored `.env.local` in the repository root:
+
+```bash
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+Then:
+
+```bash
+npm run dev
+```
+
+`src/data/appMode.ts` resolves the mode strictly at startup:
+
+- `VITE_DEMO_MODE=true` → demo mode, unconditionally (wins over any Supabase
+  configuration present).
+- Both Supabase variables set and valid → Supabase mode.
+- Only one of the two Supabase variables set, or the key doesn't look like a
+  publishable key → a configuration-error screen, in every build mode.
+- A key that looks like a service-role secret (`sb_secret_...` prefix, or a
+  JWT payload with `role: "service_role"`) is refused outright — it must
+  never be a client-side variable.
+- Neither variable set → demo mode in development, but a hard
+  configuration-error screen in a **production** build. Production never
+  silently falls back to demo data.
 
 ### Environment variables
 
 | Variable | Required for | Notes |
 |---|---|---|
-| `VITE_SUPABASE_URL` | Supabase mode | Project URL (https). |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase mode | Public (publishable) key only — `sb_publishable_…` or the legacy JWT-shaped public key. **Never** put a service-role key, database password, or OAuth client secret in client env vars. |
-| `VITE_DEMO_MODE` | Demo fallback | `true` explicitly enables the local demo repository (development/tests only — the e2e suite sets it). |
+| `VITE_SUPABASE_URL` | Supabase mode | Project URL, must be `https:`. |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase mode | Public (publishable) key only. **Never** put a service-role key, database password, or OAuth client secret in a `VITE_*` variable — it ships to every browser. |
+| `VITE_DEMO_MODE` | Demo mode | Must be exactly `true` to explicitly enable the local demo repository. The Playwright config sets this for e2e runs. |
 
-Create a gitignored `.env.local` with the two Supabase variables to run
-against the hosted project.
+No `.env.example` file exists in the repository yet — the two Supabase
+variables above are the complete set needed for `.env.local`.
 
-### First administrator (one-time bootstrap, supabase mode)
+### First administrator (one-time, Supabase mode only)
 
-A fresh database has zero profiles, so nobody can create or claim pending
-entries yet. The project owner performs exactly **one** manual setup
-action, in the Supabase SQL editor, before the first login (server-side
-only — never in frontend code or a `VITE_*` variable, and no auth UUID is
-ever involved):
+A fresh database has zero profiles, so nobody can create or claim anything
+yet. The project owner performs exactly **one** manual, server-side action
+in the Supabase SQL editor before the first login:
 
 ```sql
 insert into public.bootstrap_admin_config (email)
 values ('owner.account@gmail.com');
 ```
 
-Then the owner signs in once with Google, normally. The backend verifies
+The owner then signs in once with Google, normally. The backend verifies
 the confirmed Google identity server-side against that address and creates
-the single first `system_admin` profile — at most once, ever (race-safe;
-permanently closed afterwards). Knowing the email grants nothing: the
-caller must *be* the verified Google account behind it, and the configured
-address is unreadable by clients. Every subsequent user is provisioned
-through the pending-personnel flow below.
+the single first `system_admin` profile — at most once, ever. Knowing the
+email grants nothing on its own: the caller must *be* the verified Google
+account behind it.
 
-### Provisioning a new authorized user (supabase mode)
+### Provisioning every other user (Supabase mode only)
 
-1. An authorized creator (shift supervisor, NCO, or system administrator)
-   registers the person as a **pending personnel entry** — full name, Google
-   email, and intended role — *before* they ever sign in. Role ceilings are
-   enforced in the database: a supervisor may register technicians and
-   supervisors; an NCO additionally NCOs; only a system administrator may
-   register any role. Technicians cannot register anyone.
+1. An authorized creator (see the role-ceiling rules above) registers the
+   person as a **pending personnel entry** — full name, Google email, and
+   intended role — before they ever sign in.
 2. The person signs in once with Google. On that first authenticated
-   session the backend **automatically and atomically claims** the matching
-   entry: it derives the identity from `auth.uid()`, reads the *verified*
-   email server-side from `auth.users` (client input plays no part),
-   creates the `public.profiles` row with the preassigned role, and marks
-   the entry claimed. No invitation link, no manual UUID handling, no
-   dashboard step.
+   session, the backend automatically and atomically claims the matching
+   entry using the *verified* email from `auth.users` (never client input),
+   creates their `profiles` row with the preassigned role, and marks the
+   entry claimed. No invitation link, no manual ID handling.
 3. No valid matching entry (none, cancelled, expired, already claimed, or a
-   different Google account) → the user stays on the unauthorized-access
+   different Google account) → the person stays on an unauthorized-access
    screen. Nothing is ever auto-created from a Google identity alone.
 
-## Database migrations (Supabase)
+## Available scripts
+
+| Script | What it does |
+|---|---|
+| `npm run dev` | Start the Vite dev server (default `http://localhost:5173`). |
+| `npm run build` | Type-check (`tsc -b`) then produce a production build (`vite build`). |
+| `npm run preview` | Serve the last production build locally. |
+| `npm run typecheck` | Type-check only (`tsc -b`), no build output. |
+| `npm test` | Run the Vitest unit/component suite once. |
+| `npm run test:watch` | Run Vitest in watch mode. |
+| `npm run test:e2e` | Run the Playwright end-to-end suite (starts its own dev server in demo mode). |
+
+There is no `lint` or `format` script — the repository has no ESLint or
+Prettier configuration.
+
+## Database and migrations
 
 ```
-supabase/migrations/
-  0001_schema.sql      tables, enums, indexes, immutability triggers
-  0002_functions.sql   SECURITY DEFINER RPCs: atomic numbering, transition
-                       validation, closure/reopen/handover logic, audit writes
-  0003_rls.sql         RLS policies for every exposed table
+supabase/
+  migrations/   sequential, numbered SQL migrations (0001_schema.sql, 0002_functions.sql, ...)
+  functions/    Supabase Edge Functions
+  tests/        pgTAP-style SQL test suite exercised by CI
 ```
 
-Apply with the Supabase CLI (`supabase db push`) or paste into the SQL editor
-in order. All lifecycle mutations (create/update/close/reopen/assign/handover)
-go through the RPCs in `0002_functions.sql` — the client never writes
-incident rows directly, so authorization lives in the database, not the UI.
+Migrations are strictly sequential and additive — never edit an already-
+applied migration; add a new one. The foundational three set the pattern
+every later migration follows:
 
-## Server-side operations (Supabase Edge Functions)
+- `0001_schema.sql` — tables, enums, indexes, and immutability triggers.
+- `0002_functions.sql` — the `SECURITY DEFINER` RPCs that own every write:
+  atomic incident numbering, transition validation, closure/reopen/handover
+  logic, audit writes.
+- `0003_rls.sql` — Row-Level Security policies for every exposed table.
 
-`supabase/functions/delete-user/` is the one place the service-role key is
-used — it never reaches the browser or any client bundle. Deleting a person
-is two separate steps, both required, in this order:
+Every migration since keeps to that shape: a schema change ships alongside
+the RPC/RLS changes it needs, in the same file, so a table is never exposed
+without its policies. The migration history as a whole reflects a few
+recurring themes worth knowing about: hardening personnel/access rules
+(role ceilings, tombstoned deletion, owner eligibility), expanding the
+incident lifecycle (new statuses, reporting fields, corrections), and
+adding reference-data management (systems/locations categorization) and
+analytics on top of the same foundation.
 
-1. **`admin_delete_user(p_user_id uuid)`** (migration `0013`) — a normal
-   `SECURITY DEFINER` RPC, authorized exactly like `admin_set_user_role`/
-   `admin_set_user_active`: role-ceiling checked, self-deletion and the last
-   active `system_admin` blocked, and a target that still owns an open
-   incident is rejected (reassign first via the existing `assign_incident`
-   RPC — there is no separate reassignment mechanism). On success it
-   tombstones the profile (`deleted_at`/`deleted_by`, deactivated) and
-   writes an audit entry. It does **not** delete the Auth account — it
-   can only prove the profile was tombstoned, so its audit action is
-   `user_tombstoned`, not `user_deleted`.
-2. **The Edge Function** calls that RPC using a client scoped to the
-   *caller's own JWT* — every check above runs as the real caller, not as
-   the function — and only if it succeeds, uses a second, separate
-   service-role client to delete the Supabase Auth account.
+**Local development** does not require a live database at all — demo mode
+runs entirely in the browser against an in-memory/localStorage repository
+that independently re-implements the same permission and lifecycle rules.
 
-Both steps are idempotent and safe to retry as a whole (an already-absent
-Auth account is treated as success, not failure), which also makes two
-authorized delete requests racing the same target safe.
+**Applying migrations to a hosted Supabase project** is a separate,
+deliberate operational step, not something this repository or its build
+runs automatically: apply them in order with the Supabase CLI
+(`supabase db push`) or by pasting each file into the SQL editor in
+sequence. All lifecycle mutations go through the RPCs in the migrations —
+the application code never writes incident rows directly.
 
-Deploying it (`supabase functions deploy delete-user`) is a separate,
-explicit operational step — not run as part of any code change here. No
-manual secrets are needed: the platform injects `SUPABASE_URL` and the
-current API-key variables automatically into every Edge Function's
-environment. The function prefers the **current** key variables —
-`SUPABASE_PUBLISHABLE_KEYS` and `SUPABASE_SECRET_KEYS` (JSON dictionaries;
-it reads the `"default"` entry of each) — and falls back to the **legacy**
-`SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` single-value variables
-only if the current variable, or its `"default"` entry, is absent. This
-keeps it working across both older and current Supabase projects without
-any manual configuration either way.
+### Server-side operations (Edge Functions)
 
-The platform's default JWT verification stays enabled for this function
-(no `verify_jwt = false`) — it is always called with an authenticated
-user's own JWT in the `Authorization` header, never anonymously.
+`supabase/functions/delete-user/` is the one place a service-role key is
+used, and it never reaches the browser. Deleting a person is two required
+steps, in order: (1) `admin_delete_user`, a normal RPC authorized exactly
+like any other action (role-ceiling checked; blocks self-deletion, deleting
+the last active system administrator, or deleting someone who still owns an
+open incident) — it tombstones the profile and writes an audit entry, but
+does not touch the Auth account; (2) only if that succeeds, the Edge
+Function uses a separate service-role client to delete the actual Supabase
+Auth account. Both steps are idempotent and safe to retry. Deploying the
+function (`supabase functions deploy delete-user`) is a separate explicit
+step from any code change.
 
-## Demo mode
-
-Fictional users covering every role (see `src/data/local/seed.ts`,
-`DEMO_USERS`), and fictional incidents covering: a critical overdue incident,
-a high-severity incident in progress, one waiting on an external party, one
-in monitoring, one closed with full readiness, one closed with partial
-readiness (follow-up required), one reopened incident, one pending handover,
-one accepted handover. No real systems, locations, incidents, or personnel
-are referenced anywhere.
-
-The role switcher in the top bar (labeled "החלפת תפקיד (הדגמה)") is
-demo-only, styled distinctly (orange), and is naturally excluded from any
-real deployment since it depends on `isDemoMode()` being true.
-
-## Role matrix
-
-| Capability | מנהל מערכת | נגד / מנהל מקצועי | אחמ"ש | טכנאי | צפייה בלבד |
-|---|:---:|:---:|:---:|:---:|:---:|
-| View all incidents | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Create / assign / close incidents | ✓ | ✓ | ✓ | – | – |
-| Technical update (own assigned incidents only) | ✓* | ✓* | ✓* | ✓ | – |
-| Change severity / operational impact | ✓ | ✓ | ✓ | – | – |
-| Reopen a closed incident | ✓ | ✓ | only if backend policy `allow_supervisor_reopen` is set | – | – |
-| Create / accept handover | ✓ | ✓ | ✓ | – | – |
-| Export (PDF/XLSX/CSV) | ✓ | ✓ | ✓ | – | only with an explicit backend grant |
-| Manage users / systems / locations | ✓ | – | – | – | – |
-| View full audit log | ✓ | incidents/handovers/exports only | – | – | – |
-
-\* these roles also have full update rights; the technician-only "content
-only" restriction doesn't apply to them.
-
-Enforcement is **backend-first**: `src/domain/permissions.ts` is the single
-source of truth, mirrored by the local repository's runtime checks and by
-the Supabase RLS policies / RPC checks in `0002_functions.sql` +
-`0003_rls.sql`. The UI hides unavailable actions, but hiding a button is not
-how authorization is enforced — every capability above is independently
-checked in `LocalDemoRepository` and in the corresponding SQL function.
-
-## Tests
+## Testing and validation
 
 ```bash
-npm test          # Vitest: unit + component tests
-npm run test:e2e  # Playwright: critical end-to-end flows (starts the dev server)
+npm run typecheck   # tsc -b
+npm test            # Vitest: unit + component tests
+npm run test:e2e    # Playwright: end-to-end flows (starts its own dev server)
+npm run build       # type-check + production build
 ```
 
-### What's covered
+- **Vitest** (`src/**/*.test.{ts,tsx}`) covers domain logic (permissions,
+  status transitions, overdue/priority calculation, dashboard summaries,
+  notification-message building), the data layer (both repository
+  implementations, including optimistic concurrency and atomic incident
+  numbering), export generation (PDF byte signatures, CSV/XLSX encoding and
+  exact Hebrew file names), and component/page behavior rendered through
+  the real app shell with a real (local demo) repository behind it.
+- **Playwright** (`e2e/*.spec.ts`) exercises full user journeys end-to-end
+  against a real running dev server in demo mode: incident lifecycle by
+  role, handovers, reopening, exports (verified by reading the downloaded
+  file's actual bytes, not just its filename), personnel management,
+  reference-data drag-reorder, analytics, mobile/RTL layout, and
+  authorization/routing.
+- **`.github/workflows/postgresql-verification.yml`** runs on any pull
+  request touching `supabase/migrations/` or `supabase/tests/`: it spins up
+  a disposable PostgreSQL 16 instance and runs the SQL test suite plus a set
+  of migration-atomicity/backfill/concurrency verification scripts — a
+  third, independent layer of validation for the database itself.
 
-**Vitest (71 tests, `npm test`)**
-- Incident-number atomicity under concurrent creation + yearly reset (Asia/Jerusalem)
-- Full role/permission matrix
-- Status-transition validity (including "must use dedicated flow" for close/reopen)
-- Technician update restrictions (assigned-only, no protected fields)
-- Closure requirements (root cause + resolution mandatory, follow-up required
-  when readiness isn't full)
-- Reopening requirements (reason, owner, next-update deadline; supervisor
-  gated by backend policy)
-- Overdue calculation and dashboard priority sort
-- Optimistic concurrency (stale version is rejected)
-- Handover creation (correct incident snapshot) and acceptance (only the
-  named recipient, only once)
-- Filter behavior (severity/status/overdue/search)
-- Export permission enforcement (backend-checked, not just hidden buttons)
-- CSV Hebrew/UTF-8 BOM encoding, escaping, mixed-language content, zero-row export
-- PDF generation (valid `%PDF-` bytes, Hebrew/mixed-language text, pagination)
-- Exact Hebrew export file names (`תקלה-2026-001.pdf`, `תקלות-...-עד-...xlsx`)
-- RTL document attributes + mobile bottom-nav destination count
-- Unauthorized route access (direct URL navigation is blocked)
+There is no lint or format script in this repository (see
+[Available scripts](#available-scripts)).
 
-**Playwright (8 flows, `npm run test:e2e`)**
-1. Shift supervisor creates an incident, assigns a technician, adds an
-   update, and closes it
-2. Technician adds a permitted technical update to their assigned incident
-   and has no close/assign actions available
-3. Supervisor creates a handover; a different supervisor accepts it
-4. Professional manager reopens a closed incident
-5. Authorized user filters the archive and exports XLSX/CSV (verified by
-   reading the downloaded file's real bytes: PK zip signature / UTF-8 BOM)
-6. Authorized user exports a complete incident PDF (verified via `%PDF-` byte
-   signature)
-7. Viewer is blocked from mutation routes and sees no mutating buttons
-8. Mobile RTL layout: `dir="rtl"`, no horizontal overflow, compact bottom nav
+## Project structure
 
-All 79 tests were **actually executed** in this environment; results above
-reflect the real, current run — not a static claim.
+```
+src/
+  pages/         Routed screens (Dashboard, Incidents, Archive, Incident
+                 detail/create, Handovers, Personnel, Admin, Reports, Login)
+  components/    Shared UI: brand/layout chrome, the incident card/badges,
+                 the shared Timeline, filter bars, plus analytics/ and
+                 dialogs/ subfolders for the reporting widgets and modal
+                 actions
+  domain/        Pure business logic and types — roles/permissions, status
+                 transitions, zod schemas, labels, dashboard/analytics
+                 summaries — independent of React or any data source
+  data/          The repository abstraction (repository.ts, hooks.ts) plus
+                 the two implementations: data/local (in-browser demo) and
+                 data/supabase (real client + RPC calls)
+  auth/          Authentication context/provider (Supabase and demo)
+  exports/       PDF/XLSX/CSV generation, RTL bidi text handling, file
+                 naming
+  lib/           Small framework-agnostic utilities (time formatting,
+                 debounced fields, URL-persisted filter state, ...)
+  test/          Vitest setup and test helpers
 
-### A note on export file names in this sandbox
+supabase/        SQL migrations, Edge Functions, and the SQL test suite
+e2e/             Playwright end-to-end specs
+public/          Static assets: AVARIA branding, favicons, embedded fonts
+.github/         CI workflow for the SQL migration test suite
+```
 
-Headless Chromium in this environment cannot report non-Latin `download`
-attribute values through Playwright's `suggestedFilename()` API — confirmed
-independent of this app (a bare `א.csv` blob download is reported back as the
-literal string `"download"`, extension included, even without our app code
-in the picture). The e2e export tests therefore verify the downloaded file's
-actual bytes; the exact required Hebrew file names
-(`תקלה-2026-001.pdf`, `תקלות-2026-07-01-עד-2026-07-31.xlsx`) are verified
-directly and deterministically in `src/exports/filenames.test.ts`.
+## Deployment
 
-## Export behavior
+`vercel.json` configures the app as a single-page application: every path
+rewrites to `index.html`, since routing is handled entirely client-side by
+React Router. Beyond that one rewrite rule, this repository has no Vercel
+project configuration — build/branch/environment wiring lives in the
+hosting platform's own project settings, not in this repository.
 
-- **Single incident PDF** — app name, generation time, full creation/closure
-  details, owner history, complete timeline, exported-by. Hebrew RTL via
-  jsPDF's native `setR2L`/`isInputRtl` support with the embedded, permissively
-  licensed Alef font (SIL OFL, see `public/fonts/OFL-Alef.txt`).
-- **Shift handover PDF** — creator/recipient, timestamps, general note, every
-  included incident's snapshot, pending/accepted state.
-- **Filtered incidents export** — `.xlsx` and UTF-8 CSV-with-BOM, respecting
-  active filters, Hebrew headers, Asia/Jerusalem-formatted dates, only the
-  fields the spec lists (no incident description — it isn't in that list).
-- Every export call records an audit entry (user, time, export type, active
-  filters) **before** the file is generated — an unauthorized export never
-  produces a file, because the backend check runs first and throws.
+A production build enforces its own safety net regardless of how or where
+it's built: see [Run against a real Supabase project](#run-against-a-real-supabase-project)
+for the exact configuration rules. Applying database migrations to a
+hosted Supabase project (see [Database and migrations](#database-and-migrations))
+is always a separate, manual step from any frontend deployment.
 
-## Known limitations
+## Security and data integrity
 
-- Not security-reviewed or authorized for real operational/classified use.
-  This is stated explicitly in the login screen and here.
-- Supabase repository is implemented and migration-complete but has not been
-  run against a live Supabase project (no credentials were available in this
-  environment) — treat it as ready-to-connect, not battle-tested.
-- Technician visibility is simplified to "all technicians see all incidents,
-  but may only mutate ones assigned to them" rather than a finer per-department
-  visibility model; the spec allows either interpretation ("assigned to them
-  and other incidents explicitly visible to the department").
-- `npm audit` reports vulnerabilities in transitive build-tooling
-  dependencies (Vite/esbuild toolchain); none are reachable at runtime in the
-  shipped app, but a real deployment should re-audit before release.
-- Large PDF/XLSX libraries are not yet code-split beyond route-level lazy
-  loading; the production bundle has a few chunks over 500kB (noted by the
-  Vite build, not a functional defect).
-- Non-ASCII (Hebrew) `download` attribute filenames cannot be introspected by
-  Playwright in this specific sandboxed headless Chromium — see the testing
-  section above. This affects test *observability* only, not the app.
+- **Identity is not authorization.** Signing in with Google only proves who
+  someone is; they also need an active row in `public.profiles`, which only
+  an authorized user can create (via the pending-personnel or bootstrap
+  flow above) — nothing is ever auto-provisioned from a successful login
+  alone.
+- **The client never writes incident data directly.** Every lifecycle
+  mutation (create/update/close/reopen/cancel/assign/handover) goes through
+  a `SECURITY DEFINER` RPC in `supabase/migrations/`, and Row-Level Security
+  policies cover every exposed table — authorization lives in the database,
+  not the UI.
+- **One shared source of truth for permissions.** `src/domain/permissions.ts`
+  defines the capability matrix once; the local demo repository and the
+  Supabase RPCs/RLS each independently enforce the same rules rather than
+  trusting the frontend to hide the right buttons.
+- **The service-role key is isolated to one Edge Function**
+  (`supabase/functions/delete-user`) and never reaches the browser or any
+  client bundle; every other operation uses only the public, publishable
+  key.
+- A publishable key that looks like a server secret is rejected outright by
+  `src/data/appMode.ts` before the app will even start.
+
+This section documents verified principles, not a security audit — see
+[Current limitations](#current-limitations).
+
+## Current limitations
+
+- **Not security-reviewed or authorized for real operational, classified,
+  or production use.** Stated explicitly on the login screen in demo mode
+  and here.
+- Technician incident visibility is "every technician sees every incident,
+  but may only add technical updates to ones assigned to them" — a simpler
+  model than a per-department visibility scheme.
+- Large PDF/XLSX export libraries aren't code-split beyond route-level lazy
+  loading, so the production bundle includes a few large JavaScript chunks
+  — a build-size concern, not a functional defect.
+- Dependency vulnerabilities should be checked with `npm audit` before any
+  real deployment rather than assumed current from this document.
+- There is no `.env.example`, `LICENSE`, or `CONTRIBUTING.md` in this
+  repository yet (see [Available scripts](#available-scripts) for the
+  missing lint/format tooling).
