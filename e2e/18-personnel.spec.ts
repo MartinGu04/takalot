@@ -89,7 +89,9 @@ test.describe('desktop', () => {
 
     // Choosing עריכה from the menu reveals the role select and deactivate button.
     await rowActions.click();
-    await row.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
+    // The menu is portaled to the document body (viewport-clamped, like every
+    // other floating panel in the app) rather than nested under the row.
+    await page.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
     await expect(row.getByRole('combobox')).toBeVisible();
     await expect(row.getByRole('button', { name: 'השבתה' })).toBeVisible();
   });
@@ -101,7 +103,7 @@ test.describe('desktop', () => {
 
     const row = page.locator('[data-personnel-row]', { hasText: 'עומר פרץ' });
     await row.getByRole('button', { name: /^פעולות עבור / }).click();
-    await row.getByRole('menu').getByRole('menuitem', { name: 'שינוי שם' }).click();
+    await page.getByRole('menu').getByRole('menuitem', { name: 'שינוי שם' }).click();
 
     const dialog = page.getByRole('dialog', { name: 'שינוי שם' });
     await expect(dialog).toBeVisible();
@@ -173,7 +175,7 @@ test.describe('desktop', () => {
     await expect(ownRow.getByText('אתה')).toBeVisible();
     const trigger = ownRow.getByRole('button', { name: /^פעולות עבור / });
     await trigger.click();
-    const menu = ownRow.getByRole('menu');
+    const menu = page.getByRole('menu');
     await expect(menu.getByRole('menuitem')).toHaveCount(1);
     await menu.getByRole('menuitem', { name: 'שינוי שם' }).click();
 
@@ -274,7 +276,7 @@ test.describe('mobile', () => {
 
     const row = page.locator('[data-personnel-row]', { hasText: 'לעריכה נייד' });
     await row.getByRole('button', { name: /^פעולות עבור / }).click();
-    await row.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
+    await page.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
     dialog = page.getByRole('dialog', { name: 'עריכת רישום ממתין' });
     const nameField = dialog.getByLabel('שם מלא', { exact: false });
     await nameField.fill('שם עודכן נייד');
@@ -283,7 +285,7 @@ test.describe('mobile', () => {
 
     const updatedRow = page.locator('[data-personnel-row]', { hasText: 'שם עודכן נייד' });
     await updatedRow.getByRole('button', { name: /^פעולות עבור / }).click();
-    await updatedRow.getByRole('menu').getByRole('menuitem', { name: 'ביטול' }).click();
+    await page.getByRole('menu').getByRole('menuitem', { name: 'ביטול' }).click();
     const confirm = page.getByRole('dialog', { name: 'ביטול רישום ממתין' });
     await expect(confirm).toBeVisible();
     await confirm.getByRole('button', { name: 'ביטול הרישום' }).click();
@@ -303,7 +305,7 @@ test.describe('mobile', () => {
 
     const row = page.locator('[data-personnel-row]', { hasText: 'לשינוי שם נייד' });
     await row.getByRole('button', { name: /^פעולות עבור / }).click();
-    await row.getByRole('menu').getByRole('menuitem', { name: 'שינוי שם' }).click();
+    await page.getByRole('menu').getByRole('menuitem', { name: 'שינוי שם' }).click();
 
     dialog = page.getByRole('dialog', { name: 'שינוי שם' });
     await expect(dialog).toBeVisible();

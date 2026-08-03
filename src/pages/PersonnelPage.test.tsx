@@ -55,14 +55,17 @@ function menuTriggerIn(row: HTMLElement): HTMLElement | null {
   return within(row).queryByRole('button', { name: /^פעולות עבור / });
 }
 
-/** Opens a row's overflow menu and returns the menu element. */
+/** Opens a row's overflow menu and returns the menu element. The menu is
+ *  portaled to document.body (viewport-clamped, like every other floating
+ *  panel in the app) rather than nested under the row, so it's found by its
+ *  accessible name instead of being scoped into the row's DOM subtree. */
 async function openRowMenu(
   user: ReturnType<typeof userEvent.setup>,
   fullName: string,
 ): Promise<HTMLElement> {
   const trigger = menuTriggerIn(rowFor(fullName)) as HTMLElement;
   await user.click(trigger);
-  return within(rowFor(fullName)).getByRole('menu');
+  return screen.getByRole('menu', { name: `פעולות עבור ${fullName}` });
 }
 
 /** Registers one pending technician entry and waits for it to appear. */
@@ -906,7 +909,7 @@ describe('row action menu', () => {
     trigger.focus();
     await user.keyboard('{ArrowDown}');
 
-    const menu = await within(rowFor('עומר פרץ (דמו)')).findByRole('menu');
+    const menu = await screen.findByRole('menu', { name: 'פעולות עבור עומר פרץ (דמו)' });
     const edit = within(menu).getByRole('menuitem', { name: 'עריכה' });
     const rename = within(menu).getByRole('menuitem', { name: 'שינוי שם' });
     const remove = within(menu).getByRole('menuitem', { name: 'מחיקה' });
@@ -925,7 +928,7 @@ describe('row action menu', () => {
     expect(edit).toHaveFocus();
 
     await user.keyboard('{Escape}');
-    expect(within(rowFor('עומר פרץ (דמו)')).queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: 'פעולות עבור עומר פרץ (דמו)' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
 
@@ -938,7 +941,7 @@ describe('row action menu', () => {
     await user.click(screen.getByRole('heading', { name: 'כוח אדם' }));
 
     await waitFor(() =>
-      expect(within(rowFor('עומר פרץ (דמו)')).queryByRole('menu')).not.toBeInTheDocument(),
+      expect(screen.queryByRole('menu', { name: 'פעולות עבור עומר פרץ (דמו)' })).not.toBeInTheDocument(),
     );
     // No dialog was opened -- dismissing is not an activation.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -951,7 +954,7 @@ describe('row action menu', () => {
     await clickRowAction(user, 'ממתין לבדיקה', 'עריכה');
     expect(await screen.findByRole('dialog', { name: 'עריכת רישום ממתין' })).toBeInTheDocument();
     // The menu closed behind the dialog rather than staying open under it.
-    expect(within(rowFor('ממתין לבדיקה')).queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: 'פעולות עבור ממתין לבדיקה' })).not.toBeInTheDocument();
   });
 
   it('keeps the last-active-admin guard: מחיקה is present but disabled with its explanation', async () => {

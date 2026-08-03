@@ -101,7 +101,9 @@ test('personnel rows group by role hierarchy and expose actions through one menu
 
   const trigger = row.getByRole('button', { name: /^פעולות עבור / });
   await trigger.click();
-  const menu = row.getByRole('menu');
+  // The menu is portaled to the document body (viewport-clamped, like every
+  // other floating panel in the app) rather than nested under the row.
+  const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: 'עריכה' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'מחיקה' })).toBeVisible();
 
@@ -112,9 +114,9 @@ test('personnel rows group by role hierarchy and expose actions through one menu
 
   // Outside click also dismisses.
   await trigger.click();
-  await expect(row.getByRole('menu')).toBeVisible();
+  await expect(page.getByRole('menu')).toBeVisible();
   await page.getByRole('heading', { name: 'כוח אדם' }).click();
-  await expect(row.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('menu')).toHaveCount(0);
 });
 
 test('incident actions keep their hierarchy while closure and reassignment read distinctly', async ({ page }) => {

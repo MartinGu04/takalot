@@ -246,11 +246,7 @@ export default function PersonnelPage() {
       // active/inactive row would show for someone with no photo yet --
       // never a Google avatar for an unclaimed entry.
       return (
-        <div
-          key={entry.id}
-          data-personnel-row={entry.id}
-          className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
-        >
+        <div key={entry.id} data-personnel-row={entry.id} className="flex items-center gap-3 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Avatar
               aria-hidden
@@ -311,7 +307,7 @@ export default function PersonnelPage() {
     const expanded = canManageOthers && expandedId === entry.id;
     return (
       <div key={entry.id} data-personnel-row={entry.id} className="flex flex-col gap-2 px-3 py-2.5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex items-center gap-3">
           {/* RTL: first in source order sits rightmost -- the avatar sits
               at the row's start (right), immediately before the name/email
               block, which stays first overall so the status/menu group
@@ -327,8 +323,8 @@ export default function PersonnelPage() {
               className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
             />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <p className="truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <p className="min-w-0 truncate text-sm font-medium text-text-primary">{entry.fullName}</p>
                 {isSelf && <Badge color="blue">אתה</Badge>}
               </div>
               {entry.email && (

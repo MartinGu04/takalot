@@ -13,6 +13,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import { IconDotsVertical } from './icons';
+import { FloatingPopover } from './FloatingPopover';
 
 export interface ActionMenuItem {
   label: string;
@@ -112,7 +113,7 @@ export function ActionMenu({ label, items }: { label: string; items: ActionMenuI
   if (items.length === 0) return null;
 
   return (
-    <div className="relative shrink-0">
+    <div className="shrink-0">
       <button
         ref={triggerRef}
         type="button"
@@ -131,40 +132,47 @@ export function ActionMenu({ label, items }: { label: string; items: ActionMenuI
       >
         <IconDotsVertical className="size-4.5" />
       </button>
-      {open && (
-        <div
-          ref={panelRef}
-          className="popover-panel absolute end-0 top-full z-50 mt-1 w-max min-w-40 animate-scale-in p-1.5"
-        >
-          <div id={menuId} role="menu" aria-label={label} onKeyDown={handleMenuKeyDown}>
-            {items.map((item, index) => {
-              // The destructive action is both toned and separated: a rule
-              // above it makes an accidental activation take a deliberate
-              // extra step of travel, not just a colour change.
-              const separated = item.destructive && index > 0;
-              return (
-                <div key={item.label} className={separated ? 'mt-1 border-t border-hairline pt-1' : undefined}>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    tabIndex={-1}
-                    disabled={item.disabled}
-                    title={item.title}
-                    onClick={() => selectAction(item)}
-                    className={`flex min-h-10 w-full items-center rounded-lg px-3 py-2 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
-                      item.destructive
-                        ? 'font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50'
-                        : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+      {/* Portaled and viewport-clamped (same FloatingPopover the export menu
+          uses) rather than a plain absolutely-positioned child: a row-local
+          `absolute end-0` panel has no way to know it is near a screen edge,
+          so on narrow viewports it could extend past the right side of the
+          viewport whenever its trigger sat close to that edge. */}
+      <FloatingPopover
+        anchorRef={triggerRef}
+        panelRef={panelRef}
+        open={open}
+        width={192}
+        align="end"
+        className="popover-panel z-50 animate-scale-in p-1.5"
+      >
+        <div id={menuId} role="menu" aria-label={label} onKeyDown={handleMenuKeyDown}>
+          {items.map((item, index) => {
+            // The destructive action is both toned and separated: a rule
+            // above it makes an accidental activation take a deliberate
+            // extra step of travel, not just a colour change.
+            const separated = item.destructive && index > 0;
+            return (
+              <div key={item.label} className={separated ? 'mt-1 border-t border-hairline pt-1' : undefined}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  disabled={item.disabled}
+                  title={item.title}
+                  onClick={() => selectAction(item)}
+                  className={`flex min-h-10 w-full items-center rounded-lg px-3 py-2 text-start text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
+                    item.destructive
+                      ? 'font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50'
+                      : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              </div>
+            );
+          })}
         </div>
-      )}
+      </FloatingPopover>
     </div>
   );
 }
