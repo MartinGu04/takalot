@@ -343,12 +343,22 @@ export interface AppNotification {
 export interface AuditLog {
   id: string;
   actorId: string | null;
+  /** Snapshot of the acting profile's full name at write time -- independent of a later rename. */
+  actorDisplayName: string | null;
+  /** Snapshot of the acting user's email at write time, where available. */
+  actorEmail: string | null;
   action: string;
   entityType: string;
   entityId: string;
+  /** Human-readable label for entityId (a name, a full name, an incident number, ...), where useful. */
+  entityLabel: string | null;
+  /** Optional free-text summary for actions whose relevant detail is not just a field diff. */
+  summary: string | null;
   incidentNumber: string | null;
   before: string | null; // JSON string
   after: string | null; // JSON string
+  /** Optional structured context beyond before/after. */
+  metadata: string | null; // JSON string
   correlationId: string | null;
   createdAt: string;
 }

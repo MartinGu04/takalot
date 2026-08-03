@@ -116,12 +116,13 @@ export function useNotifications() {
   });
 }
 
-export function useAuditLogs(filters: AuditFilters, enabled: boolean) {
+export function useAuditLogs(filters: AuditFilters, page: number, pageSize: number, enabled: boolean) {
   const session = useSession();
   return useQuery({
-    queryKey: ['audit', filters],
-    queryFn: () => repo().listAuditLogs(session, filters),
+    queryKey: ['audit', filters, page, pageSize],
+    queryFn: () => repo().listAuditLogs(session, filters, page, pageSize),
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 

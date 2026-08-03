@@ -1039,7 +1039,7 @@ describe('external handling party (migration 0032)', () => {
     expect(before!.externalHandlerName).toBeNull();
     const updatesBefore = await repo.getIncidentUpdates(supervisor1, 'inc-1');
     const eventsBefore = await repo.getIncidentEvents(supervisor1, 'inc-1');
-    const auditBefore = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const auditBefore = await repo.listAuditLogs(admin, { search: before!.number });
     const notificationsBefore = await repo.listNotifications(tech2);
 
     await expect(
@@ -1065,7 +1065,7 @@ describe('external handling party (migration 0032)', () => {
     expect(after).toEqual(before);
     expect(await repo.getIncidentUpdates(supervisor1, 'inc-1')).toEqual(updatesBefore);
     expect(await repo.getIncidentEvents(supervisor1, 'inc-1')).toEqual(eventsBefore);
-    expect(await repo.listAuditLogs(admin, { incidentNumber: before!.number })).toEqual(auditBefore);
+    expect(await repo.listAuditLogs(admin, { search: before!.number })).toEqual(auditBefore);
     expect(await repo.listNotifications(tech2)).toEqual(notificationsBefore);
   });
 
@@ -1086,7 +1086,7 @@ describe('external handling party (migration 0032)', () => {
     const before = await repo.getIncident(supervisor1, 'inc-4'); // seeded with no external handler
     expect(before!.externalHandlerName).toBeNull();
     const eventsBefore = await repo.getIncidentEvents(supervisor1, 'inc-4');
-    const auditBefore = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const auditBefore = await repo.listAuditLogs(admin, { search: before!.number });
     const notificationsBefore = await repo.listNotifications(tech2);
 
     await expect(
@@ -1101,7 +1101,7 @@ describe('external handling party (migration 0032)', () => {
     const after = await repo.getIncident(supervisor1, 'inc-4');
     expect(after).toEqual(before);
     expect(await repo.getIncidentEvents(supervisor1, 'inc-4')).toEqual(eventsBefore);
-    expect(await repo.listAuditLogs(admin, { incidentNumber: before!.number })).toEqual(auditBefore);
+    expect(await repo.listAuditLogs(admin, { search: before!.number })).toEqual(auditBefore);
     expect(await repo.listNotifications(tech2)).toEqual(notificationsBefore);
   });
 
@@ -1147,7 +1147,7 @@ describe('external handling party (migration 0032)', () => {
     expect(events.filter((e) => e.field === 'owner').length).toBe(0);
     expect(events.filter((e) => e.field === 'external_handler').length).toBe(1);
 
-    const auditLog = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const auditLog = (await repo.listAuditLogs(admin, { search: before!.number }, 1, 200)).items;
     expect(auditLog.filter((a) => a.action === 'incident_assigned').length).toBe(0);
 
     const notifications = await repo.listNotifications(supervisor1);
@@ -1242,7 +1242,7 @@ describe('external handling party (migration 0032)', () => {
     expect(before!.status).toBe('closed');
     expect(before!.externalHandlerName).toBeNull();
     const eventsBefore = await repo.getIncidentEvents(supervisor1, 'inc-5');
-    const auditBefore = await repo.listAuditLogs(admin, { incidentNumber: before!.number });
+    const auditBefore = await repo.listAuditLogs(admin, { search: before!.number });
     const notificationsBefore = await repo.listNotifications(tech2);
 
     await expect(
@@ -1257,7 +1257,7 @@ describe('external handling party (migration 0032)', () => {
     const after = await repo.getIncident(supervisor1, 'inc-5');
     expect(after).toEqual(before);
     expect(await repo.getIncidentEvents(supervisor1, 'inc-5')).toEqual(eventsBefore);
-    expect(await repo.listAuditLogs(admin, { incidentNumber: before!.number })).toEqual(auditBefore);
+    expect(await repo.listAuditLogs(admin, { search: before!.number })).toEqual(auditBefore);
     expect(await repo.listNotifications(tech2)).toEqual(notificationsBefore);
   });
 });
@@ -1482,7 +1482,7 @@ describe('cancellation requirements', () => {
       eventTime: FIXED_NOW.toISOString(),
       cancellationReason: 'התקלה נפתחה בטעות',
     });
-    const logs = await repo.listAuditLogs(admin, {});
+    const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
     expect(logs.some((l) => l.action === 'incident_cancelled' && l.incidentNumber === incident!.number)).toBe(true);
   });
 });
@@ -2115,7 +2115,7 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
       expect(replacement.status).toBe('pending');
       const rows = await repo.listPendingPersonnel(supervisor1);
       expect(rows.find((r) => r.id === entry.id)?.status).toBe('expired');
-      const logs = await repo.listAuditLogs(admin, {});
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['personnel_pending_expired']));
       // And the replacement is claimable.
       expect(repo.claimPendingForIdentity({ authUserId: 'auth-exp2', email: 'new.person@example.com' })).not.toBeNull();
@@ -2165,7 +2165,7 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
       await repo.createPendingPersonnel(supervisor1, input({ email: 'second@example.com' }));
       repo.claimPendingForIdentity({ authUserId: 'auth-a1', email: 'second@example.com' });
 
-      const logs = await repo.listAuditLogs(admin, {});
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       const actions = logs.map((l) => l.action);
       expect(actions).toEqual(
         expect.arrayContaining([
@@ -2303,7 +2303,7 @@ describe('linked-personnel management (mirrors migration 0010 rules)', () => {
     await repo.setUserRole(admin, DEMO_USERS.tech1, 'shift_supervisor');
     await repo.setUserActive(admin, DEMO_USERS.tech2, false);
     await repo.setUserActive(admin, DEMO_USERS.tech2, true);
-    const logs = await repo.listAuditLogs(admin, {});
+    const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
     const actions = logs.map((l) => l.action);
     expect(actions).toEqual(
       expect.arrayContaining(['user_role_changed', 'user_deactivated', 'user_activated']),
@@ -2362,7 +2362,7 @@ describe('renaming personnel (mirrors migration 0034 rules)', () => {
 
     it('a self-rename is audited as user_renamed, just like renaming someone else', async () => {
       await repo.renameLinkedPersonnel(admin, DEMO_USERS.admin, { fullName: 'שם עצמי חדש' });
-      const logs = await repo.listAuditLogs(admin, {});
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       const entry = logs.find((l) => l.action === 'user_renamed' && l.entityId === DEMO_USERS.admin);
       expect(entry).toBeTruthy();
     });
@@ -2427,7 +2427,7 @@ describe('renaming personnel (mirrors migration 0034 rules)', () => {
 
     it('is audited as user_renamed', async () => {
       await repo.renameLinkedPersonnel(admin, DEMO_USERS.tech1, { fullName: 'שם חדש' });
-      const logs = await repo.listAuditLogs(admin, {});
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['user_renamed']));
     });
   });
@@ -2505,10 +2505,9 @@ describe('renaming personnel (mirrors migration 0034 rules)', () => {
     it('is audited as personnel_pending_renamed', async () => {
       const entry = await repo.createPendingPersonnel(supervisor1, input());
       await repo.renamePendingPersonnel(supervisor1, entry.id, { fullName: 'שם עודכן' });
-      // view_audit_full (not just view_audit_incidents) is required to see
-      // non-incident audit entries -- use admin, mirroring the linked-
-      // profile audit assertion above.
-      const logs = await repo.listAuditLogs(admin, {});
+      // view_audit_log is required to see the audit log at all -- use
+      // admin, mirroring the linked-profile audit assertion above.
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['personnel_pending_renamed']));
     });
   });
@@ -2550,7 +2549,7 @@ describe('export permission enforcement', () => {
   it('records an audit entry for a permitted export', async () => {
     const repo = newRepo({ now: FIXED_NOW });
     await repo.recordExport(supervisor1, { exportType: 'incidents_xlsx', filtersDescription: '{}' });
-    const logs = await repo.listAuditLogs(admin, {});
+    const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
     expect(logs.some((l) => l.action === 'export_generated')).toBe(true);
   });
 });
@@ -2568,7 +2567,7 @@ describe('reference-data management parity (migration 0024)', () => {
     expect(systemsInCategory.at(-1)).toMatchObject({ id: system.id, displayOrder: system.displayOrder });
     expect(locationsInCategory.at(-1)).toMatchObject({ id: location.id, displayOrder: location.displayOrder });
 
-    const logs = await repo.listAuditLogs(admin, {});
+    const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
     expect(logs.some((log) => log.action === 'system_created' && log.entityId === system.id)).toBe(true);
     expect(logs.some((log) => log.action === 'location_created' && log.entityId === location.id)).toBe(true);
   });
@@ -2802,7 +2801,7 @@ describe('reference-data management parity (migration 0024)', () => {
         .filter((s) => s.category === 'station_systems')
         .map((s) => s.id);
       await repo.reorderSystems(admin, [...systemIds].reverse());
-      const logs = await repo.listAuditLogs(admin, {});
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       expect(logs.some((log) => log.action === 'systems_reordered')).toBe(true);
     });
 

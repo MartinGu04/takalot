@@ -147,6 +147,77 @@ export const locationCategoryLabels: Record<LocationCategory, string> = {
   other: 'אחר',
 };
 
+/** Hebrew labels for audit_logs.action -- the primary user-facing text on
+ *  the יומן ביקורת (audit log) page. Raw action identifiers are never
+ *  shown directly; an unrecognized action falls back to the identifier
+ *  itself (see AuditLogPage) rather than failing to render. */
+export const auditActionLabels: Record<string, string> = {
+  // Personnel
+  user_role_changed: 'שינוי תפקיד',
+  user_activated: 'הפעלת משתמש',
+  user_deactivated: 'השבתת משתמש',
+  user_tombstoned: 'מחיקת משתמש',
+  user_renamed: 'שינוי שם משתמש',
+  user_created: 'הזמנת משתמש',
+  personnel_pending_created: 'הזמנת איש צוות',
+  personnel_pending_updated: 'עדכון הזמנת איש צוות',
+  personnel_pending_renamed: 'שינוי שם בהזמנה ממתינה',
+  personnel_pending_cancelled: 'ביטול הזמנת איש צוות',
+  personnel_pending_claimed: 'מימוש הזמנת איש צוות',
+  personnel_pending_expired: 'פקיעת הזמנת איש צוות',
+  // Systems / locations
+  system_created: 'הוספת מערכת / עמדה',
+  system_renamed: 'שינוי שם מערכת / עמדה',
+  system_archived: 'השבתת מערכת / עמדה',
+  system_restored: 'הפעלת מערכת / עמדה',
+  system_category_changed: 'שינוי סוג מערכת / עמדה',
+  system_moved: 'שינוי סדר מערכת / עמדה',
+  systems_reordered: 'סידור מחדש של מערכות / עמדות',
+  system_delete_archived: 'בקשת מחיקת מערכת / עמדה (הועברה למצב לא פעיל)',
+  system_deleted: 'מחיקת מערכת / עמדה',
+  location_created: 'הוספת מיקום',
+  location_renamed: 'שינוי שם מיקום',
+  location_archived: 'השבתת מיקום',
+  location_restored: 'הפעלת מיקום',
+  location_category_changed: 'שינוי סוג מיקום',
+  location_moved: 'שינוי סדר מיקום',
+  locations_reordered: 'סידור מחדש של מיקומים',
+  location_delete_archived: 'בקשת מחיקת מיקום (הועבר למצב לא פעיל)',
+  location_deleted: 'מחיקת מיקום',
+  // Incidents
+  incident_created: 'פתיחת תקלה',
+  incident_updated: 'עדכון תקלה',
+  incident_status_changed: 'שינוי סטטוס תקלה',
+  incident_severity_changed: 'שינוי חומרת תקלה',
+  incident_assigned: 'שינוי גורם מטפל',
+  incident_external_handler_changed: 'שינוי גורם מטפל חיצוני',
+  incident_acknowledged: 'קבלת תקלה',
+  incident_technical_update: 'עדכון טכני לתקלה',
+  incident_closed: 'סגירת תקלה',
+  incident_partial_readiness: 'סגירה עם כשירות חלקית',
+  incident_reopened: 'פתיחה מחדש של תקלה',
+  incident_cancelled: 'ביטול תקלה',
+  incident_correction: 'תיקון רישום בתקלה',
+  incident_follow_up_completed: 'השלמת פעולות המשך',
+  // Handovers
+  handover_created: 'יצירת העברת משמרת',
+  handover_accepted: 'אישור העברת משמרת',
+  handover_addendum: 'תוספת להעברת משמרת',
+  // Export
+  export_generated: 'ייצוא נתונים',
+};
+
+/** Hebrew labels for audit_logs.entity_type. */
+export const auditEntityTypeLabels: Record<string, string> = {
+  profile: 'משתמש',
+  pending_personnel: 'הזמנת איש צוות',
+  system: 'מערכת / עמדה',
+  location: 'מיקום',
+  incident: 'תקלה',
+  handover: 'העברת משמרת',
+  export: 'ייצוא',
+};
+
 export const fieldLabels: Record<string, string> = {
   status: 'סטטוס',
   severity: 'חומרה',

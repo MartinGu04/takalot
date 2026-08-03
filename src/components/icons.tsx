@@ -288,3 +288,14 @@ export function IconEye(props: IconProps) {
     </svg>
   );
 }
+
+/** Clipboard with a checklist -- used for the audit log (יומן ביקורת). */
+export function IconClipboardList(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7.5 3.5h5a1 1 0 0 1 1 1v.5h-7v-.5a1 1 0 0 1 1-1Z" />
+      <path d="M6.5 5h-1a1.5 1.5 0 0 0-1.5 1.5v9A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 5h-1" />
+      <path d="M7 10h.01M9 10h4M7 13h.01M9 13h4" />
+    </svg>
+  );
+}

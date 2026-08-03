@@ -37,6 +37,7 @@ import { AppError } from '../repository';
 import type {
   AnalyticsFilters,
   AuditFilters,
+  AuditLogPage,
   ExportAuditInfo,
   IncidentAnalytics,
   IncidentFilters,
@@ -830,27 +831,48 @@ export class SupabaseRepository implements Repository {
     );
   }
 
-  async listAuditLogs(_s: Session, filters: AuditFilters = {}): Promise<AuditLog[]> {
-    let q = this.client.from('audit_logs').select('*');
-    if (filters.actorId) q = q.eq('actor_id', filters.actorId);
-    if (filters.action) q = q.ilike('action', `%${filters.action}%`);
-    if (filters.incidentNumber) q = q.ilike('incident_number', `%${filters.incidentNumber}%`);
-    if (filters.from) q = q.gte('created_at', filters.from);
-    if (filters.to) q = q.lte('created_at', filters.to);
-    const { data, error } = await q.order('created_at', { ascending: false }).limit(500);
-    wrap(error);
-    return (data ?? []).map((r) => ({
-      id: r.id,
-      actorId: r.actor_id,
-      action: r.action,
-      entityType: r.entity_type,
-      entityId: r.entity_id,
-      incidentNumber: r.incident_number,
+  async listAuditLogs(
+    _s: Session,
+    filters: AuditFilters = {},
+    page: number = 1,
+    pageSize: number = 25,
+  ): Promise<AuditLogPage> {
+    // list_audit_events is the bounded, paginated read path (migration
+    // 0042): it clamps p_limit server-side regardless of what is passed
+    // here, applies its own role check independent of RLS, and returns a
+    // windowed total_count alongside each page -- never a raw unrestricted
+    // table select. page is 1-based; converted to a 0-based offset here.
+    const clampedSize = Math.min(Math.max(pageSize, 1), 100);
+    const offset = Math.max(page - 1, 0) * clampedSize;
+    const rows = await this.rpc<Array<Record<string, unknown>>>('list_audit_events', {
+      p_limit: clampedSize,
+      p_offset: offset,
+      p_from: filters.from ?? null,
+      p_to: filters.to ?? null,
+      p_actor_id: filters.actorId ?? null,
+      p_entity_type: filters.entityType ?? null,
+      p_action: filters.action ?? null,
+      p_search: filters.search ?? null,
+    });
+    const items: AuditLog[] = (rows ?? []).map((r) => ({
+      id: r.id as string,
+      actorId: r.actor_id as string | null,
+      actorDisplayName: r.actor_display_name as string | null,
+      actorEmail: r.actor_email as string | null,
+      action: r.action as string,
+      entityType: r.entity_type as string,
+      entityId: r.entity_id as string,
+      entityLabel: r.entity_label as string | null,
+      summary: r.summary as string | null,
+      incidentNumber: r.incident_number as string | null,
       before: r.before_data ? JSON.stringify(r.before_data) : null,
       after: r.after_data ? JSON.stringify(r.after_data) : null,
-      correlationId: r.correlation_id,
-      createdAt: r.created_at,
+      metadata: r.metadata ? JSON.stringify(r.metadata) : null,
+      correlationId: null,
+      createdAt: r.created_at as string,
     }));
+    const total = rows && rows.length > 0 ? Number(rows[0].total_count) : 0;
+    return { items, total };
   }
 
   async recordExport(_s: Session, info: ExportAuditInfo): Promise<void> {
