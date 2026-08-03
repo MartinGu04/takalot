@@ -196,7 +196,14 @@ export default function AuditLogPage() {
             <Input
               {...props}
               type="date"
-              defaultValue={url.get('from') ?? ''}
+              // Controlled, not defaultValue: a defaultValue is applied only
+              // once, at mount, so React never pushes a later URL-driven
+              // clear back onto the DOM node. On iPhone Safari the native
+              // date picker's "איפוס" (clear) action can leave the field's
+              // displayed value stale for exactly that reason -- a
+              // controlled value forces the DOM to match state on every
+              // render, including immediately after a clear.
+              value={url.get('from') ?? ''}
               onChange={(e) => setFilters({ from: e.target.value })}
             />
           )}
@@ -206,7 +213,7 @@ export default function AuditLogPage() {
             <Input
               {...props}
               type="date"
-              defaultValue={url.get('to') ?? ''}
+              value={url.get('to') ?? ''}
               onChange={(e) => setFilters({ to: e.target.value })}
             />
           )}

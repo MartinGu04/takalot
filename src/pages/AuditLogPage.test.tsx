@@ -2,8 +2,8 @@
 // protection, rendering, filters/pagination, and loading/empty states.
 // Exercised through the real app (real routing/auth/demo repository), not a
 // component-level mock, matching this repo's other page test conventions.
-import { describe, expect, it, beforeEach } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type AppType from '../App';
 import type * as hooksType from '../data/hooks';
@@ -17,7 +17,6 @@ beforeEach(async () => {
   // Fresh module graph per test: App.tsx's QueryClient and the demo
   // repository are both module-level singletons, so a stale cache or
   // leftover mutations from an earlier test would otherwise leak in.
-  const { vi } = await import('vitest');
   vi.resetModules();
   App = (await import('../App')).default;
   hooks = await import('../data/hooks');
@@ -197,5 +196,96 @@ describe('AuditLogPage: pagination', () => {
     await openAuditLog(user, 'login-u-admin');
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'הבא' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AuditLogPage: date filter clear (iPhone Safari native "איפוס" regression)', () => {
+  // Regression for a bug where the מתאריך/עד תאריך date inputs used
+  // `defaultValue` (uncontrolled): a defaultValue is only ever applied at
+  // mount, so once the URL-derived filter value changed to empty, React
+  // never pushed that change back onto the DOM node -- on iPhone Safari,
+  // using the native date picker's "איפוס" action left the field showing
+  // its previous value (or restored it on a later re-render) even though
+  // the underlying filter state had already cleared. The fix makes the
+  // inputs controlled (`value`), so the DOM is forced to match state on
+  // every render. Each test below dispatches an empty-value change event
+  // directly -- exactly what the native picker's clear action produces --
+  // rather than relying on jsdom's (unreliable) native date-picker
+  // simulation, and proves the QUERY itself (not just the field) is
+  // cleared behaviorally: a bound chosen to exclude every existing row
+  // must produce the empty state, and clearing it must bring every row
+  // back -- a stale filter still silently applied would leave the list
+  // empty even after the field and URL look cleared.
+  it('clearing מתאריך empties the field, removes it from the URL, and lets the query see all rows again', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await openAuditLog(user, 'login-u-admin');
+
+    // Baseline: at least one row is visible unfiltered.
+    await screen.findByRole('list');
+
+    const fromInput = screen.getByLabelText('מתאריך') as HTMLInputElement;
+    // A far-future lower bound excludes every existing row -- proves the
+    // date constraint really reaches the query, not just the URL.
+    fireEvent.change(fromInput, { target: { value: '2099-01-01' } });
+    await waitFor(() => expect(fromInput).toHaveValue('2099-01-01'));
+    expect(new URLSearchParams(window.location.search).get('from')).toBe('2099-01-01');
+    await screen.findByText('אין רישומים התואמים לסינון');
+
+    // Simulate the native picker's clear action: it dispatches a change
+    // event with an empty value, the same as this fireEvent call.
+    fireEvent.change(fromInput, { target: { value: '' } });
+
+    // The field itself must visibly empty -- the actual regression.
+    await waitFor(() => expect(fromInput).toHaveValue(''));
+    // Removed from local/URL state, not just left blank on screen.
+    expect(new URLSearchParams(window.location.search).has('from')).toBe(false);
+    // The audit query must refresh without the date constraint: rows that
+    // the far-future bound excluded must reappear.
+    await screen.findByRole('list');
+    expect(screen.queryByText('אין רישומים התואמים לסינון')).not.toBeInTheDocument();
+  });
+
+  it('clearing עד תאריך empties the field, removes it from the URL, and lets the query see all rows again', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await openAuditLog(user, 'login-u-admin');
+
+    await screen.findByRole('list');
+
+    const toInput = screen.getByLabelText('עד תאריך') as HTMLInputElement;
+    // A far-past upper bound excludes every existing row.
+    fireEvent.change(toInput, { target: { value: '1990-01-01' } });
+    await waitFor(() => expect(toInput).toHaveValue('1990-01-01'));
+    expect(new URLSearchParams(window.location.search).get('to')).toBe('1990-01-01');
+    await screen.findByText('אין רישומים התואמים לסינון');
+
+    fireEvent.change(toInput, { target: { value: '' } });
+
+    await waitFor(() => expect(toInput).toHaveValue(''));
+    expect(new URLSearchParams(window.location.search).has('to')).toBe(false);
+    await screen.findByRole('list');
+    expect(screen.queryByText('אין רישומים התואמים לסינון')).not.toBeInTheDocument();
+  });
+
+  it('clearing one date field never alters the other', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await openAuditLog(user, 'login-u-admin');
+
+    const fromInput = screen.getByLabelText('מתאריך') as HTMLInputElement;
+    const toInput = screen.getByLabelText('עד תאריך') as HTMLInputElement;
+    fireEvent.change(fromInput, { target: { value: '2020-01-15' } });
+    await waitFor(() => expect(fromInput).toHaveValue('2020-01-15'));
+    fireEvent.change(toInput, { target: { value: '2020-01-20' } });
+    await waitFor(() => expect(toInput).toHaveValue('2020-01-20'));
+
+    fireEvent.change(fromInput, { target: { value: '' } });
+
+    await waitFor(() => expect(fromInput).toHaveValue(''));
+    // עד תאריך is completely untouched by clearing מתאריך.
+    expect(toInput).toHaveValue('2020-01-20');
+    expect(new URLSearchParams(window.location.search).get('to')).toBe('2020-01-20');
+    expect(new URLSearchParams(window.location.search).has('from')).toBe(false);
   });
 });
