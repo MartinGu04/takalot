@@ -22,19 +22,31 @@ const severityOpeningWording: Record<Severity, string> = {
   low: 'בחומרה נמוכה',
 };
 
+// Appended to the opening/closure messages only -- gives the WhatsApp
+// recipient a direct link to the incident's own page. Built from the
+// current origin (never a hardcoded domain, so Preview deployments link to
+// themselves) and the incident's persisted id (the same identifier the
+// /incidents/:id route itself expects, not the displayed human-readable
+// number).
+function buildIncidentLinkBlock(incidentId: string): string {
+  return `\n\nלצפייה בתקלה:\n${window.location.origin}/incidents/${incidentId}`;
+}
+
 export function buildIncidentOpenedMessage(
-  incident: Pick<Incident, 'number' | 'severity'>,
+  incident: Pick<Incident, 'id' | 'number' | 'severity'>,
   systemName: string,
   actorName: string,
 ): string {
-  return `${severityEmoji[incident.severity]} נפתחה תקלה ${severityOpeningWording[incident.severity]} ${incident.number} במערכת ${systemName} על ידי ${actorName}`;
+  const opening = `${severityEmoji[incident.severity]} נפתחה תקלה ${severityOpeningWording[incident.severity]} ${incident.number} במערכת ${systemName} על ידי ${actorName}`;
+  return opening + buildIncidentLinkBlock(incident.id);
 }
 
 export function buildIncidentClosedMessage(
-  incident: Pick<Incident, 'number' | 'discoveredAt' | 'closedAt' | 'createdAt'>,
+  incident: Pick<Incident, 'id' | 'number' | 'discoveredAt' | 'closedAt' | 'createdAt'>,
   systemName: string,
   actorName: string,
 ): string {
   const duration = formatDuration(incident.discoveredAt, incident.closedAt ?? incident.createdAt);
-  return `✅ תקלה ${incident.number} במערכת ${systemName} נסגרה על ידי ${actorName} לאחר ${duration}`;
+  const closing = `✅ תקלה ${incident.number} במערכת ${systemName} נסגרה על ידי ${actorName} לאחר ${duration}`;
+  return closing + buildIncidentLinkBlock(incident.id);
 }
