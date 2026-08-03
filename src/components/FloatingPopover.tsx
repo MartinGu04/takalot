@@ -3,6 +3,11 @@ import { useLayoutEffect, useState, type CSSProperties, type Ref, type ReactNode
 
 const VIEWPORT_PADDING = 14;
 
+const GAP = 6;
+// Below this, opening downward is considered too cramped to bother with --
+// flip upward instead as long as there's actually more room that way.
+const MIN_COMFORTABLE_HEIGHT = 160;
+
 /**
  * Computes a fixed, viewport-clamped position for a popover anchored to a
  * trigger element, rendered through a portal so it can never be clipped by
@@ -12,6 +17,15 @@ const VIEWPORT_PADDING = 14;
  * edges — the same logical alignment the old `start-0` CSS gave, but safe
  * near any screen edge instead of only working when there happened to be
  * room.
+ *
+ * Vertically it prefers opening downward, but flips upward (anchoring the
+ * panel's bottom edge just above the trigger instead of its top edge just
+ * below) when the trigger sits close enough to the bottom of the viewport
+ * that opening down would be cramped and there's more room above -- e.g. a
+ * row near the end of a list, just above a mobile bottom nav. Either way,
+ * `maxHeight` is capped to whatever space that direction actually has, so
+ * the panel itself (not just its scrollable content) can never cross the
+ * opposite viewport edge.
  */
 function usePopoverStyle(
   anchorRef: RefObject<HTMLElement | null>,
@@ -42,16 +56,34 @@ function usePopoverStyle(
       // `end-0` meant when this was plain absolutely-positioned CSS.
       let left = align === 'start' ? rect.right - effectiveWidth : rect.left;
       left = Math.max(VIEWPORT_PADDING, Math.min(left, vw - VIEWPORT_PADDING - effectiveWidth));
-      const top = Math.min(rect.bottom + 6, vh - VIEWPORT_PADDING - 80);
-      const effectiveMaxHeight = Math.max(160, Math.min(maxHeight, vh - top - VIEWPORT_PADDING));
-      setStyle({
-        position: 'fixed',
-        top,
-        left,
-        width: effectiveWidth,
-        maxHeight: effectiveMaxHeight,
-        overflowY: 'auto',
-      });
+
+      const spaceBelow = vh - rect.bottom - GAP - VIEWPORT_PADDING;
+      const spaceAbove = rect.top - GAP - VIEWPORT_PADDING;
+      const opensUp = spaceBelow < MIN_COMFORTABLE_HEIGHT && spaceAbove > spaceBelow;
+      // Capped to the space actually available in the chosen direction --
+      // never to a fixed floor, which is what previously let the panel
+      // extend past the viewport edge whenever a trigger sat close to it.
+      const effectiveMaxHeight = Math.max(0, Math.min(maxHeight, opensUp ? spaceAbove : spaceBelow));
+
+      setStyle(
+        opensUp
+          ? {
+              position: 'fixed',
+              bottom: vh - rect.top + GAP,
+              left,
+              width: effectiveWidth,
+              maxHeight: effectiveMaxHeight,
+              overflowY: 'auto',
+            }
+          : {
+              position: 'fixed',
+              top: rect.bottom + GAP,
+              left,
+              width: effectiveWidth,
+              maxHeight: effectiveMaxHeight,
+              overflowY: 'auto',
+            },
+      );
     };
     compute();
     window.addEventListener('resize', compute);

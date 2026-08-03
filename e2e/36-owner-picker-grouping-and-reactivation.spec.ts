@@ -73,7 +73,7 @@ test('a deactivated eligible user disappears from the owner picker, and reappear
   await page.getByRole('tab', { name: /^פעילים/ }).click();
   const row = page.locator('[data-personnel-row]', { hasText: 'ליאור אדרי' });
   await row.getByRole('button', { name: /^פעולות עבור / }).click();
-  await row.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
   await row.getByRole('button', { name: 'השבתה' }).click();
   const confirmDialog = page.getByRole('dialog', { name: 'השבתת משתמש' });
   await confirmDialog.getByRole('button', { name: 'השבתה' }).click();
@@ -95,7 +95,7 @@ test('a deactivated eligible user disappears from the owner picker, and reappear
   await page.getByRole('tab', { name: /^לא פעילים/ }).click();
   const inactiveRow = page.locator('[data-personnel-row]', { hasText: 'ליאור אדרי' });
   await inactiveRow.getByRole('button', { name: /^פעולות עבור / }).click();
-  await inactiveRow.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'עריכה' }).click();
   await inactiveRow.getByRole('button', { name: 'הפעלה' }).click();
   await page.getByRole('tab', { name: /^פעילים/ }).click();
   await expect(page.locator('[data-personnel-row]', { hasText: 'ליאור אדרי' })).toBeVisible();
