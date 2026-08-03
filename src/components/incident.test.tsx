@@ -3,9 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { IncidentCard, StatusBadge } from './incident';
-import { statusLabels } from '../domain/labels';
-import type { Incident, IncidentStatus, Profile } from '../domain/types';
+import { IncidentCard, StatusBadge, SeverityBadge } from './incident';
+import { statusLabels, severityLabels } from '../domain/labels';
+import type { Incident, IncidentStatus, Profile, Severity } from '../domain/types';
 
 const NOW = new Date('2026-01-10T12:00:00.000Z');
 
@@ -123,6 +123,49 @@ describe('IncidentCard: live pulse (current-state/home view only)', () => {
       const className = renderCard(makeIncident({ severity }), true);
       expect(className).not.toMatch(/incident-card-pulse/);
     }
+  });
+});
+
+describe('SeverityBadge: color hierarchy', () => {
+  function renderBadge(severity: Severity): string {
+    cleanup();
+    render(<SeverityBadge severity={severity} />);
+    return screen.getByText(severityLabels[severity]).className;
+  }
+
+  it('medium uses its own restrained yellow/gold treatment', () => {
+    const className = renderBadge('medium');
+    expect(className).toMatch(/bg-yellow-100/);
+    expect(className).toMatch(/text-yellow-900/);
+    expect(className).toMatch(/dark:bg-yellow-950/);
+    expect(className).toMatch(/dark:text-yellow-200/);
+  });
+
+  it('medium is visually distinct from high (orange) and low (neutral gray)', () => {
+    const medium = renderBadge('medium');
+    const high = renderBadge('high');
+    const low = renderBadge('low');
+    expect(medium).not.toMatch(/orange/);
+    expect(high).not.toMatch(/yellow/);
+    expect(medium).not.toMatch(/bg-surface-active/);
+    expect(low).not.toMatch(/yellow/);
+  });
+
+  it('low remains the only neutral gray severity badge', () => {
+    const className = renderBadge('low');
+    expect(className).toMatch(/bg-surface-active/);
+    expect(className).toMatch(/text-text-secondary/);
+    expect(className).not.toMatch(/red|orange|yellow/);
+  });
+
+  it('critical and high are unchanged (red and orange respectively)', () => {
+    const critical = renderBadge('critical');
+    expect(critical).toMatch(/bg-red-100/);
+    expect(critical).toMatch(/dark:bg-red-950/);
+
+    const high = renderBadge('high');
+    expect(high).toMatch(/bg-orange-100/);
+    expect(high).toMatch(/dark:bg-orange-950/);
   });
 });
 

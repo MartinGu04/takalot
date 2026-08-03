@@ -7,7 +7,8 @@ import { Badge } from './ui';
 import { IconChevronLeft } from './icons';
 
 export function SeverityBadge({ severity }: { severity: Severity }) {
-  const color = severity === 'critical' ? 'red' : severity === 'high' ? 'orange' : 'neutral';
+  const color =
+    severity === 'critical' ? 'red' : severity === 'high' ? 'orange' : severity === 'medium' ? 'yellow' : 'neutral';
   return <Badge color={color}>{severityLabels[severity]}</Badge>;
 }
 
