@@ -46,7 +46,9 @@ export function buildHandoverPdf(
   return pdf;
 }
 
+const handoverDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' });
+
 export function handoverPdfFilename(handover: Handover): string {
-  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date(handover.createdAt));
+  const date = handoverDateFmt.format(new Date(handover.createdAt));
   return `העברת-משמרת-${date}.pdf`;
 }

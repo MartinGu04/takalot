@@ -120,16 +120,24 @@ export function formatRelative(iso: string, now: Date = new Date()): string {
  * Convert an ISO UTC timestamp to the value format of <input type="datetime-local">
  * expressed in Asia/Jerusalem local time, and back.
  */
+// Memoized / reused Intl.DateTimeFormat formatters to avoid expensive re-creation
+const enCaDateTimeFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+const enCaYearFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ,
+  year: 'numeric',
+});
+
 export function isoToLocalInput(iso: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(iso));
+  const parts = enCaDateTimeFmt.formatToParts(new Date(iso));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   let hour = get('hour');
   if (hour === '24') hour = '00';
@@ -154,7 +162,5 @@ export function localInputToIso(local: string): string {
 
 /** Current year in Asia/Jerusalem — used for incident numbering. */
 export function jerusalemYear(now: Date = new Date()): number {
-  return Number(
-    new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric' }).format(now),
-  );
+  return Number(enCaYearFmt.format(now));
 }

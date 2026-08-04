@@ -1,0 +1,3 @@
+## 2026-07-20 - Memoizing Intl.DateTimeFormat Instantiations
+**Learning:** In JavaScript/V8 engines, instantiating `Intl.DateTimeFormat` is an extremely expensive operation because of locale resolving, resource fetching, and options parsing. Utility functions like `isoToLocalInput` or date parsing that are called repeatedly (or inside loops) suffer significant performance hits if they instantiate a new formatter on every call. Moving these formatters to module scope as memoized constants eliminates this overhead completely.
+**Action:** Always define `Intl.DateTimeFormat` or other expensive formatting instances as module-level constants or memoize them to reuse across function invocations.

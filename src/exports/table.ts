@@ -106,11 +106,12 @@ export function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+const exportDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' });
+
 /** File name like תקלות-2026-07-01-עד-2026-07-31.xlsx */
 export function incidentsExportFilename(ext: 'xlsx' | 'csv', from?: string, to?: string): string {
-  const fmt = (iso: string) =>
-    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date(iso));
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date());
+  const fmt = (iso: string) => exportDateFmt.format(new Date(iso));
+  const today = exportDateFmt.format(new Date());
   if (from && to) return `תקלות-${fmt(from)}-עד-${fmt(to)}.${ext}`;
   return `תקלות-${today}.${ext}`;
 }
