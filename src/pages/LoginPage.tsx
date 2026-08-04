@@ -7,7 +7,7 @@ import type { Profile } from '../domain/types';
 import { useQuery } from '@tanstack/react-query';
 import { Spinner } from '../components/ui';
 import { RoleBadge } from '../components/RoleBadge';
-import { AvariaAuthBrandPanel } from '../components/AvariaBrand';
+import { AvariaAuthBrandPanel, AvariaLoginAtmosphere, AvariaUnitLogosCorner } from '../components/AvariaBrand';
 import { IconLock, IconShield } from '../components/icons';
 
 /** Reads an OAuth provider error forwarded back on the redirect URL
@@ -84,125 +84,132 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-canvas p-4 sm:p-6 lg:p-10">
-      <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-[#0c0918] shadow-elevated [animation:login-entrance_380ms_ease-out_both] lg:h-[calc(100dvh-5rem)] lg:grid-cols-2">
-        <AvariaAuthBrandPanel titleTestId="brand-name" animate />
-        <div className="flex flex-col justify-center overflow-y-auto p-6 sm:p-10 lg:h-full lg:p-12">
-          <div className="mx-auto w-full max-w-md py-2 [animation:login-entrance_380ms_ease-out_140ms_both]">
-            <span className="inline-flex items-center rounded-full border border-brand-400/30 bg-brand-500/10 px-3 py-1 text-xs font-semibold text-brand-200">
-              ברוכים הבאים
-            </span>
-            <h2 className="mt-4 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-              כניסה למערכת
-            </h2>
-            <p className="mt-2 text-sm text-white/60">
-              <span className="font-bold text-brand-300">{APP_NAME}</span> {APP_TAGLINE}
-            </p>
+    <div className="relative isolate flex min-h-dvh w-full flex-col overflow-hidden bg-[#070512] lg:flex-row">
+      <AvariaLoginAtmosphere />
+      <AvariaUnitLogosCorner />
+      <AvariaAuthBrandPanel titleTestId="brand-name" animate />
 
-            {sessionExpired && (
-              <div
-                role="alert"
-                className="mt-5 rounded-lg border border-orange-800/60 bg-orange-950/50 p-3 text-sm text-orange-200"
-              >
-                פג תוקף ההתחברות. יש להתחבר מחדש כדי להמשיך. נתונים שלא נשמרו נשמרו כטיוטה מקומית ככל שניתן.
+      <div className="relative z-10 flex flex-1 flex-col justify-center overflow-y-auto px-6 pt-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10 sm:py-12 lg:px-14 lg:py-12 xl:px-16">
+        {/* A soft, localized glow behind the primary content -- illumination
+            focused on what matters, not a flat wash across the column. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600/10 blur-[120px]"
+        />
+        <div
+          data-testid="auth-entrance-panel"
+          className="relative mx-auto w-full max-w-2xl py-2 [animation:login-entrance_380ms_ease-out_140ms_both]"
+        >
+          <span className="inline-flex items-center rounded-full border border-brand-400/50 bg-brand-500/20 px-4 py-1.5 text-sm font-semibold text-brand-100">
+            ברוכים הבאים
+          </span>
+          <h2 className="mt-6 text-5xl font-black leading-[1.05] tracking-tight text-white sm:text-7xl lg:text-6xl xl:text-7xl">
+            כניסה למערכת
+          </h2>
+          <p className="mt-4 text-lg text-white/75 sm:text-xl">
+            <span className="font-bold text-brand-300">{APP_NAME}</span> {APP_TAGLINE}
+          </p>
+
+          {sessionExpired && (
+            <div
+              role="alert"
+              className="mt-5 rounded-lg border border-orange-800/60 bg-orange-950/50 p-3 text-sm text-orange-200"
+            >
+              פג תוקף ההתחברות. יש להתחבר מחדש כדי להמשיך. נתונים שלא נשמרו נשמרו כטיוטה מקומית ככל שניתן.
+            </div>
+          )}
+
+          {demo ? (
+            <>
+              <div className="mt-7 flex items-center gap-2 text-sm font-medium text-white/60">
+                <span aria-hidden className="size-2 shrink-0 rounded-full bg-orange-500" />
+                מצב הדגמה — בחירת משתמש פיקטיבי לצורך התנסות בלבד
               </div>
-            )}
-
-            {demo ? (
-              <>
-                <div className="mt-5 flex items-center gap-1.5 text-xs font-medium text-white/50">
-                  <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-orange-500" />
-                  מצב הדגמה — בחירת משתמש פיקטיבי לצורך התנסות בלבד
+              {isLoading ? (
+                <div className="mt-6">
+                  <Spinner />
                 </div>
-                {isLoading ? (
-                  <div className="mt-6">
-                    <Spinner />
-                  </div>
-                ) : (
-                  <ul className="mt-4 flex flex-col gap-2 [animation:login-entrance_320ms_ease-out_260ms_both]">
-                    {(profiles ?? []).filter((p) => p.active).map((p) => (
-                      <li key={p.id}>
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-right transition-colors hover:bg-white/10"
-                          onClick={() => handleDemoLogin(p.id)}
-                          data-testid={`login-${p.id}`}
+              ) : (
+                <ul className="mt-5 flex flex-col gap-2.5 [animation:login-entrance_320ms_ease-out_260ms_both]">
+                  {(profiles ?? []).filter((p) => p.active).map((p) => (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-5 py-3.5 text-right backdrop-blur-sm transition-colors hover:bg-white/10"
+                        onClick={() => handleDemoLogin(p.id)}
+                        data-testid={`login-${p.id}`}
+                      >
+                        <span
+                          aria-hidden
+                          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/10 text-base font-bold text-white"
                         >
-                          <span
-                            aria-hidden
-                            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold text-white"
-                          >
-                            {p.fullName.charAt(0)}
-                          </span>
-                          <span className="min-w-0 flex-1 font-medium text-white">{p.fullName}</span>
-                          <RoleBadge role={p.role} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                          {p.fullName.charAt(0)}
+                        </span>
+                        <span className="min-w-0 flex-1 text-base font-medium text-white">{p.fullName}</span>
+                        <RoleBadge role={p.role} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <div className="mt-9">
+              <button
+                type="button"
+                className="flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-white px-5 py-4 text-lg font-semibold text-gray-900 shadow-[0_16px_44px_-12px_rgba(0,0,0,0.75)] transition-colors [animation:login-entrance_320ms_ease-out_260ms_both] hover:bg-gray-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100"
+                onClick={handleGoogleLogin}
+                disabled={redirecting}
+                data-testid="google-login-button"
+              >
+                {redirecting ? (
+                  'מעביר להזדהות…'
+                ) : (
+                  <>
+                    <GoogleGlyph />
+                    התחברות עם Google
+                  </>
                 )}
-              </>
-            ) : (
-              <div className="mt-6">
-                <button
-                  type="button"
-                  className="flex min-h-11 w-full items-center justify-center gap-2.5 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-[0_10px_30px_-12px_rgba(0,0,0,0.6)] transition-colors [animation:login-entrance_320ms_ease-out_260ms_both] hover:bg-gray-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 disabled:active:scale-100"
-                  onClick={handleGoogleLogin}
-                  disabled={redirecting}
-                  data-testid="google-login-button"
-                >
-                  {redirecting ? (
-                    'מעביר להזדהות…'
-                  ) : (
-                    <>
-                      <GoogleGlyph />
-                      התחברות עם Google
-                    </>
-                  )}
-                </button>
+              </button>
 
-                <div className="mt-5 flex items-center gap-3 text-xs text-white/40">
-                  <span className="h-px flex-1 bg-white/10" />
-                  או
-                  <span className="h-px flex-1 bg-white/10" />
-                </div>
-
-                <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-white/10 bg-white/5 p-3">
-                  <span
-                    aria-hidden
-                    className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-brand-300"
-                  >
-                    <IconLock className="size-4" />
-                  </span>
-                  <p className="text-xs text-white/60">
-                    הגישה בהזמנה בלבד: התחברות Google מזהה אתכם, אך נדרש גם פרופיל משתמש פעיל שהוגדר על ידי
-                    מנהל המערכת.
-                  </p>
-                </div>
-
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-xs text-white/40">
-                  <IconShield className="size-3.5" aria-hidden />
-                  מאובטח ברמה גבוהה
-                </div>
+              <div className="mt-7 flex items-center gap-4 text-sm text-white/55">
+                <span className="h-px flex-1 bg-white/20" />
+                או
+                <span className="h-px flex-1 bg-white/20" />
               </div>
-            )}
-            {error && (
-              <p role="alert" className="mt-3 text-center text-sm text-red-400">
-                {error}
-              </p>
-            )}
-          </div>
+
+              <div className="mt-5 flex items-start gap-3.5 rounded-2xl border border-brand-400/25 bg-brand-500/10 p-4 backdrop-blur-md">
+                <span
+                  aria-hidden
+                  className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-500/20 text-brand-200"
+                >
+                  <IconLock className="size-5" />
+                </span>
+                <p className="text-sm text-white/80">
+                  הגישה בהזמנה בלבד: התחברות Google מזהה אתכם, אך נדרש גם פרופיל משתמש פעיל שהוגדר על ידי
+                  מנהל המערכת.
+                </p>
+              </div>
+
+              <div className="mt-5 flex items-center justify-center gap-2 text-sm text-white/55">
+                <IconShield className="size-4" aria-hidden />
+                מאובטח ברמה גבוהה
+              </div>
+            </div>
+          )}
+          {error && (
+            <p role="alert" className="mt-4 text-center text-sm text-red-400">
+              {error}
+            </p>
+          )}
+
+          {demo && (
+            <p className="mt-6 text-center text-xs text-white/45">
+              אב־טיפוס להדגמה בלבד. נתונים פיקטיביים. פריסה מבצעית מחייבת אישור ובדיקת אבטחה נפרדים.
+            </p>
+          )}
         </div>
       </div>
-      {demo && (
-        // At lg the shell already fills the viewport height budget exactly
-        // (card height = 100dvh - outer padding); this caption is pinned as
-        // an overlay there instead of adding flow height that would push
-        // the page into vertical scroll. Below lg it sits in normal flow.
-        <p className="mt-4 max-w-2xl text-center text-xs text-muted lg:fixed lg:inset-x-0 lg:bottom-2 lg:mx-auto lg:mt-0">
-          אב־טיפוס להדגמה בלבד. נתונים פיקטיביים. פריסה מבצעית מחייבת אישור ובדיקת אבטחה נפרדים.
-        </p>
-      )}
     </div>
   );
 }

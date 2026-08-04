@@ -132,6 +132,22 @@
   }
 }
 
+/* A handful of slow-drifting light points on the login screen's ambient
+   backdrop (AvariaLoginAtmosphere) -- opacity + a few px of vertical float,
+   never scale/rotate, so it stays purely ambient. Covered by the blanket
+   prefers-reduced-motion rule below like every other animation here. */
+@keyframes avaria-particle-drift {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.85;
+    transform: translateY(-6px);
+  }
+}
+
 html {
   font-family: var(--font-sans);
 }
