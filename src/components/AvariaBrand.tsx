@@ -1,5 +1,5 @@
 import { APP_NAME, APP_TAGLINE } from '../domain/labels';
-import { IconAlertTriangle, IconClock } from './icons';
+import { DepartmentLogos } from './DepartmentLogos';
 
 export const AVARIA_FULL_LOGO_SRC = '/branding/avaria-logo-full.png';
 /** The approved symbol, kept byte-for-byte as supplied -- not rendered
@@ -45,124 +45,163 @@ export function AvariaIcon({ className }: { className?: string }) {
   );
 }
 
-/** Shared presentation zone for login and full-screen authentication states:
- * a fixed dark/purple brand moment (independent of the app's light/dark
- * toggle, matching the approved visual language) with the full logo as the
- * central element. Decorative atmosphere (glow, dot grid, floating status
- * chips) is pure CSS -- the supplied logo asset is never edited. */
+/** Full-bleed decorative backdrop for the V2 login/auth-splash experience:
+ * layered dark navy/purple gradients, ambient glows, a faint dot grid, a
+ * restrained waveform accent (echoing the AVARIA mark's own EKG motif), and
+ * a handful of static/slow-drifting light points. Pure CSS, no canvas/particle
+ * dependency. Meant as the first child of a `position: relative` full-viewport
+ * wrapper so it paints edge-to-edge behind both the brand and login columns --
+ * there is deliberately no per-column background, so the split never reads as
+ * two separate boxed cards. Decorative only: aria-hidden and
+ * pointer-events-none throughout, so it never intercepts input or gets
+ * announced to assistive tech. Any animation here is covered by the app-wide
+ * prefers-reduced-motion rule in index.css, which collapses it to static. */
+export function AvariaLoginAtmosphere() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 85% 55% at 12% -5%, rgba(139,92,246,0.24), transparent 60%), ' +
+            'radial-gradient(ellipse 65% 55% at 100% 105%, rgba(88,28,135,0.30), transparent 60%), ' +
+            'linear-gradient(160deg, #05030c 0%, #0a0716 45%, #100a1f 100%)',
+        }}
+      />
+      <div className="absolute -top-24 -right-16 size-[26rem] rounded-full bg-brand-600/20 blur-[110px] lg:size-[34rem]" />
+      <div className="absolute -bottom-32 -left-20 size-[22rem] rounded-full bg-brand-900/50 blur-[100px] lg:size-[30rem]" />
+      <div
+        className="absolute inset-0 opacity-[0.06]"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(216,203,255,0.9) 1px, transparent 1px)',
+          backgroundSize: '26px 26px',
+        }}
+      />
+      <svg
+        className="absolute inset-x-0 bottom-[20%] w-full opacity-[0.09] lg:bottom-[14%]"
+        viewBox="0 0 800 60"
+        preserveAspectRatio="none"
+        fill="none"
+      >
+        <path d="M0 30H130l22-24 24 46 22-34 18 12H800" stroke="#d8cbff" strokeWidth="1.4" />
+      </svg>
+      <span className="absolute left-[14%] top-[26%] size-1 rounded-full bg-brand-200/70 [animation:avaria-particle-drift_10s_ease-in-out_infinite]" />
+      <span className="absolute left-[78%] top-[64%] size-1 rounded-full bg-brand-200/60 [animation:avaria-particle-drift_12s_ease-in-out_infinite_1.5s]" />
+      <span className="absolute left-[45%] top-[12%] size-[3px] rounded-full bg-brand-100/50 [animation:avaria-particle-drift_14s_ease-in-out_infinite_3s]" />
+      <span className="absolute left-[85%] top-[22%] size-[3px] rounded-full bg-brand-100/40" />
+      <span className="absolute left-[8%] top-[72%] size-[3px] rounded-full bg-brand-100/40" />
+      <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/50 to-transparent" />
+    </div>
+  );
+}
+
+/** Shared presentation zone for login and full-screen authentication states.
+ * `compact` (used only by the light-theme Shell in AuthScreens.tsx for the
+ * unauthorized/error/config-error states) keeps its original small floating
+ * dark card -- untouched by the V2 redesign below, which is scoped to the
+ * login screen and its loading splash. The non-compact path renders content
+ * only (no background of its own): it's meant to sit directly on a shared
+ * `AvariaLoginAtmosphere`, so the page never reads as two separate cards. */
 export function AvariaAuthBrandPanel({
   titleTestId,
   compact = false,
   animate = false,
+  showDepartmentLogos = false,
 }: {
   titleTestId?: string;
   compact?: boolean;
   /** One-time entrance fade/settle for the login screen only (never the
    * shared loading/unauthorized/error auth screens). */
   animate?: boolean;
+  /** Adds the two approved unit logos as a restrained identity strip below
+   * the tagline. Login screen only -- left off the loading splash and the
+   * compact auth-state screens to keep them minimal. */
+  showDepartmentLogos?: boolean;
 }) {
+  if (compact) {
+    return (
+      <section
+        className="relative isolate flex min-h-44 overflow-hidden bg-[#0c0918] p-6 sm:p-8 lg:min-h-full"
+        aria-label="AVARIA"
+      >
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-16 -right-10 size-40 rounded-full bg-brand-600/20 blur-2xl lg:-top-32 lg:-right-20 lg:size-96 lg:bg-brand-600/25 lg:blur-3xl" />
+          <div className="absolute -bottom-40 -left-24 hidden size-96 rounded-full bg-brand-900/40 blur-3xl lg:block" />
+          <div
+            className="absolute inset-0 hidden opacity-[0.12] lg:block"
+            style={{
+              backgroundImage: 'radial-gradient(rgba(216,203,255,0.7) 1px, transparent 1px)',
+              backgroundSize: '22px 22px',
+            }}
+          />
+          <div className="absolute inset-x-0 bottom-0 hidden h-1/2 bg-gradient-to-t from-brand-950/60 to-transparent lg:block" />
+        </div>
+
+        <div className="relative z-10 m-auto w-full max-w-xl text-center">
+          <h1 data-testid={titleTestId}>
+            <span className="relative mx-auto block aspect-[16/5] w-[83%] overflow-hidden rounded-2xl lg:aspect-auto lg:w-fit lg:overflow-visible lg:rounded-[2rem] lg:p-8">
+              <span
+                aria-hidden
+                className="absolute inset-0"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(ellipse at center, rgba(6,3,14,0.7) 0%, rgba(6,3,14,0.32) 55%, rgba(6,3,14,0) 80%)',
+                }}
+              />
+              <AvariaFullLogo className="relative h-full w-full object-cover lg:h-auto lg:w-auto lg:max-w-sm lg:object-contain" />
+            </span>
+          </h1>
+          <span aria-hidden className="mx-auto mt-2 block h-0.5 w-8 rounded-full bg-brand-500 lg:mt-4 lg:w-12" />
+          <p className="mt-2 text-xs font-medium tracking-wide text-white/50 sm:text-sm lg:mt-4 lg:text-base lg:text-white/60">
+            {APP_TAGLINE}
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section
-      className={`relative isolate flex overflow-hidden bg-[#0c0918] ${
-        compact ? 'min-h-44 p-6 sm:p-8 lg:min-h-full' : 'h-[180px] px-6 py-4 lg:h-auto lg:min-h-full lg:p-12'
-      }`}
       aria-label="AVARIA"
+      className="relative z-10 flex shrink-0 flex-col items-center justify-center gap-4 px-6 pt-10 pb-6 text-center sm:px-10 lg:w-[44%] lg:gap-7 lg:px-12 lg:py-14"
     >
-      {/* Atmosphere stays restrained on mobile (one small soft glow, no
-          grid/band) so the hero reads as part of one continuous surface
-          with the auth content below it, not a separate boxed panel; the
-          fuller decoration only earns its keep once the lg split gives it
-          real room. */}
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-16 -right-10 size-40 rounded-full bg-brand-600/20 blur-2xl lg:-top-32 lg:-right-20 lg:size-96 lg:bg-brand-600/25 lg:blur-3xl" />
-        <div className="absolute -bottom-40 -left-24 hidden size-96 rounded-full bg-brand-900/40 blur-3xl lg:block" />
-        <div
-          className="absolute inset-0 hidden opacity-[0.12] lg:block"
-          style={{
-            backgroundImage: 'radial-gradient(rgba(216,203,255,0.7) 1px, transparent 1px)',
-            backgroundSize: '22px 22px',
-          }}
-        />
-        <div className="absolute inset-x-0 bottom-0 hidden h-1/2 bg-gradient-to-t from-brand-950/60 to-transparent lg:block" />
-      </div>
-
-      {!compact && (
-        <>
-          <div
+      {/* The logo's flat purple reads weakly straight against the shared
+          purple atmosphere, so a soft near-black ink pool sits behind it --
+          CSS only, the asset itself is never recolored. This is a SINGLE
+          image (one heading, one alt, one testid) whose sizing responds per
+          breakpoint, deliberately not two conditionally hidden elements: a
+          test environment without real CSS (jsdom) would otherwise see two
+          simultaneously "visible" accessible images. Mobile crops to the
+          wordmark's own band via object-cover on a wide aspect box (the
+          canvas's huge transparent margin is never displayed); desktop shows
+          the full canvas uncropped, large and prominent. */}
+      <h1 data-testid={titleTestId} className={animate ? '[animation:login-entrance_380ms_ease-out_80ms_both]' : ''}>
+        <span className="relative mx-auto block aspect-[16/5] w-[78%] max-w-xs overflow-hidden rounded-2xl sm:max-w-sm lg:aspect-auto lg:w-fit lg:max-w-none lg:overflow-visible">
+          <span
             aria-hidden
-            className="absolute end-6 top-6 hidden items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 backdrop-blur-sm lg:flex"
-          >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-500/20 text-brand-200">
-              <IconAlertTriangle className="size-4" />
-            </span>
-            <span className="text-xs">
-              <span className="block font-semibold text-white/90">זיהוי תקלה</span>
-              <span className="mt-0.5 flex items-center gap-1 text-white/50">
-                <span className="size-1.5 shrink-0 rounded-full bg-emerald-400" />
-                מערכת פעילה
-              </span>
-            </span>
-          </div>
-          <div
-            aria-hidden
-            className="absolute bottom-8 start-6 hidden w-40 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 backdrop-blur-sm lg:flex"
-          >
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-500/20 text-brand-200">
-              <IconClock className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1 text-xs">
-              <span className="block truncate font-semibold text-white/90">מעקב בזמן אמת</span>
-              <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-white/10">
-                <span className="block h-full w-2/3 rounded-full bg-brand-400/80" />
-              </span>
-            </span>
-          </div>
-        </>
+            className="absolute inset-0"
+            style={{
+              backgroundImage:
+                'radial-gradient(ellipse at center, rgba(6,3,14,0.55) 0%, rgba(6,3,14,0.24) 55%, rgba(6,3,14,0) 80%)',
+            }}
+          />
+          <AvariaFullLogo className="relative h-full w-full object-cover lg:h-auto lg:w-auto lg:max-w-[560px] lg:object-contain" />
+        </span>
+      </h1>
+      <span aria-hidden className="block h-0.5 w-10 rounded-full bg-brand-500 lg:w-14" />
+      <p className="max-w-sm text-sm font-medium tracking-wide text-white/60 sm:text-base lg:text-lg">
+        {APP_TAGLINE}
+      </p>
+      {showDepartmentLogos && (
+        // Forces the app's dark surface/hairline tokens for this strip
+        // regardless of the page's own (light-mode-default) theme, so the
+        // badges read as intentional dark chrome against the navy backdrop
+        // instead of a stray light rectangle -- the shared token system's
+        // own `.dark` scope, not a one-off color.
+        <div className="dark mt-1 hidden items-center gap-3 lg:flex">
+          <DepartmentLogos className="flex shrink-0 items-center gap-2.5" />
+        </div>
       )}
-
-      <div
-        className={`relative z-10 m-auto w-full max-w-xl text-center ${
-          animate ? '[animation:login-entrance_380ms_ease-out_80ms_both]' : ''
-        }`}
-      >
-        {/* The logo's flat purple reads weakly straight against the panel's
-            own purple atmosphere, so a soft near-black ink pool sits behind
-            it -- CSS only, the asset itself is never recolored. This is a
-            SINGLE image (one heading, one alt, one testid) whose sizing
-            responds per breakpoint, deliberately not two conditionally
-            hidden elements: a test environment without real CSS (jsdom)
-            would otherwise see two simultaneously "visible" accessible
-            images. Mobile crops to the wordmark's own band via object-cover
-            on a wide aspect box (the canvas's huge transparent margin is
-            never displayed, so the visible mark reaches ~60% of the hero
-            width without growing the hero taller); desktop shows the full
-            canvas uncropped, larger than before. */}
-        <h1 data-testid={titleTestId}>
-          <span className="relative mx-auto block aspect-[16/5] w-[83%] overflow-hidden rounded-2xl lg:aspect-auto lg:w-fit lg:overflow-visible lg:rounded-[2rem] lg:p-8">
-            <span
-              aria-hidden
-              className="absolute inset-0"
-              style={{
-                backgroundImage:
-                  'radial-gradient(ellipse at center, rgba(6,3,14,0.7) 0%, rgba(6,3,14,0.32) 55%, rgba(6,3,14,0) 80%)',
-              }}
-            />
-            {/* The enlarged desktop size targets the login screen's wide,
-                generously padded panel column; the narrower shared Shell
-                (compact) keeps its original, already-proven-safe cap so it
-                can never bleed into the neighboring column there. */}
-            <AvariaFullLogo
-              className={`relative h-full w-full object-cover lg:h-auto lg:w-auto lg:object-contain ${
-                compact ? 'lg:max-w-sm' : 'lg:max-w-[520px]'
-              }`}
-            />
-          </span>
-        </h1>
-        <span aria-hidden className="mx-auto mt-2 block h-0.5 w-8 rounded-full bg-brand-500 lg:mt-4 lg:w-12" />
-        <p className="mt-2 text-xs font-medium tracking-wide text-white/50 sm:text-sm lg:mt-4 lg:text-base lg:text-white/60">
-          {APP_TAGLINE}
-        </p>
-      </div>
     </section>
   );
 }

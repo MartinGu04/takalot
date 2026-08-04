@@ -13,10 +13,10 @@ export const DEPARTMENT_LOGOS = [
   },
 ] as const;
 
-export function DepartmentLogos() {
+export function DepartmentLogos({ className }: { className?: string } = {}) {
   return (
     <div
-      className="hidden shrink-0 items-center gap-1.5 md:flex"
+      className={className ?? 'hidden shrink-0 items-center gap-1.5 md:flex'}
       aria-hidden="true"
       data-testid="department-logos"
     >
