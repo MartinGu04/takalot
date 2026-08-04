@@ -356,9 +356,10 @@ describe('SupabaseRepository.getIncidentEvents: operation_id mapping', () => {
   });
 });
 
-describe('SupabaseRepository.listNotifications: excludes historical update_overdue rows', () => {
+describe('SupabaseRepository.listNotifications: excludes historical update_overdue rows, bounded, category preserved', () => {
   function fakeNotificationsClient(rows: Record<string, unknown>[]) {
     const neqCalls: [string, unknown][] = [];
+    const limitCalls: number[] = [];
     const builder = {
       select: () => builder,
       eq: () => builder,
@@ -366,17 +367,22 @@ describe('SupabaseRepository.listNotifications: excludes historical update_overd
         neqCalls.push([col, val]);
         return builder;
       },
-      order: async () => ({ data: rows, error: null }),
+      order: () => builder,
+      limit: async (n: number) => {
+        limitCalls.push(n);
+        return { data: rows, error: null };
+      },
     };
-    return { client: { from: () => builder }, neqCalls };
+    return { client: { from: () => builder }, neqCalls, limitCalls };
   }
 
-  it('filters update_overdue at the query level (never fetched as an active row)', async () => {
+  it('filters update_overdue at the query level (never fetched as an active row), and preserves category', async () => {
     const { client, neqCalls } = fakeNotificationsClient([
       {
         id: 'n1',
         user_id: session.userId,
         type: 'incident_assigned',
+        category: 'action_required',
         incident_id: 'i1',
         handover_id: null,
         text: 'תקלה הוקצתה אליך',
@@ -390,6 +396,16 @@ describe('SupabaseRepository.listNotifications: excludes historical update_overd
     expect(neqCalls).toContainEqual(['type', 'update_overdue']);
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe('incident_assigned');
+    expect(result[0].category).toBe('action_required');
+  });
+
+  it('bounds the request: never loads unbounded notification history', async () => {
+    const { client, limitCalls } = fakeNotificationsClient([]);
+    const repo = new SupabaseRepository(client as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    await repo.listNotifications(session);
+
+    expect(limitCalls).toEqual([SupabaseRepository.NOTIFICATIONS_LIMIT]);
+    expect(SupabaseRepository.NOTIFICATIONS_LIMIT).toBeGreaterThan(0);
   });
 });
 

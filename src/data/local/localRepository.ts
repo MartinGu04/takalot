@@ -329,6 +329,7 @@ export class LocalDemoRepository implements Repository {
   private notify(
     userId: string,
     type: AppNotification['type'],
+    category: AppNotification['category'],
     text: string,
     opts: { incidentId?: string; handoverId?: string; dedupeKey?: string } = {},
   ): void {
@@ -339,6 +340,7 @@ export class LocalDemoRepository implements Repository {
       id: newId(),
       userId,
       type,
+      category,
       incidentId: opts.incidentId ?? null,
       handoverId: opts.handoverId ?? null,
       text,
@@ -346,6 +348,33 @@ export class LocalDemoRepository implements Repository {
       createdAt: this.now().toISOString(),
       dedupeKey: opts.dedupeKey,
     });
+  }
+
+  /**
+   * Role-based operational broadcast: every active professional_manager
+   * except the acting user and anyone in excludeUserIds (used to skip a
+   * recipient who already got a personal, action_required notification for
+   * this exact operation -- e.g. the professional_manager who becomes the
+   * incident's owner during create/reopen; see the product's dedup rule).
+   * Always category 'update'. Mirrors notify_professional_managers()
+   * (migrations 0043/0044): recipients are derived from active profiles
+   * server-side (here, in-process) -- never client-supplied.
+   */
+  private notifyProfessionalManagers(
+    actorId: string,
+    type: AppNotification['type'],
+    text: string,
+    opts: { incidentId: string; operationId: string; excludeUserIds?: string[] },
+  ): void {
+    const exclude = new Set([actorId, ...(opts.excludeUserIds ?? [])]);
+    for (const profile of this.db.profiles) {
+      if (profile.role !== 'professional_manager' || !profile.active) continue;
+      if (exclude.has(profile.id)) continue;
+      this.notify(profile.id, type, 'update', text, {
+        incidentId: opts.incidentId,
+        dedupeKey: `pm-${opts.operationId}-${profile.id}`,
+      });
+    }
   }
 
   private ownerLabel(userId: string | null, externalName: string | null): string {
@@ -1508,11 +1537,21 @@ export class LocalDemoRepository implements Repository {
     });
 
     if (incident.ownerUserId && incident.ownerUserId !== actor.id) {
-      this.notify(incident.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
+      this.notify(incident.ownerUserId, 'incident_assigned', 'action_required', `תקלה ${incident.number} הוקצתה אליך.`, {
         incidentId: incident.id,
         dedupeKey: `assign-${incident.id}-create`,
       });
     }
+    this.notifyProfessionalManagers(
+      actor.id,
+      'incident_opened',
+      `נפתחה תקלה ${incident.number} · ${system.name} · ${location.name}`,
+      {
+        incidentId: incident.id,
+        operationId,
+        excludeUserIds: incident.ownerUserId ? [incident.ownerUserId] : [],
+      },
+    );
     this.persist();
     return { ...incident };
   }
@@ -1683,7 +1722,7 @@ export class LocalDemoRepository implements Repository {
         entityLabel: incident.number,
       });
       if (input.ownerUserId && input.ownerUserId !== actor.id) {
-        this.notify(input.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
+        this.notify(input.ownerUserId, 'incident_assigned', 'action_required', `תקלה ${incident.number} הוקצתה אליך.`, {
           incidentId,
           dedupeKey: `assign-${incidentId}-${ts}`,
         });
@@ -1748,6 +1787,17 @@ export class LocalDemoRepository implements Repository {
     // (operationalImpact is creation-only; see the comment above). A
     // content-only submission that changes none of those four therefore
     // correctly writes zero audit_logs rows -- no noise for a no-op.
+
+    // Operational broadcast: unconditional -- actionsTaken is mandatory on
+    // every submission, so "a treatment update was added" is always true
+    // here. The new owner (if this same call also reassigned the incident)
+    // is excluded -- they already got the personal notification above.
+    this.notifyProfessionalManagers(
+      actor.id,
+      'incident_updated',
+      `נוסף עדכון לתקלה ${incident.number} על ידי ${actor.fullName}`,
+      { incidentId, operationId, excludeUserIds: ownerChanged && input.ownerUserId ? [input.ownerUserId] : [] },
+    );
     this.persist();
     return { ...incident };
   }
@@ -1792,10 +1842,11 @@ export class LocalDemoRepository implements Repository {
       createdAt: ts,
     };
     this.db.incidentUpdates.push(update);
+    const operationId = newId();
     this.addEvent(incidentId, 'update', actor.id, {
       eventTime: input.eventTime,
       refId: update.id,
-      operationId: newId(),
+      operationId,
     });
 
     incident.version += 1;
@@ -1805,6 +1856,12 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'incident_technical_update', 'incident', incidentId, {
       incidentNumber: incident.number,
     });
+    this.notifyProfessionalManagers(
+      actor.id,
+      'incident_updated',
+      `נוסף עדכון לתקלה ${incident.number} על ידי ${actor.fullName}`,
+      { incidentId, operationId },
+    );
     this.persist();
     return { ...incident };
   }
@@ -1865,7 +1922,7 @@ export class LocalDemoRepository implements Repository {
         entityLabel: incident.number,
       });
       if (input.ownerUserId && input.ownerUserId !== actor.id) {
-        this.notify(input.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
+        this.notify(input.ownerUserId, 'incident_assigned', 'action_required', `תקלה ${incident.number} הוקצתה אליך.`, {
           incidentId,
           dedupeKey: `assign-${incidentId}-${ts}`,
         });
@@ -2037,6 +2094,12 @@ export class LocalDemoRepository implements Repository {
           entityLabel: incident.number,
         });
       }
+      this.notifyProfessionalManagers(
+        actor.id,
+        'incident_closed',
+        `תקלה ${incident.number} נסגרה על ידי ${actor.fullName}`,
+        { incidentId, operationId },
+      );
     } else {
       // Incomplete readiness: the incident stays active as "כשירות חלקית" —
       // it is never marked closed while follow-up is still outstanding.
@@ -2138,13 +2201,14 @@ export class LocalDemoRepository implements Repository {
     incident.updatedBy = actor.id;
     incident.lastUpdateAt = ts;
 
+    const operationId = newId();
     this.addEvent(incidentId, 'cancelled', actor.id, {
       field: 'status',
       oldValue: oldStatus,
       newValue: 'cancelled',
       note: reason,
       eventTime: input.eventTime,
-      operationId: newId(),
+      operationId,
     });
     this.audit(actor.id, 'incident_cancelled', 'incident', incidentId, {
       incidentNumber: incident.number,
@@ -2152,6 +2216,10 @@ export class LocalDemoRepository implements Repository {
       after: JSON.stringify({ status: 'cancelled', cancellationReason: reason }),
       entityLabel: incident.number,
       summary: reason,
+    });
+    this.notifyProfessionalManagers(actor.id, 'incident_cancelled', `תקלה ${incident.number} בוטלה`, {
+      incidentId,
+      operationId,
     });
     this.persist();
     return { ...incident };
@@ -2255,10 +2323,16 @@ export class LocalDemoRepository implements Repository {
       this.notify(
         incident.ownerUserId,
         'incident_reopened',
+        'action_required',
         `תקלה ${incident.number} נפתחה מחדש והוקצתה אליך.`,
         { incidentId, dedupeKey: `reopen-${incidentId}-${ts}` },
       );
     }
+    this.notifyProfessionalManagers(actor.id, 'incident_reopened', `תקלה ${incident.number} נפתחה מחדש`, {
+      incidentId,
+      operationId,
+      excludeUserIds: incident.ownerUserId ? [incident.ownerUserId] : [],
+    });
     this.persist();
     return { ...incident };
   }
@@ -2394,6 +2468,7 @@ export class LocalDemoRepository implements Repository {
     this.notify(
       input.toUserId,
       'handover_pending',
+      'action_required',
       `העברת משמרת מ${actor.fullName} ממתינה לאישורך.`,
       { handoverId: handover.id, dedupeKey: `handover-${handover.id}` },
     );

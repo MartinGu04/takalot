@@ -796,23 +796,30 @@ export class SupabaseRepository implements Repository {
     await this.rpc('add_handover_addendum', { p_handover_id: handoverId, p_text: text });
   }
 
+  // Bounded: the bell is a compact notification center, not an audit log --
+  // this is the hard cap on how much history a client ever loads for it.
+  static readonly NOTIFICATIONS_LIMIT = 50;
+
   async listNotifications(session: Session): Promise<AppNotification[]> {
     const { data, error } = await this.client
       .from('notifications')
       .select('*')
       .eq('user_id', session.userId)
       // 'update_overdue': the next-update-ETA concept was removed from the
-      // active product -- no new row of this type is ever written, but a
-      // hosted database may still contain historical rows. Excluded from
-      // the active list (and therefore the unread badge, which derives its
-      // count from this same result) without deleting the row itself.
+      // active product -- no new row of this type is ever written, and
+      // migration 0044 deletes any historical row outright, but this filter
+      // stays as defense in depth for a database migrated from an older
+      // snapshot. Excluded from the active list (and therefore the unread
+      // badge, which derives its count from this same result).
       .neq('type', 'update_overdue')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(SupabaseRepository.NOTIFICATIONS_LIMIT);
     wrap(error);
     return (data ?? []).map((r) => ({
       id: r.id,
       userId: r.user_id,
       type: r.type,
+      category: r.category,
       incidentId: r.incident_id,
       handoverId: r.handover_id,
       text: r.text,

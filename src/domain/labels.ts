@@ -7,6 +7,7 @@ import type {
   ReportedToOps,
   EventType,
   NotificationType,
+  NotificationCategory,
   SystemCategory,
   LocationCategory,
 } from './types';
@@ -106,8 +107,24 @@ export const notificationTypeLabels: Record<NotificationType, string> = {
   // Historical only -- no new row of this type is ever written; kept for
   // read compatibility with hosted databases (see NotificationType).
   update_overdue: 'עבר מועד העדכון',
+  // Reused for both the personal "reopened and assigned to you" notification
+  // and the generic professional-manager broadcast -- category (below)
+  // disambiguates which one a given row is.
   incident_reopened: 'תקלה נפתחה מחדש',
   handover_pending: 'העברת משמרת ממתינה לאישורך',
+  incident_opened: 'תקלה נפתחה',
+  incident_updated: 'עדכון תקלה',
+  incident_closed: 'תקלה נסגרה',
+  incident_cancelled: 'תקלה בוטלה',
+};
+
+/** Bell notification-center filters: 'all' plus the two durable categories. */
+export type NotificationFilter = 'all' | NotificationCategory;
+
+export const notificationFilterLabels: Record<NotificationFilter, string> = {
+  all: 'הכול',
+  action_required: 'דורש פעולה',
+  update: 'עדכונים',
 };
 
 /** Fixed display order for system categories -- product-defined, not

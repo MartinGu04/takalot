@@ -1,21 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { isDemoMode } from '../data';
-import { useNotifications, useProfiles, useAppMutation, repo } from '../data/hooks';
+import { useProfiles } from '../data/hooks';
 import { hasCapability } from '../domain/permissions';
-import { APP_NAME, roleLabels, notificationTypeLabels } from '../domain/labels';
-import { formatRelative } from '../lib/time';
-import { useSession } from '../auth/AuthContext';
+import { APP_NAME, roleLabels } from '../domain/labels';
 import { Sidebar } from './Sidebar';
 import { Avatar, Dialog } from './ui';
 import { ThemeToggle } from './ThemeToggle';
 import { navItems, type NavItem } from './navItems';
-import { IconBell, IconDotsHorizontal, IconLogOut, IconPlus, IconUsers } from './icons';
+import { IconDotsHorizontal, IconLogOut, IconPlus, IconUsers } from './icons';
 import { AvariaIcon } from './AvariaBrand';
 import { DepartmentLogos } from './DepartmentLogos';
 import { FloatingPopover } from './FloatingPopover';
 import { LiveClock } from './LiveClock';
+import { NotificationsMenu } from './NotificationsMenu';
 
 /** Fixed number of direct destination slots in the mobile bottom nav (see
  *  the nav itself, below). When a role has more destinations than this, the
@@ -102,107 +101,6 @@ function RoleSwitcher() {
         ))}
       </select>
     </label>
-  );
-}
-
-function NotificationsMenu() {
-  const [open, setOpen] = useState(false);
-  const { data: notifications } = useNotifications();
-  const session = useSession();
-  const navigate = useNavigate();
-  const anchorRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const unread = (notifications ?? []).filter((n) => !n.read).length;
-
-  const markRead = useAppMutation(
-    (id: string) => repo().markNotificationRead(session, id),
-    { invalidate: [['notifications']] },
-  );
-  const markAll = useAppMutation(() => repo().markAllNotificationsRead(session), {
-    invalidate: [['notifications']],
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (!anchorRef.current?.contains(target) && !panelRef.current?.contains(target)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  return (
-    <>
-      <button
-        ref={anchorRef}
-        type="button"
-        aria-label={`התראות${unread ? ` (${unread} שלא נקראו)` : ''}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="relative flex size-10 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover"
-        onClick={() => setOpen((o) => !o)}
-        data-testid="notifications-button"
-      >
-        <IconBell className="size-5" />
-        {unread > 0 && (
-          <span className="absolute top-1 left-1 flex size-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-            {unread}
-          </span>
-        )}
-      </button>
-      <FloatingPopover
-        anchorRef={anchorRef}
-        panelRef={panelRef}
-        open={open}
-        width={320}
-        maxHeight={384}
-        className="popover-panel z-50 animate-scale-in overflow-y-auto p-2"
-      >
-        <div className="flex items-center justify-between px-2 py-1">
-          <span className="card-title">התראות</span>
-          {unread > 0 && (
-            <button
-              type="button"
-              className="text-xs text-brand-700 hover:underline dark:text-brand-400"
-              onClick={() => markAll.mutate(undefined)}
-            >
-              סימון הכול כנקרא
-            </button>
-          )}
-        </div>
-        {(notifications ?? []).length === 0 && (
-          <p className="px-2 py-4 text-center text-sm text-muted">אין התראות.</p>
-        )}
-        {(notifications ?? []).slice(0, 30).map((n) => (
-          <button
-            key={n.id}
-            type="button"
-            className={`block w-full rounded-lg px-2 py-2 text-right text-sm hover:bg-surface-hover ${
-              n.read ? 'opacity-60' : 'font-medium'
-            }`}
-            onClick={() => {
-              if (!n.read) markRead.mutate(n.id);
-              setOpen(false);
-              if (n.incidentId) navigate(`/incidents/${n.incidentId}`);
-              else if (n.handoverId) navigate(`/handovers/${n.handoverId}`);
-            }}
-          >
-            <span className="block text-xs text-muted">
-              {notificationTypeLabels[n.type]} · {formatRelative(n.createdAt)}
-            </span>
-            {n.text}
-          </button>
-        ))}
-      </FloatingPopover>
-    </>
   );
 }
 

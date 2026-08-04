@@ -325,14 +325,31 @@ export type NotificationType =
   // databases may still contain historical rows of it. Kept in the domain
   // type and label mapping for read compatibility; both repositories filter
   // it out of active listNotifications results (see PR review follow-up).
+  // Migration 0044 additionally deletes any such row server-side.
   | 'update_overdue'
   | 'incident_reopened'
-  | 'handover_pending';
+  | 'handover_pending'
+  // Role-based operational notifications (professional_manager broadcast) --
+  // added alongside the notification category split (migration 0043/0044).
+  | 'incident_opened'
+  | 'incident_updated'
+  | 'incident_closed'
+  | 'incident_cancelled';
+
+/** Durable classification, independent of `type`: 'action_required' is a
+ *  personal call to action for the recipient (assigned to you, reopened and
+ *  assigned to you, a handover awaiting your approval); 'update' is a
+ *  role-based informational broadcast that requires no action. Some types
+ *  (notably 'incident_reopened') can be EITHER, depending on which flow
+ *  produced the row -- category is what disambiguates them, not the type
+ *  alone. Always server-set; never accepted from the client. */
+export type NotificationCategory = 'action_required' | 'update';
 
 export interface AppNotification {
   id: string;
   userId: string;
   type: NotificationType;
+  category: NotificationCategory;
   incidentId: string | null;
   handoverId: string | null;
   text: string;
