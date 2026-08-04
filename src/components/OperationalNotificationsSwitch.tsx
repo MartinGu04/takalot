@@ -34,12 +34,40 @@ export function OperationalNotificationsSwitch() {
   const checked = user.operationalNotificationsEnabled ?? false;
 
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-text-primary">{LABEL}</p>
-        <p className="mt-0.5 text-xs text-muted">{SUPPORTING_TEXT}</p>
+    // Desktop (sm and up): unchanged from before -- a plain two-item row,
+    // the label+text block on one side and the switch pushed to the far
+    // edge (border/rounded-none/bg-transparent/p-0 all cancel the mobile
+    // card below `sm:`). Below `sm`: one compact settings card (padded,
+    // rounded, subtle surface/border) with the label and switch sharing a
+    // close top row and the supporting text wrapping full-width beneath --
+    // a genuinely different pairing of the same three pieces per
+    // breakpoint, not just a spacing tweak, so this uses CSS grid areas
+    // (arbitrary Tailwind properties) rather than duplicating any markup.
+    <div
+      data-testid="operational-notifications-card"
+      className="rounded-xl border border-hairline bg-surface-active/40 p-3 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0"
+    >
+      <div
+        data-testid="operational-notifications-grid"
+        className={[
+          // Mobile: three columns -- label and switch each size to their
+          // own content and sit packed together, with the 3rd (1fr) column
+          // absorbing all leftover width so nothing stretches BETWEEN them.
+          // The text row ignores that split and spans all three columns.
+          'grid grid-cols-[auto_auto_1fr] items-center gap-x-3 gap-y-1',
+          '[grid-template-areas:"label_switch_."_"text_text_text"]',
+          // Desktop: unchanged from before -- two columns, label+text in
+          // column 1, switch spanning both rows in column 2 (top-aligned).
+          'sm:grid-cols-[1fr_auto] sm:items-start sm:gap-y-0',
+          'sm:[grid-template-areas:"label_switch"_"text_switch"]',
+        ].join(' ')}
+      >
+        <p className="[grid-area:label] min-w-0 text-sm font-medium text-text-primary">{LABEL}</p>
+        <p className="[grid-area:text] min-w-0 text-xs text-muted sm:mt-0.5">{SUPPORTING_TEXT}</p>
+        <div className="[grid-area:switch] self-start">
+          <Switch checked={checked} disabled={mutation.isPending} onChange={() => mutation.mutate(!checked)} label={LABEL} />
+        </div>
       </div>
-      <Switch checked={checked} disabled={mutation.isPending} onChange={() => mutation.mutate(!checked)} label={LABEL} />
     </div>
   );
 }

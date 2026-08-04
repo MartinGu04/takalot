@@ -337,4 +337,50 @@ describe('NotificationsMenu: system_admin operational-notifications settings gea
       window.dispatchEvent(new Event('resize'));
     }
   });
+
+  // jsdom applies no real stylesheet, so these assert the authored
+  // responsive utility classes themselves (mobile card below `sm:`,
+  // cancelled again at `sm:` and up) rather than a computed layout --
+  // visually verified in both light/dark and both breakpoints during
+  // development. Regression coverage for: mobile renders one compact card
+  // (padding/rounded corners/subtle border) with the label and switch
+  // sharing a close top row and the supporting text wrapping full-width
+  // beneath, while desktop keeps the original unstyled two-item row.
+  it('renders as one compact card below the sm breakpoint, with the label and switch packed into the same row and wrap-friendly supporting text', async () => {
+    const user = await loginAs('login-u-admin');
+    await user.click(screen.getByTestId('notifications-button'));
+    await user.click(within(panel()).getByRole('button', { name: 'הגדרות התראות' }));
+    const dialog = screen.getByRole('dialog', { name: 'הגדרות התראות' });
+
+    const card = within(dialog).getByTestId('operational-notifications-card');
+    // Mobile card styling, cancelled again at sm: (desktop stays unstyled).
+    expect(card.className).toMatch(/\brounded-xl\b/);
+    expect(card.className).toMatch(/\bborder\b/);
+    expect(card.className).toMatch(/\bp-3\b/);
+    expect(card.className).toMatch(/\bsm:rounded-none\b/);
+    expect(card.className).toMatch(/\bsm:border-0\b/);
+    expect(card.className).toMatch(/\bsm:p-0\b/);
+
+    const grid = within(card).getByTestId('operational-notifications-grid');
+    // Mobile: label and switch share row 1 (packed, not stretched apart);
+    // the supporting text spans a separate full-width row beneath.
+    expect(grid.className).toContain('[grid-template-areas:"label_switch_."_"text_text_text"]');
+    // Desktop: reverts to the original pairing -- label+text in column 1,
+    // switch spanning both rows in column 2 (pushed to the far edge).
+    expect(grid.className).toContain('sm:[grid-template-areas:"label_switch"_"text_switch"]');
+
+    const label = within(dialog).getByText('עדכונים תפעוליים', { selector: 'p' });
+    const supportingText = within(dialog).getByText('פתיחה, עדכון, סגירה, פתיחה מחדש וביטול תקלות');
+    // Free to wrap onto two lines -- never truncated or forced to one line.
+    expect(supportingText.className).not.toMatch(/truncate|whitespace-nowrap|line-clamp/);
+    expect(label.className).toContain('[grid-area:label]');
+    expect(supportingText.className).toContain('[grid-area:text]');
+
+    // The switch itself is unaffected by the responsive wrapper -- still
+    // reachable, still reflects the persisted (default OFF) state.
+    expect(within(dialog).getByRole('switch', { name: 'עדכונים תפעוליים' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  });
 });
