@@ -306,3 +306,103 @@ test('RTL: the document renders right-to-left and the login form keeps natural H
     (await page.evaluate(([a, b]) => a!.compareDocumentPosition(b!), [headingHandle, buttonHandle])) & FOLLOWING,
   ).toBeTruthy();
 });
+
+// ---------------------------------------------------------------------------
+// Mobile viewport hotfix: a real-device regression where the login column
+// became its own horizontally-scrollable/pannable box. The root cause was
+// CSS itself, not a layout bug an aggregate document.scrollWidth check could
+// catch (that check already passed before the fix -- the column's own box
+// never exceeded the viewport, only its INTERNAL scrollable content did, via
+// `overflow-y-auto` implicitly resolving `overflow-x` to `auto`). These
+// tests assert against that specific failure mode, not just the aggregate.
+// ---------------------------------------------------------------------------
+
+const MOBILE_HOTFIX_VIEWPORTS = [
+  { width: 360, height: 800 },
+  { width: 390, height: 844 },
+  { width: 393, height: 852 },
+  { width: 430, height: 932 },
+];
+
+for (const { width, height } of MOBILE_HOTFIX_VIEWPORTS) {
+  test(`no element on the login page is an internally horizontally-scrollable box at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('/login');
+    await page.waitForTimeout(200);
+
+    const doc = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(doc.scrollWidth).toBeLessThanOrEqual(doc.clientWidth);
+
+    // The actual bug class: an element whose computed overflow-x is auto/
+    // scroll (so it CAN be dragged/panned) and whose content is wider than
+    // its own box. A plain overflow-hidden/visible element with an
+    // oversized decorative child is fine -- it just gets clipped, never
+    // becomes draggable -- so this only flags the dangerous combination.
+    const pannableDescendants = await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll('body *'));
+      return all
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          const isScrollableX = style.overflowX === 'auto' || style.overflowX === 'scroll';
+          return isScrollableX && el.scrollWidth > el.clientWidth + 1;
+        })
+        .map((el) => el.className.toString());
+    });
+    expect(pannableDescendants).toEqual([]);
+
+    // Directly reproduce the reported gesture: attempt a horizontal scroll
+    // and confirm nothing actually moves, anywhere on the page.
+    await page.mouse.wheel(300, 0);
+    await page.waitForTimeout(150);
+    const scrollX = await page.evaluate(() => window.scrollX);
+    expect(scrollX).toBe(0);
+  });
+
+  test(`the complete primary login content is visible within the viewport with no vertical scrolling needed at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto('/login');
+
+    const welcomePill = page.getByText('ברוכים הבאים');
+    const heading = page.getByRole('heading', { name: 'כניסה למערכת' });
+    const firstAction = page.locator('[data-testid^="login-"]').first();
+    for (const locator of [welcomePill, heading, firstAction]) {
+      await expect(locator).toBeVisible();
+      const box = await locator.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width + 1);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(height);
+    }
+  });
+}
+
+test('short viewport (360x600): horizontal overflow stays fixed, and natural vertical scrolling still reaches the last piece of content', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 600 });
+  await page.goto('/login');
+  await page.waitForTimeout(200);
+
+  const overflowX = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflowX).toBe(false);
+
+  const scrollableHeight = await page.evaluate(
+    () => document.documentElement.scrollHeight > document.documentElement.clientHeight,
+  );
+  expect(scrollableHeight).toBe(true);
+
+  await page.mouse.wheel(0, 2000);
+  await page.waitForTimeout(200);
+  const overflowXafterVerticalScroll = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(overflowXafterVerticalScroll).toBe(false);
+});
