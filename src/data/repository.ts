@@ -231,6 +231,17 @@ export interface Repository {
    * surrounding auth flow.
    */
   setOwnAvatarUrl(avatarUrl: string | null): Promise<void>;
+  /**
+   * Self-only opt-in/out of role-based operational notifications. Takes no
+   * user id: the target is always the CALLER's own profile, derived
+   * server-side from auth.uid() -- there is no admin-facing path to change
+   * this for someone else. Restricted to an active system_admin (a
+   * professional_manager already receives these unconditionally and has
+   * nothing to opt into; every other role is rejected). Returns the
+   * caller's own updated profile so the UI can refresh immediately without
+   * a full reload.
+   */
+  setMyOperationalNotificationsEnabled(session: Session, enabled: boolean): Promise<Profile>;
 
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;

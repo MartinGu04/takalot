@@ -3366,3 +3366,153 @@ describe('listNotifications: historical update_overdue rows stay stored but excl
     expect(raw?.notifications.some((n) => n.id === 'ntf-legacy-overdue')).toBe(true);
   });
 });
+
+describe('operational notifications: recipient rules including the system_admin opt-in', () => {
+  it('a professional_manager receives the operational broadcast regardless of the opt-in field (it has no meaning for that role)', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    const notifications = await repo.listNotifications(manager);
+    expect(
+      notifications.some((n) => n.type === 'incident_opened' && n.category === 'update' && n.incidentId === incident.id),
+    ).toBe(true);
+  });
+
+  it('an active but opted-OUT system_admin (the default) does not receive operational notifications', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    const notifications = await repo.listNotifications(admin);
+    expect(notifications.some((n) => n.type === 'incident_opened' && n.incidentId === incident.id)).toBe(false);
+  });
+
+  it('an active, opted-in system_admin receives the operational broadcast for another user\'s successful operation', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setMyOperationalNotificationsEnabled(admin, true);
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    const notifications = await repo.listNotifications(admin);
+    expect(
+      notifications.some((n) => n.type === 'incident_opened' && n.category === 'update' && n.incidentId === incident.id),
+    ).toBe(true);
+  });
+
+  it('an opted-in system_admin never receives a notification for its own action', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setMyOperationalNotificationsEnabled(admin, true);
+    const incident = await repo.createIncident(admin, baseCreateInput());
+    const notifications = await repo.listNotifications(admin);
+    expect(notifications.some((n) => n.incidentId === incident.id)).toBe(false);
+  });
+
+  it('an INACTIVE, opted-in system_admin does not receive operational notifications', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.profiles.push({
+      id: 'u-admin-inactive-optedin',
+      fullName: 'מנהל מערכת לא פעיל',
+      role: 'system_admin',
+      active: false,
+      createdAt: FIXED_NOW.toISOString(),
+      operationalNotificationsEnabled: true,
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    // requireSession rejects an inactive caller, so assert against storage directly.
+    const raw = storage.load();
+    expect(
+      raw?.notifications.some((n) => n.userId === 'u-admin-inactive-optedin' && n.incidentId === incident.id),
+    ).toBe(false);
+  });
+
+  it('a role that can never be an operational recipient stays excluded even with a stray-true opt-in field', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.profiles.push({
+      id: 'u-supervisor-stray-true',
+      fullName: 'אחמ״ש עם דגל שגוי',
+      role: 'shift_supervisor',
+      active: true,
+      createdAt: FIXED_NOW.toISOString(),
+      operationalNotificationsEnabled: true,
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    const incident = await repo.createIncident(supervisor1, baseCreateInput());
+    const notifications = await repo.listNotifications(session('u-supervisor-stray-true', 'shift_supervisor'));
+    expect(notifications.some((n) => n.incidentId === incident.id)).toBe(false);
+  });
+
+  it('an opted-in system_admin owner gets only the personal assignment notification, never also the operational one, for the same operation', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setMyOperationalNotificationsEnabled(admin, true);
+    const incident = await repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: DEMO_USERS.admin }));
+    const notifications = (await repo.listNotifications(admin)).filter((n) => n.incidentId === incident.id);
+    expect(notifications.filter((n) => n.type === 'incident_assigned').length).toBe(1);
+    expect(notifications.find((n) => n.type === 'incident_assigned')?.category).toBe('action_required');
+    expect(notifications.some((n) => n.type === 'incident_opened')).toBe(false);
+  });
+
+  it('enabling the preference does not backfill a notification for an earlier, pre-opt-in operation', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const before = await repo.createIncident(supervisor1, baseCreateInput());
+    await repo.setMyOperationalNotificationsEnabled(admin, true);
+    const notifications = await repo.listNotifications(admin);
+    expect(notifications.some((n) => n.incidentId === before.id)).toBe(false);
+
+    // Confirms the opt-in genuinely took effect going forward.
+    const after = await repo.createIncident(supervisor1, baseCreateInput());
+    const notificationsAfter = await repo.listNotifications(admin);
+    expect(notificationsAfter.some((n) => n.incidentId === after.id && n.type === 'incident_opened')).toBe(true);
+  });
+});
+
+describe('setMyOperationalNotificationsEnabled: self-only, system_admin-only preference RPC', () => {
+  it('lets an active system_admin change their own preference and persists it', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const result = await repo.setMyOperationalNotificationsEnabled(admin, true);
+    expect(result.id).toBe(DEMO_USERS.admin);
+    expect(result.operationalNotificationsEnabled).toBe(true);
+    const profile = await repo.getProfile(DEMO_USERS.admin);
+    expect(profile?.operationalNotificationsEnabled).toBe(true);
+  });
+
+  it.each([
+    ['professional_manager', () => manager],
+    ['shift_supervisor', () => supervisor1],
+    ['technician', () => tech1],
+    ['viewer', () => viewer],
+  ])('rejects a non-system_admin caller (%s) and leaves the stored preference unchanged', async (_role, getSession) => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const s = getSession();
+    await expect(repo.setMyOperationalNotificationsEnabled(s, true)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const profile = await repo.getProfile(s.userId);
+    expect(profile?.operationalNotificationsEnabled ?? false).toBe(false);
+  });
+
+  it('changes only the calling admin\'s own row -- there is no way to pass another user\'s id', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setMyOperationalNotificationsEnabled(admin, true);
+    // No other profile is touched by a call this method has no way to target.
+    const other = await repo.getProfile(DEMO_USERS.manager);
+    expect(other?.operationalNotificationsEnabled ?? false).toBe(false);
+  });
+
+  it('rejects an inactive caller entirely (requireSession fails closed before the role check)', async () => {
+    const storage = new MemoryStorage();
+    const seeded = buildSeed(FIXED_NOW);
+    seeded.profiles.push({
+      id: 'u-admin-inactive-caller',
+      fullName: 'מנהל מערכת לא פעיל',
+      role: 'system_admin',
+      active: false,
+      createdAt: FIXED_NOW.toISOString(),
+      operationalNotificationsEnabled: false,
+    });
+    storage.save(seeded);
+    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+    await expect(
+      repo.setMyOperationalNotificationsEnabled(session('u-admin-inactive-caller', 'system_admin'), true),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    const raw = storage.load();
+    expect(raw?.profiles.find((p) => p.id === 'u-admin-inactive-caller')?.operationalNotificationsEnabled).toBe(false);
+  });
+});

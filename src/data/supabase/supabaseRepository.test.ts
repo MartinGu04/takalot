@@ -470,3 +470,82 @@ describe('SupabaseRepository.getIncidentUpdates: update-specific reporting mappi
     expect(updates[0].updateWisdomReported).toBeNull();
   });
 });
+
+describe('SupabaseRepository: profile mapping includes operationalNotificationsEnabled', () => {
+  const profileRow = {
+    id: 'u-admin-1',
+    full_name: 'מנהל מערכת',
+    role: 'system_admin',
+    active: true,
+    created_at: '2026-01-01T00:00:00.000Z',
+    avatar_url: null,
+    operational_notifications_enabled: true,
+  };
+
+  it('listProfiles maps operational_notifications_enabled -> operationalNotificationsEnabled', async () => {
+    const fakeClient = {
+      from: () => ({
+        select: () => ({
+          order: async () => ({ data: [profileRow], error: null }),
+        }),
+      }),
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    const profiles = await repo.listProfiles(session);
+    expect(profiles[0].operationalNotificationsEnabled).toBe(true);
+  });
+
+  it('getProfile maps operational_notifications_enabled -> operationalNotificationsEnabled', async () => {
+    const fakeClient = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: profileRow, error: null }),
+          }),
+        }),
+      }),
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    const profile = await repo.getProfile('u-admin-1');
+    expect(profile?.operationalNotificationsEnabled).toBe(true);
+  });
+});
+
+describe('SupabaseRepository.setMyOperationalNotificationsEnabled', () => {
+  it('calls set_my_operational_notifications_enabled with only p_enabled (no user id), and maps the returned profile', async () => {
+    let calledFn = '';
+    let calledArgs: Record<string, unknown> = {};
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calledFn = fn;
+        calledArgs = args;
+        return {
+          data: {
+            id: session.userId,
+            full_name: 'מנהל מערכת',
+            role: 'system_admin',
+            active: true,
+            created_at: '2026-01-01T00:00:00.000Z',
+            avatar_url: null,
+            operational_notifications_enabled: true,
+          },
+          error: null,
+        };
+      },
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    const profile = await repo.setMyOperationalNotificationsEnabled(session, true);
+
+    expect(calledFn).toBe('set_my_operational_notifications_enabled');
+    expect(calledArgs).toEqual({ p_enabled: true });
+    expect(profile.id).toBe(session.userId);
+    expect(profile.operationalNotificationsEnabled).toBe(true);
+  });
+
+  it('maps a permission: prefixed rejection (non-admin caller) to a controlled AppError', async () => {
+    const repo = repoWithRpcError('permission: ההעדפה זמינה למנהלי מערכת בלבד');
+    await expect(repo.setMyOperationalNotificationsEnabled(session, true)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+});

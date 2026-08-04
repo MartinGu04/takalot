@@ -1,8 +1,10 @@
 -- Focused verification for migrations 0043/0044 (operational notifications
--- center): role-based professional_manager broadcasts alongside the
--- existing personal notifications, category classification, dedup/rollback
--- safety, and RLS. Runs only against the local scratch database created by
--- tests/run.sh, in one transaction that rolls back at the end.
+-- center, including the system_admin opt-in): role-based broadcasts
+-- (professional_manager unconditionally, system_admin only when opted in)
+-- alongside the existing personal notifications, category classification,
+-- dedup/rollback safety, RLS, and the self-only preference RPC. Runs only
+-- against the local scratch database created by tests/run.sh, in one
+-- transaction that rolls back at the end.
 \pset pager off
 begin;
 
@@ -15,18 +17,33 @@ insert into auth.users (id, email, email_confirmed_at) values
   ('00000000-0000-0000-0000-000000005206', 'ntf-tech-owner@test', now()),
   ('00000000-0000-0000-0000-000000005207', 'ntf-viewer@test', now()),
   ('00000000-0000-0000-0000-000000005208', 'ntf-admin@test', now()),
-  ('00000000-0000-0000-0000-000000005209', 'ntf-pm-owner@test', now());
+  ('00000000-0000-0000-0000-000000005209', 'ntf-pm-owner@test', now()),
+  ('00000000-0000-0000-0000-000000005210', 'ntf-admin-optedin@test', now()),
+  ('00000000-0000-0000-0000-000000005211', 'ntf-admin-actor@test', now()),
+  ('00000000-0000-0000-0000-000000005212', 'ntf-admin-inactive@test', now()),
+  ('00000000-0000-0000-0000-000000005213', 'ntf-supervisor-stray-true@test', now());
 
-insert into profiles (id, full_name, role, active) values
-  ('00000000-0000-0000-0000-000000005201', 'PM Actor', 'professional_manager', true),
-  ('00000000-0000-0000-0000-000000005202', 'PM One', 'professional_manager', true),
-  ('00000000-0000-0000-0000-000000005203', 'PM Two', 'professional_manager', true),
-  ('00000000-0000-0000-0000-000000005204', 'PM Inactive', 'professional_manager', false),
-  ('00000000-0000-0000-0000-000000005205', 'Notif Supervisor', 'shift_supervisor', true),
-  ('00000000-0000-0000-0000-000000005206', 'Tech Owner', 'technician', true),
-  ('00000000-0000-0000-0000-000000005207', 'Notif Viewer', 'viewer', true),
-  ('00000000-0000-0000-0000-000000005208', 'Notif Admin', 'system_admin', true),
-  ('00000000-0000-0000-0000-000000005209', 'PM Owner', 'professional_manager', true);
+insert into profiles (id, full_name, role, active, operational_notifications_enabled) values
+  ('00000000-0000-0000-0000-000000005201', 'PM Actor', 'professional_manager', true, false),
+  ('00000000-0000-0000-0000-000000005202', 'PM One', 'professional_manager', true, false),
+  ('00000000-0000-0000-0000-000000005203', 'PM Two', 'professional_manager', true, false),
+  ('00000000-0000-0000-0000-000000005204', 'PM Inactive', 'professional_manager', false, false),
+  ('00000000-0000-0000-0000-000000005205', 'Notif Supervisor', 'shift_supervisor', true, false),
+  ('00000000-0000-0000-0000-000000005206', 'Tech Owner', 'technician', true, false),
+  ('00000000-0000-0000-0000-000000005207', 'Notif Viewer', 'viewer', true, false),
+  -- Opted-out system_admin (the default) -- used as the "no notification" control.
+  ('00000000-0000-0000-0000-000000005208', 'Notif Admin', 'system_admin', true, false),
+  ('00000000-0000-0000-0000-000000005209', 'PM Owner', 'professional_manager', true, false),
+  -- Opted-in, active system_admin -- an eligible recipient.
+  ('00000000-0000-0000-0000-000000005210', 'Admin OptedIn', 'system_admin', true, true),
+  -- Opted-in, active system_admin used as the ACTOR in some tests (proves
+  -- an opted-in admin still never notifies itself).
+  ('00000000-0000-0000-0000-000000005211', 'Admin Actor', 'system_admin', true, true),
+  -- Opted-in but INACTIVE system_admin -- excluded by activity, not role.
+  ('00000000-0000-0000-0000-000000005212', 'Admin Inactive OptedIn', 'system_admin', false, true),
+  -- A role that can NEVER be an operational recipient, with a stray true
+  -- value in the opt-in column -- proves the column is inert for it.
+  ('00000000-0000-0000-0000-000000005213', 'Supervisor Stray True', 'shift_supervisor', true, true);
 
 insert into systems (id, name, display_order, category) values
   ('00000000-0000-0000-0000-000000005221', 'Notif Sys', 1, 'other');
@@ -45,6 +62,16 @@ language sql as $$
            json_build_object('sub', p_user_id, 'role', 'authenticated')::text,
            false
          );
+$$;
+
+-- Clears any previously-set identity, so auth.uid() resolves to null --
+-- simulates an unauthenticated caller within the same session/transaction
+-- (set_config's is_local=false persists across statements, so a prior
+-- as_user() call would otherwise still be in effect).
+create or replace function pg_temp.as_anon() returns void
+language sql as $$
+  select set_config('request.jwt.claim.sub', '', false),
+         set_config('request.jwt.claims', '', false);
 $$;
 
 create or replace function pg_temp.check_result(p_test text, p_ok boolean, p_detail text default '')
@@ -486,16 +513,262 @@ select pg_temp.check_result(
 );
 
 -- =====================================================================
--- 12. Grants: notify_professional_managers is unreachable directly by any
+-- 12. Grants: notify_operational_recipients is unreachable directly by any
 --     client role -- only from inside another SECURITY DEFINER RPC body.
 -- =====================================================================
 select pg_temp.check_result(
-  'notify_professional_managers is not directly executable by authenticated, anon, or PUBLIC',
+  'notify_operational_recipients is not directly executable by authenticated, anon, or PUBLIC',
   not has_function_privilege('authenticated',
-    'public.notify_professional_managers(notification_type,notification_category,uuid,text,uuid,uuid[])', 'EXECUTE')
+    'public.notify_operational_recipients(notification_type,notification_category,uuid,text,uuid,uuid[])', 'EXECUTE')
   and not has_function_privilege('anon',
-    'public.notify_professional_managers(notification_type,notification_category,uuid,text,uuid,uuid[])', 'EXECUTE')
+    'public.notify_operational_recipients(notification_type,notification_category,uuid,text,uuid,uuid[])', 'EXECUTE')
 );
+
+-- =====================================================================
+-- 13. system_admin opt-in: recipient rule.
+-- =====================================================================
+do $$
+declare
+  v_incident incidents;
+begin
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205'); -- actor: shift_supervisor (not eligible)
+  set local role authenticated;
+  select * into v_incident from create_incident(
+    pg_temp.base_create_input('00000000-0000-0000-0000-000000005206'));
+  reset role;
+
+  perform pg_temp.check_result(
+    'active professional managers still receive operational notifications regardless of the opt-in field',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005201', v_incident.id, 'incident_opened') = 1
+  );
+  perform pg_temp.check_result(
+    'an active opted-in system_admin receives an operational notification for another user''s successful operation',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_opened') = 1
+  );
+  perform pg_temp.check_result(
+    'an active but opted-OUT system_admin does not receive operational notifications',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident.id, 'incident_opened') = 0
+  );
+  perform pg_temp.check_result(
+    'an INACTIVE opted-in system_admin does not receive operational notifications',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005212', v_incident.id, 'incident_opened') = 0
+  );
+  perform pg_temp.check_result(
+    'a role that can never be a recipient is excluded even when operational_notifications_enabled is stray-true',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005213', v_incident.id, 'incident_opened') = 0
+  );
+
+  -- An opted-in system_admin as the ACTOR: never notifies itself, but a
+  -- different opted-in system_admin still receives the broadcast.
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005211'); -- actor: Admin Actor (opted in)
+  set local role authenticated;
+  select * into v_incident from create_incident(
+    pg_temp.base_create_input('00000000-0000-0000-0000-000000005206'));
+  reset role;
+
+  perform pg_temp.check_result(
+    'an opted-in system_admin never receives a notification for its own action',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005211', v_incident.id, 'incident_opened') = 0
+  );
+  perform pg_temp.check_result(
+    'a different opted-in system_admin still receives the broadcast for that same operation',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_opened') = 1
+  );
+end $$;
+
+-- =====================================================================
+-- 14. system_admin opt-in: no duplicate personal + operational notification.
+--     Same dedup/exclusion mechanism already proven for a professional-
+--     manager owner (sections 2 and 6), now exercised with an opted-in
+--     system_admin as the personal-notification recipient -- both a fresh
+--     assignment (create_incident) and a reopen-and-assign.
+-- =====================================================================
+do $$
+declare
+  v_incident incidents;
+begin
+  -- Assignment: create_incident with the opted-in admin as owner.
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
+  set local role authenticated;
+  select * into v_incident from create_incident(
+    pg_temp.base_create_input('00000000-0000-0000-0000-000000005210')); -- owner: Admin OptedIn
+  reset role;
+
+  perform pg_temp.check_result(
+    'an opted-in system_admin owner gets only the personal assignment notification, never also the operational one',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_assigned') = 1
+    and pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_opened') = 0
+  );
+
+  -- Reopen-and-assign: close, then reopen straight to the opted-in admin.
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
+  set local role authenticated;
+  select * into v_incident from close_incident(v_incident.id, jsonb_build_object(
+    'expectedVersion', v_incident.version, 'eventTime', now()::text,
+    'readiness', 'full', 'rootCause', 'rc', 'resolution', 'res', 'reportedToOps', 'no'
+  ));
+  reset role;
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005201'); -- PM Actor
+  set local role authenticated;
+  select * into v_incident from reopen_incident(v_incident.id, jsonb_build_object(
+    'expectedVersion', v_incident.version, 'reason', 'reopen to opted-in admin',
+    'ownerUserId', '00000000-0000-0000-0000-000000005210'
+  ));
+  reset role;
+
+  perform pg_temp.check_result(
+    'an opted-in system_admin reopened-and-assigned gets only the personal notification, never also the operational one',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_reopened') = 1
+    and (select category from notifications where user_id = '00000000-0000-0000-0000-000000005210'
+           and incident_id = v_incident.id and type = 'incident_reopened') = 'action_required'
+  );
+end $$;
+
+-- =====================================================================
+-- 15. set_my_operational_notifications_enabled(): self-only authorization.
+-- =====================================================================
+do $$
+declare
+  v_before_target boolean;
+  v_after_target boolean;
+  v_before_other boolean;
+  v_after_other boolean;
+  v_result profiles;
+begin
+  -- 15a. An active system_admin changes ONLY their own row.
+  select operational_notifications_enabled into v_before_other
+    from profiles where id = '00000000-0000-0000-0000-000000005210'; -- Admin OptedIn, untouched by this call
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005208'); -- Notif Admin, opted-out
+  set local role authenticated;
+  select * into v_result from set_my_operational_notifications_enabled(true);
+  reset role;
+  select operational_notifications_enabled into v_after_other
+    from profiles where id = '00000000-0000-0000-0000-000000005210';
+
+  perform pg_temp.check_result(
+    'the RPC changes only the calling admin''s own preference',
+    v_result.id = '00000000-0000-0000-0000-000000005208'
+    and v_result.operational_notifications_enabled = true
+    and (select operational_notifications_enabled from profiles where id = '00000000-0000-0000-0000-000000005208') = true
+    and v_before_other = v_after_other -- Admin OptedIn's own row is untouched
+  );
+
+  -- Restore for downstream sections that assert Notif Admin stays opted-out.
+  update profiles set operational_notifications_enabled = false
+    where id = '00000000-0000-0000-0000-000000005208';
+
+  -- 15b. Structural: the function accepts exactly one argument (the boolean
+  -- flag) -- there is no user-id parameter to pass, so "modify another
+  -- user's preference" is not an input this RPC can even express.
+  perform pg_temp.check_result(
+    'set_my_operational_notifications_enabled has exactly one parameter (no target user id accepted)',
+    (select pronargs from pg_proc where proname = 'set_my_operational_notifications_enabled') = 1
+  );
+
+  -- 15c. Non-admin caller rejected; the field is left unchanged.
+  select operational_notifications_enabled into v_before_target
+    from profiles where id = '00000000-0000-0000-0000-000000005205'; -- Notif Supervisor
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
+  set local role authenticated;
+  begin
+    perform set_my_operational_notifications_enabled(true);
+    perform pg_temp.check_result('a non-system_admin caller is rejected by the preference RPC', false, 'succeeded');
+  exception when others then
+    perform pg_temp.check_result(
+      'a non-system_admin caller is rejected by the preference RPC', sqlerrm like 'permission:%', sqlerrm
+    );
+  end;
+  reset role;
+  select operational_notifications_enabled into v_after_target
+    from profiles where id = '00000000-0000-0000-0000-000000005205';
+  perform pg_temp.check_result(
+    'a rejected non-admin call leaves the stored preference unchanged',
+    v_before_target = v_after_target
+  );
+
+  -- 15d. Inactive (opted-in) system_admin caller rejected; field unchanged.
+  select operational_notifications_enabled into v_before_target
+    from profiles where id = '00000000-0000-0000-0000-000000005212'; -- Admin Inactive OptedIn
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005212');
+  set local role authenticated;
+  begin
+    perform set_my_operational_notifications_enabled(false);
+    perform pg_temp.check_result('an inactive system_admin caller is rejected by the preference RPC', false, 'succeeded');
+  exception when others then
+    perform pg_temp.check_result(
+      'an inactive system_admin caller is rejected by the preference RPC', sqlerrm like 'permission:%', sqlerrm
+    );
+  end;
+  reset role;
+  select operational_notifications_enabled into v_after_target
+    from profiles where id = '00000000-0000-0000-0000-000000005212';
+  perform pg_temp.check_result(
+    'a rejected inactive-admin call leaves the stored preference unchanged',
+    v_before_target = v_after_target
+  );
+
+  -- 15e. Unauthenticated caller rejected.
+  perform pg_temp.as_anon();
+  set local role authenticated;
+  begin
+    perform set_my_operational_notifications_enabled(true);
+    perform pg_temp.check_result('an unauthenticated caller is rejected by the preference RPC', false, 'succeeded');
+  exception when others then
+    perform pg_temp.check_result(
+      'an unauthenticated caller is rejected by the preference RPC', sqlerrm like 'permission:%', sqlerrm
+    );
+  end;
+  reset role;
+end $$;
+
+-- =====================================================================
+-- 16. Enabling the preference does not backfill historical notifications.
+-- =====================================================================
+do $$
+declare
+  v_incident_before incidents;
+  v_incident_after incidents;
+begin
+  -- Notif Admin is opted-out at this point (restored at the end of section 15).
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
+  set local role authenticated;
+  select * into v_incident_before from create_incident(
+    pg_temp.base_create_input('00000000-0000-0000-0000-000000005206'));
+  reset role;
+
+  perform pg_temp.check_result(
+    'fixture: the opted-out admin received no notification for the pre-opt-in incident',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_before.id, 'incident_opened') = 0
+  );
+
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005208');
+  set local role authenticated;
+  perform set_my_operational_notifications_enabled(true);
+  reset role;
+
+  perform pg_temp.check_result(
+    'enabling the preference does not backfill a notification for the earlier, pre-opt-in incident',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_before.id, 'incident_opened') = 0
+  );
+
+  -- Confirms the opt-in genuinely took effect going forward.
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
+  set local role authenticated;
+  select * into v_incident_after from create_incident(
+    pg_temp.base_create_input('00000000-0000-0000-0000-000000005206'));
+  reset role;
+
+  perform pg_temp.check_result(
+    'the newly-opted-in admin receives the operational notification for a subsequent operation',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_after.id, 'incident_opened') = 1
+  );
+
+  -- Restore for isolation, in case more sections are appended later.
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005208');
+  set local role authenticated;
+  perform set_my_operational_notifications_enabled(false);
+  reset role;
+end $$;
 
 select * from results order by id;
 select case when count(*) filter (where result <> 'PASS') = 0

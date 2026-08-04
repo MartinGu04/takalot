@@ -352,15 +352,19 @@ export class LocalDemoRepository implements Repository {
 
   /**
    * Role-based operational broadcast: every active professional_manager
-   * except the acting user and anyone in excludeUserIds (used to skip a
-   * recipient who already got a personal, action_required notification for
-   * this exact operation -- e.g. the professional_manager who becomes the
+   * (unconditionally), PLUS every active system_admin who has personally
+   * opted in (operationalNotificationsEnabled) -- except the acting user
+   * and anyone in excludeUserIds (used to skip a recipient who already got
+   * a personal, action_required notification for this exact operation --
+   * e.g. the professional_manager or opted-in system_admin who becomes the
    * incident's owner during create/reopen; see the product's dedup rule).
-   * Always category 'update'. Mirrors notify_professional_managers()
+   * Always category 'update'. Mirrors notify_operational_recipients()
    * (migrations 0043/0044): recipients are derived from active profiles
-   * server-side (here, in-process) -- never client-supplied.
+   * server-side (here, in-process) -- never client-supplied. Every other
+   * role is never a recipient, even if operationalNotificationsEnabled
+   * were somehow true on its row.
    */
-  private notifyProfessionalManagers(
+  private notifyOperationalRecipients(
     actorId: string,
     type: AppNotification['type'],
     text: string,
@@ -368,11 +372,14 @@ export class LocalDemoRepository implements Repository {
   ): void {
     const exclude = new Set([actorId, ...(opts.excludeUserIds ?? [])]);
     for (const profile of this.db.profiles) {
-      if (profile.role !== 'professional_manager' || !profile.active) continue;
+      const eligible =
+        profile.role === 'professional_manager' ||
+        (profile.role === 'system_admin' && profile.operationalNotificationsEnabled);
+      if (!eligible || !profile.active) continue;
       if (exclude.has(profile.id)) continue;
       this.notify(profile.id, type, 'update', text, {
         incidentId: opts.incidentId,
-        dedupeKey: `pm-${opts.operationId}-${profile.id}`,
+        dedupeKey: `opn-${opts.operationId}-${profile.id}`,
       });
     }
   }
@@ -1228,6 +1235,22 @@ export class LocalDemoRepository implements Repository {
     // persist -- AuthContext's DemoAuthProvider never calls this method.
   }
 
+  /**
+   * Self-only opt-in/out of role-based operational notifications. Mirrors
+   * set_my_operational_notifications_enabled(): the target is always the
+   * CALLER's own profile (session.userId), never a client-supplied id;
+   * restricted to an active system_admin.
+   */
+  async setMyOperationalNotificationsEnabled(session: Session, enabled: boolean): Promise<Profile> {
+    const actor = this.requireSession(session);
+    if (actor.role !== 'system_admin') {
+      throw new AppError('FORBIDDEN', 'ההעדפה זמינה למנהלי מערכת בלבד.');
+    }
+    actor.operationalNotificationsEnabled = enabled;
+    this.persist();
+    return { ...actor };
+  }
+
   async bootstrapFirstAdmin(): Promise<Profile | null> {
     // The demo database is always seeded with an active system_admin, so
     // the one-time bootstrap window (a fresh, zero-profile production
@@ -1280,6 +1303,7 @@ export class LocalDemoRepository implements Repository {
       role: row.role,
       active: true,
       createdAt: nowIso,
+      operationalNotificationsEnabled: false,
     };
     this.db.profiles.push(profile);
     this.audit(identity.authUserId, 'personnel_pending_claimed', 'pending_personnel', row.id, {
@@ -1542,7 +1566,7 @@ export class LocalDemoRepository implements Repository {
         dedupeKey: `assign-${incident.id}-create`,
       });
     }
-    this.notifyProfessionalManagers(
+    this.notifyOperationalRecipients(
       actor.id,
       'incident_opened',
       `נפתחה תקלה ${incident.number} · ${system.name} · ${location.name}`,
@@ -1792,7 +1816,7 @@ export class LocalDemoRepository implements Repository {
     // every submission, so "a treatment update was added" is always true
     // here. The new owner (if this same call also reassigned the incident)
     // is excluded -- they already got the personal notification above.
-    this.notifyProfessionalManagers(
+    this.notifyOperationalRecipients(
       actor.id,
       'incident_updated',
       `נוסף עדכון לתקלה ${incident.number} על ידי ${actor.fullName}`,
@@ -1856,7 +1880,7 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'incident_technical_update', 'incident', incidentId, {
       incidentNumber: incident.number,
     });
-    this.notifyProfessionalManagers(
+    this.notifyOperationalRecipients(
       actor.id,
       'incident_updated',
       `נוסף עדכון לתקלה ${incident.number} על ידי ${actor.fullName}`,
@@ -2094,7 +2118,7 @@ export class LocalDemoRepository implements Repository {
           entityLabel: incident.number,
         });
       }
-      this.notifyProfessionalManagers(
+      this.notifyOperationalRecipients(
         actor.id,
         'incident_closed',
         `תקלה ${incident.number} נסגרה על ידי ${actor.fullName}`,
@@ -2217,7 +2241,7 @@ export class LocalDemoRepository implements Repository {
       entityLabel: incident.number,
       summary: reason,
     });
-    this.notifyProfessionalManagers(actor.id, 'incident_cancelled', `תקלה ${incident.number} בוטלה`, {
+    this.notifyOperationalRecipients(actor.id, 'incident_cancelled', `תקלה ${incident.number} בוטלה`, {
       incidentId,
       operationId,
     });
@@ -2328,7 +2352,7 @@ export class LocalDemoRepository implements Repository {
         { incidentId, dedupeKey: `reopen-${incidentId}-${ts}` },
       );
     }
-    this.notifyProfessionalManagers(actor.id, 'incident_reopened', `תקלה ${incident.number} נפתחה מחדש`, {
+    this.notifyOperationalRecipients(actor.id, 'incident_reopened', `תקלה ${incident.number} נפתחה מחדש`, {
       incidentId,
       operationId,
       excludeUserIds: incident.ownerUserId ? [incident.ownerUserId] : [],

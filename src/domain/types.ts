@@ -68,6 +68,15 @@ export interface Profile {
    *  before this field existed, and always null/absent in demo mode
    *  (no OAuth session to read a picture from). */
   avatarUrl?: string | null;
+  /** Personal, self-managed opt-in to role-based operational notifications
+   *  (see NotificationCategory) -- meaningful only for `system_admin`
+   *  (`professional_manager` always receives them regardless of this
+   *  field, and every other role never does, even if this were somehow
+   *  true). Optional like `avatarUrl`: absent/undefined is equivalent to
+   *  false everywhere it is read, so fixtures and data shaped before this
+   *  field existed never need an explicit value. Changed only via
+   *  setMyOperationalNotificationsEnabled, never directly. */
+  operationalNotificationsEnabled?: boolean;
 }
 
 export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled' | 'expired';

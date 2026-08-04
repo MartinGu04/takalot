@@ -26,13 +26,13 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   db.seededAt = now.toISOString();
 
   db.profiles = [
-    { id: DEMO_USERS.admin, fullName: 'אלון ברק (דמו)', role: 'system_admin', active: true, createdAt: at(-hours(24 * 90)) },
-    { id: DEMO_USERS.manager, fullName: 'דנה לוי (דמו)', role: 'professional_manager', active: true, createdAt: at(-hours(24 * 90)) },
-    { id: DEMO_USERS.supervisor1, fullName: 'יואב כהן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)) },
-    { id: DEMO_USERS.supervisor2, fullName: 'מאיה רוזן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)) },
-    { id: DEMO_USERS.tech1, fullName: 'עומר פרץ (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)) },
-    { id: DEMO_USERS.tech2, fullName: 'ליאור אדרי (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)) },
-    { id: DEMO_USERS.viewer, fullName: 'רוני שגיא (דמו)', role: 'viewer', active: true, createdAt: at(-hours(24 * 30)) },
+    { id: DEMO_USERS.admin, fullName: 'אלון ברק (דמו)', role: 'system_admin', active: true, createdAt: at(-hours(24 * 90)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.manager, fullName: 'דנה לוי (דמו)', role: 'professional_manager', active: true, createdAt: at(-hours(24 * 90)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.supervisor1, fullName: 'יואב כהן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.supervisor2, fullName: 'מאיה רוזן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.tech1, fullName: 'עומר פרץ (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.tech2, fullName: 'ליאור אדרי (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.viewer, fullName: 'רוני שגיא (דמו)', role: 'viewer', active: true, createdAt: at(-hours(24 * 30)), operationalNotificationsEnabled: false },
   ];
 
   db.systems = [

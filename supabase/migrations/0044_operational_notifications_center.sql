@@ -2,9 +2,16 @@
 --
 -- Builds on 0043's already-committed enum expansion (notification_type's
 -- four new values, and the new notification_category type) to add
--- role-based operational notifications for professional_manager, alongside
--- the existing personal ("action required") notifications, without changing
--- any RPC's public signature.
+-- role-based operational notifications, alongside the existing personal
+-- ("action required") notifications, without changing any existing RPC's
+-- public signature.
+--
+-- This file was amended, in place (not via a follow-up migration), to add
+-- the system_admin opt-in described below -- this feature is still entirely
+-- unreleased (only ever applied to the local/CI scratch database created by
+-- tests/run.sh, never to a hosted database), so folding the addition into
+-- 0044 directly keeps the migration history clean instead of adding a
+-- 0045 that would immediately be edited again by a later PR review comment.
 --
 --   1. notifications.category: durable, NOT NULL classification --
 --      'action_required' (a personal call to action: assigned to you,
@@ -17,30 +24,54 @@
 --      outright: they are already excluded from every active read path, and
 --      the product spec calls for removing them here rather than leaving
 --      dead rows to carry a category value that means nothing for them.
---   2. notify_professional_managers(): the single, internal (never client-
+--   2. profiles.operational_notifications_enabled: a personal, self-managed
+--      boolean opt-in -- NOT NULL, default false. Meaningful only for
+--      system_admin: a professional_manager is an operational recipient
+--      unconditionally regardless of this field's value, and every other
+--      role is never a recipient even if this field were somehow true (see
+--      notify_operational_recipients' WHERE clause below, which is the
+--      actual enforcement point, not merely a UI convention). Changing a
+--      profile's role never requires clearing this field -- it simply goes
+--      back to being inert until/unless the profile is (or becomes again) a
+--      system_admin.
+--   3. notify_operational_recipients(): the single, internal (never client-
 --      callable) helper every lifecycle RPC below calls to broadcast an
---      'update'-category notification to every active professional_manager
---      except the acting user and any explicitly excluded recipient (used
---      to avoid double-notifying someone who already got a personal
---      'action_required' notification for the very same operation -- e.g.
---      the professional_manager who becomes the incident's owner during
---      create/reopen). The acting user is derived from auth.uid() and
---      recipients from active public.profiles rows -- never from client
---      input, so a client can never forge a recipient, actor, role, or
---      category for these. Deduplication is a stable key built from the
---      SAME operation_id the calling RPC already stamps onto its
---      incident_events rows for this exact operation (never a timestamp),
---      combined with the recipient -- a retried/duplicate call reuses
---      nothing (each RPC invocation mints its own operation_id via
+--      'update'-category notification to every eligible active recipient --
+--      every active professional_manager, PLUS every active system_admin
+--      who has opted in -- except the acting user and any explicitly
+--      excluded recipient (used to avoid double-notifying someone who
+--      already got a personal 'action_required' notification for the very
+--      same operation -- e.g. the professional_manager who becomes the
+--      incident's owner during create/reopen). The acting user is derived
+--      from auth.uid() and recipients from active public.profiles rows --
+--      never from client input, so a client can never forge a recipient,
+--      actor, role, category, or text for these. Deduplication is a stable
+--      key built from the SAME operation_id the calling RPC already stamps
+--      onto its incident_events rows for this exact operation (never a
+--      timestamp), combined with the recipient -- a retried/duplicate call
+--      reuses nothing (each RPC invocation mints its own operation_id via
 --      gen_random_uuid(), and a genuine retry of an already-applied,
 --      version-checked mutation fails at lock_incident_checked's version
 --      check before this helper is ever reached, leaving the transaction,
 --      and therefore every notification insert in it, rolled back), and the
 --      existing partial-unique index on notifications.dedupe_key (0001) is
 --      the actual belt-and-suspenders guarantee against a double insert.
---   3. create_incident / update_incident / technician_update_incident /
+--   4. set_my_operational_notifications_enabled(): a narrowly scoped
+--      SECURITY DEFINER RPC that lets an active, authenticated system_admin
+--      change ONLY their own operational_notifications_enabled field. Takes
+--      no user id -- the target is always auth.uid() -- so there is no path
+--      (through this RPC) for an admin to change the preference for anyone
+--      else. Rejects a non-system_admin, an inactive profile, or an
+--      unauthenticated caller with a controlled error. Returns the caller's
+--      own updated profile row so the frontend can refresh the signed-in
+--      session's copy without a reload. profiles has no client-facing
+--      UPDATE policy (0003: "managed via admin RPCs and auth triggers
+--      only"), so this RPC -- not a direct table write -- is the only
+--      supported path, exactly like every other profile mutation in this
+--      schema.
+--   5. create_incident / update_incident / technician_update_incident /
 --      close_incident (full-readiness branch only) / reopen_incident /
---      cancel_incident: each gains exactly one notify_professional_managers
+--      cancel_incident: each gains exactly one notify_operational_recipients
 --      call after its mutation has successfully committed to this same
 --      transaction -- so a rolled-back operation (any exception raised
 --      above that point) can never leave a notification behind. assign_incident
@@ -48,7 +79,7 @@
 --      personal-notification insert: reassignment alone is not one of the
 --      five product-defined broadcast events (incident opened / treatment
 --      update / closed / reopened / cancelled).
---   4. Every existing notification insert (incident_assigned,
+--   6. Every existing notification insert (incident_assigned,
 --      incident_reopened's personal branch, handover_pending) gains the new
 --      category column, set to 'action_required' -- no behavioral change,
 --      just satisfying the new NOT NULL column.
@@ -94,15 +125,37 @@ comment on column public.notifications.category is
 revoke insert, delete on table public.notifications from public, anon, authenticated;
 
 -- =====================================================================
--- 2. notify_professional_managers(): the shared internal broadcast helper.
+-- 2. profiles.operational_notifications_enabled: personal system_admin
+--    opt-in. NOT NULL with a hard default of false, so both existing rows
+--    and every future insert (admin_create_placeholder_profile, the pending-
+--    personnel claim flow, bootstrap_first_admin) start opted out with no
+--    extra work required at any of those call sites. profiles already has
+--    no client-facing UPDATE policy at all (0003) -- this column is exactly
+--    as unwritable by a direct client request as every other profiles
+--    column, until set_my_operational_notifications_enabled (below) opens
+--    one narrow, self-only path to it.
+-- =====================================================================
+alter table public.profiles
+  add column operational_notifications_enabled boolean not null default false;
+
+comment on column public.profiles.operational_notifications_enabled is
+  'Personal system_admin opt-in to role-based operational notifications (see notify_operational_recipients). Inert for every other role, including a professional_manager (who receives them unconditionally) -- never a substitute for the role check itself.';
+
+-- =====================================================================
+-- 3. notify_operational_recipients(): the shared internal broadcast helper.
 --    Never granted to anon/authenticated -- reachable only from inside
 --    another SECURITY DEFINER function's body (which runs as the function
 --    OWNER, not the invoking client's role, so it needs no EXECUTE grant of
---    its own). This is what makes "a client cannot forge a professional-
---    manager broadcast" true at the database layer, not just by
---    application-layer convention.
+--    its own). This is what makes "a client cannot forge an operational
+--    broadcast" true at the database layer, not just by application-layer
+--    convention. Eligible recipients are exactly: every active
+--    professional_manager (unconditionally), plus every active system_admin
+--    with operational_notifications_enabled = true -- every other role is
+--    excluded outright, regardless of what this column happens to contain
+--    for it (a technician/shift_supervisor/viewer row can never satisfy
+--    either branch of the OR below, so a stray true value there is inert).
 -- =====================================================================
-create or replace function public.notify_professional_managers(
+create or replace function public.notify_operational_recipients(
   p_type public.notification_type,
   p_category public.notification_category,
   p_incident_id uuid,
@@ -114,9 +167,12 @@ language plpgsql security definer set search_path = public as $$
 begin
   insert into notifications (user_id, type, incident_id, text, category, dedupe_key)
   select p.id, p_type, p_incident_id, p_text, p_category,
-         'pm-' || p_operation_id::text || '-' || p.id::text
+         'opn-' || p_operation_id::text || '-' || p.id::text
   from profiles p
-  where p.role = 'professional_manager'
+  where (
+      p.role = 'professional_manager'
+      or (p.role = 'system_admin' and p.operational_notifications_enabled)
+    )
     and p.active
     and p.id <> auth.uid()
     and not (p.id = any(p_exclude_user_ids))
@@ -124,12 +180,52 @@ begin
 end;
 $$;
 
-revoke execute on function public.notify_professional_managers(
+revoke execute on function public.notify_operational_recipients(
   public.notification_type, public.notification_category, uuid, text, uuid, uuid[]
 ) from public, anon, authenticated;
 
 -- =====================================================================
--- 3. create_incident: operational broadcast on successful creation.
+-- 4. set_my_operational_notifications_enabled(): the self-only preference
+--    RPC. auth.uid() is the sole source of the target row -- p_user_id is
+--    deliberately not a parameter, so there is no argument an admin
+--    (however privileged) could pass to change anyone else's preference
+--    through this function. Rejects: no session (auth.uid() is null), no
+--    matching active profile, or a role other than system_admin -- each
+--    with a distinct, controlled 'permission:'-prefixed message, exactly
+--    like every other authorization failure in this schema. Returns the
+--    updated profiles row so the frontend can refresh the signed-in user's
+--    own cached copy without a reload or a second round trip.
+-- =====================================================================
+create or replace function public.set_my_operational_notifications_enabled(p_enabled boolean)
+returns public.profiles
+language plpgsql security definer set search_path = public as $$
+declare
+  v_profile profiles;
+begin
+  if auth.uid() is null then
+    raise exception 'permission: אין הרשאה';
+  end if;
+  select * into v_profile from profiles where id = auth.uid() and active for update;
+  if not found then
+    raise exception 'permission: אין הרשאה';
+  end if;
+  if v_profile.role <> 'system_admin' then
+    raise exception 'permission: ההעדפה זמינה למנהלי מערכת בלבד';
+  end if;
+  update profiles set operational_notifications_enabled = p_enabled
+    where id = auth.uid()
+    returning * into v_profile;
+  return v_profile;
+end;
+$$;
+
+revoke execute on function public.set_my_operational_notifications_enabled(boolean)
+  from public, anon;
+grant execute on function public.set_my_operational_notifications_enabled(boolean)
+  to authenticated;
+
+-- =====================================================================
+-- 5. create_incident: operational broadcast on successful creation.
 --    Identical to 0042's definition except for the trailing addition below
 --    the existing personal incident_assigned notification (now carrying
 --    category), which is excluded from the broadcast when it fires (the
@@ -281,7 +377,7 @@ begin
 
   select name into v_system_name from systems where id = v_incident.system_id;
   select name into v_location_name from locations where id = v_incident.location_id;
-  perform notify_professional_managers(
+  perform notify_operational_recipients(
     'incident_opened', 'update', v_incident.id,
     'נפתחה תקלה ' || v_incident.number || ' · ' || coalesce(v_system_name, '') || ' · ' || coalesce(v_location_name, ''),
     v_operation_id,
@@ -292,7 +388,7 @@ end;
 $$;
 
 -- =====================================================================
--- 4. update_incident: operational broadcast on every successful call --
+-- 6. update_incident: operational broadcast on every successful call --
 --    this RPC always inserts a fresh incident_updates row (actionsTaken is
 --    mandatory on every submission), so "a treatment update was added
 --    through the operational update flow" is unconditionally true whenever
@@ -525,7 +621,7 @@ begin
   end if;
 
   select full_name into v_actor_name from profiles where id = auth.uid();
-  perform notify_professional_managers(
+  perform notify_operational_recipients(
     'incident_updated', 'update', p_incident_id,
     'נוסף עדכון לתקלה ' || v.number || ' על ידי ' || coalesce(v_actor_name, 'משתמש'),
     v_operation_id,
@@ -536,11 +632,11 @@ end;
 $$;
 
 -- =====================================================================
--- 5. technician_update_incident: same unconditional operational broadcast
+-- 7. technician_update_incident: same unconditional operational broadcast
 --    as update_incident -- every successful call inserts a fresh
 --    incident_updates row. Never touches owner, so no exclusion beyond the
 --    acting technician themselves (already handled by
---    notify_professional_managers itself).
+--    notify_operational_recipients itself).
 -- =====================================================================
 create or replace function technician_update_incident(p_incident_id uuid, p_input jsonb) returns incidents
 language plpgsql security definer set search_path = public as $$
@@ -589,7 +685,7 @@ begin
   perform write_audit('incident_technical_update', 'incident', p_incident_id::text, v.number);
 
   select full_name into v_actor_name from profiles where id = auth.uid();
-  perform notify_professional_managers(
+  perform notify_operational_recipients(
     'incident_updated', 'update', p_incident_id,
     'נוסף עדכון לתקלה ' || v.number || ' על ידי ' || coalesce(v_actor_name, 'משתמש'),
     v_operation_id
@@ -599,7 +695,7 @@ end;
 $$;
 
 -- =====================================================================
--- 6. assign_incident: UNCHANGED apart from the new category column on its
+-- 8. assign_incident: UNCHANGED apart from the new category column on its
 --    existing personal notification insert -- dedicated reassignment is not
 --    one of the five product-defined broadcast events.
 -- =====================================================================
@@ -699,7 +795,7 @@ end;
 $$;
 
 -- =====================================================================
--- 7. close_incident: operational broadcast ONLY on an actual closure (the
+-- 9. close_incident: operational broadcast ONLY on an actual closure (the
 --    full-readiness branch, status -> 'closed'). The incomplete-readiness
 --    branch leaves the incident open as 'partial_readiness' -- not one of
 --    the five product-defined broadcast events -- and is otherwise
@@ -844,7 +940,7 @@ begin
     end if;
 
     select full_name into v_actor_name from profiles where id = auth.uid();
-    perform notify_professional_managers(
+    perform notify_operational_recipients(
       'incident_closed', 'update', p_incident_id,
       'תקלה ' || v.number || ' נסגרה על ידי ' || coalesce(v_actor_name, 'משתמש'),
       v_operation_id
@@ -910,10 +1006,10 @@ end;
 $$;
 
 -- =====================================================================
--- 8. reopen_incident: broadcast excludes the incident's (new) owner when
+-- 10. reopen_incident: broadcast excludes the incident's (new) owner when
 --    one is set -- they either already got the personal, action_required
 --    incident_reopened notification just above, or they are the acting
---    user themselves (already excluded by notify_professional_managers).
+--    user themselves (already excluded by notify_operational_recipients).
 -- =====================================================================
 create or replace function reopen_incident(p_incident_id uuid, p_input jsonb) returns incidents
 language plpgsql security definer set search_path = public as $$
@@ -1015,7 +1111,7 @@ begin
             'תקלה ' || v.number || ' נפתחה מחדש והוקצתה אליך.', 'action_required');
   end if;
 
-  perform notify_professional_managers(
+  perform notify_operational_recipients(
     'incident_reopened', 'update', p_incident_id,
     'תקלה ' || v.number || ' נפתחה מחדש',
     v_operation_id,
@@ -1026,7 +1122,7 @@ end;
 $$;
 
 -- =====================================================================
--- 9. cancel_incident: broadcast on every successful cancellation. Uses
+-- 11. cancel_incident: broadcast on every successful cancellation. Uses
 --    search_path = '' and fully qualified names, matching this function's
 --    own existing convention (0017/0026/0042) -- unlike the rest of this
 --    file, which follows the majority search_path = public convention.
@@ -1096,7 +1192,7 @@ begin
     p_entity_label => v_before.number, p_summary => v_reason
   );
 
-  perform public.notify_professional_managers(
+  perform public.notify_operational_recipients(
     'incident_cancelled', 'update', p_incident_id,
     'תקלה ' || v_before.number || ' בוטלה',
     v_operation_id
@@ -1106,7 +1202,7 @@ end;
 $$;
 
 -- =====================================================================
--- 10. create_handover: UNCHANGED apart from the new category column on its
+-- 12. create_handover: UNCHANGED apart from the new category column on its
 --     existing personal handover_pending notification insert.
 -- =====================================================================
 create or replace function create_handover(p_input jsonb) returns handovers

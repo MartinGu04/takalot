@@ -185,6 +185,41 @@ export const DateTimeLocalInput = forwardRef<
   );
 });
 
+// ---------- Switch ----------
+/** Real accessible on/off switch (role="switch", accurate aria-checked,
+ *  keyboard-operable via the native <button>, app-wide focus-visible ring).
+ *  Positions its thumb with logical flex justify-content (start/end), not a
+ *  raw transform, so it renders correctly under both RTL and LTR without
+ *  mirrored-math bugs. */
+export function Switch({
+  checked,
+  onChange,
+  disabled,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onChange}
+      className={cx(
+        'flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+        checked ? 'justify-end bg-brand-600 dark:bg-brand-500' : 'justify-start bg-surface-active',
+      )}
+    >
+      <span aria-hidden className="size-5 rounded-full bg-white shadow transition-transform" />
+    </button>
+  );
+}
+
 /** Labeled field with semantic error message. */
 export function Field({
   label,
