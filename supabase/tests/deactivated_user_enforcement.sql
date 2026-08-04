@@ -48,11 +48,11 @@ insert into handovers (id, created_by, to_user_id, general_note) values
   ('00000000-0000-0000-0000-00000000f032', '00000000-0000-0000-0000-0000000000e2',
    '00000000-0000-0000-0000-0000000000e3', 'h2');
 
-insert into notifications (user_id, type, incident_id, text) values
+insert into notifications (user_id, type, incident_id, text, category) values
   ('00000000-0000-0000-0000-0000000000e3', 'handover_pending',
-   '00000000-0000-0000-0000-00000000f010', 'notification for sup2'),
+   '00000000-0000-0000-0000-00000000f010', 'notification for sup2', 'action_required'),
   ('00000000-0000-0000-0000-0000000000e4', 'incident_assigned',
-   '00000000-0000-0000-0000-00000000f010', 'notification for tech');
+   '00000000-0000-0000-0000-00000000f010', 'notification for tech', 'action_required');
 
 create temp table results (id serial, test text, result text, detail text);
 grant all on results to authenticated, anon;

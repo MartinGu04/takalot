@@ -174,6 +174,16 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   cancellationReason: r.cancellation_reason as string | null,
 });
 
+const mapProfile = (r: Record<string, unknown>): Profile => ({
+  id: r.id as string,
+  fullName: r.full_name as string,
+  role: r.role as Role,
+  active: r.active as boolean,
+  createdAt: r.created_at as string,
+  avatarUrl: (r.avatar_url as string | null | undefined) ?? null,
+  operationalNotificationsEnabled: r.operational_notifications_enabled as boolean,
+});
+
 const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
   id: r.id as string,
   fullName: r.full_name as string,
@@ -233,29 +243,13 @@ export class SupabaseRepository implements Repository {
   async listProfiles(_session: Session): Promise<Profile[]> {
     const { data, error } = await this.client.from('profiles').select('*').order('full_name');
     wrap(error);
-    return (data ?? []).map((r) => ({
-      id: r.id,
-      fullName: r.full_name,
-      role: r.role,
-      active: r.active,
-      createdAt: r.created_at,
-      avatarUrl: r.avatar_url ?? null,
-    }));
+    return (data ?? []).map(mapProfile);
   }
 
   async getProfile(userId: string): Promise<Profile | null> {
     const { data, error } = await this.client.from('profiles').select('*').eq('id', userId).maybeSingle();
     wrap(error);
-    return data
-      ? {
-          id: data.id,
-          fullName: data.full_name,
-          role: data.role,
-          active: data.active,
-          createdAt: data.created_at,
-          avatarUrl: data.avatar_url ?? null,
-        }
-      : null;
+    return data ? mapProfile(data) : null;
   }
 
   async listSystems(): Promise<SystemRecord[]> {
@@ -361,6 +355,15 @@ export class SupabaseRepository implements Repository {
     await this.rpc('set_own_avatar_url', { p_avatar_url: avatarUrl });
   }
 
+  async setMyOperationalNotificationsEnabled(_session: Session, enabled: boolean): Promise<Profile> {
+    // Deliberately no user id parameter -- the RPC derives auth.uid() itself
+    // and rejects anything but an active system_admin.
+    const data = await this.rpc<Record<string, unknown>>('set_my_operational_notifications_enabled', {
+      p_enabled: enabled,
+    });
+    return mapProfile(data);
+  }
+
   async deleteUser(_s: Session, userId: string): Promise<void> {
     // The shared client (src/data/supabase/client.ts) automatically attaches
     // the current session's access token to every function invocation --
@@ -420,14 +423,7 @@ export class SupabaseRepository implements Repository {
       wrap(error);
     }
     if (!data) return null;
-    const r = data as Record<string, unknown>;
-    return {
-      id: r.id as string,
-      fullName: r.full_name as string,
-      role: r.role as Role,
-      active: r.active as boolean,
-      createdAt: r.created_at as string,
-    };
+    return mapProfile(data as Record<string, unknown>);
   }
 
   async bootstrapFirstAdmin(): Promise<Profile | null> {
@@ -438,14 +434,7 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.client.rpc('bootstrap_first_admin');
     wrap(error);
     if (!data) return null;
-    const r = data as Record<string, unknown>;
-    return {
-      id: r.id as string,
-      fullName: r.full_name as string,
-      role: r.role as Role,
-      active: r.active as boolean,
-      createdAt: r.created_at as string,
-    };
+    return mapProfile(data as Record<string, unknown>);
   }
 
   async listPersonnel(_s: Session): Promise<PersonnelEntry[]> {
@@ -796,23 +785,30 @@ export class SupabaseRepository implements Repository {
     await this.rpc('add_handover_addendum', { p_handover_id: handoverId, p_text: text });
   }
 
+  // Bounded: the bell is a compact notification center, not an audit log --
+  // this is the hard cap on how much history a client ever loads for it.
+  static readonly NOTIFICATIONS_LIMIT = 50;
+
   async listNotifications(session: Session): Promise<AppNotification[]> {
     const { data, error } = await this.client
       .from('notifications')
       .select('*')
       .eq('user_id', session.userId)
       // 'update_overdue': the next-update-ETA concept was removed from the
-      // active product -- no new row of this type is ever written, but a
-      // hosted database may still contain historical rows. Excluded from
-      // the active list (and therefore the unread badge, which derives its
-      // count from this same result) without deleting the row itself.
+      // active product -- no new row of this type is ever written, and
+      // migration 0044 deletes any historical row outright, but this filter
+      // stays as defense in depth for a database migrated from an older
+      // snapshot. Excluded from the active list (and therefore the unread
+      // badge, which derives its count from this same result).
       .neq('type', 'update_overdue')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(SupabaseRepository.NOTIFICATIONS_LIMIT);
     wrap(error);
     return (data ?? []).map((r) => ({
       id: r.id,
       userId: r.user_id,
       type: r.type,
+      category: r.category,
       incidentId: r.incident_id,
       handoverId: r.handover_id,
       text: r.text,

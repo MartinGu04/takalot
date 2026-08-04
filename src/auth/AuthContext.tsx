@@ -93,6 +93,15 @@ interface AuthState {
   markSessionExpired: () => void;
   /** Retry the profile check after a transient failure (status 'error'). */
   retryAuthorization: () => void;
+  /**
+   * Refreshes the signed-in user's own cached profile in place, from a
+   * profile row a self-only mutation just returned (e.g.
+   * setMyOperationalNotificationsEnabled) -- so a preference change is
+   * reflected immediately everywhere `user` is read, with no logout or
+   * page reload. Never accepts or applies another user's profile; callers
+   * only ever pass back what the CALLER's own mutation returned.
+   */
+  updateUser: (profile: Profile) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -149,6 +158,10 @@ function DemoAuthProvider({ children }: { children: ReactNode }) {
     setSessionExpired(true);
   }, []);
 
+  const updateUser = useCallback((profile: Profile) => {
+    setUser(profile);
+  }, []);
+
   const value = useMemo<AuthState>(
     () => ({
       user,
@@ -168,8 +181,9 @@ function DemoAuthProvider({ children }: { children: ReactNode }) {
       switchUser: login,
       markSessionExpired,
       retryAuthorization: () => {},
+      updateUser,
     }),
-    [user, loading, sessionExpired, login, logout, markSessionExpired],
+    [user, loading, sessionExpired, login, logout, markSessionExpired, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -333,6 +347,10 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     if (id) void resolveProfile(id, identityEmail, avatarUrl);
   }, [resolveProfile, identityEmail, avatarUrl]);
 
+  const updateUser = useCallback((profile: Profile) => {
+    setUser(profile);
+  }, []);
+
   const value = useMemo<AuthState>(
     () => ({
       user,
@@ -352,8 +370,20 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       },
       markSessionExpired,
       retryAuthorization,
+      updateUser,
     }),
-    [user, status, sessionExpired, identityEmail, avatarUrl, loginWithGoogle, logout, markSessionExpired, retryAuthorization],
+    [
+      user,
+      status,
+      sessionExpired,
+      identityEmail,
+      avatarUrl,
+      loginWithGoogle,
+      logout,
+      markSessionExpired,
+      retryAuthorization,
+      updateUser,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

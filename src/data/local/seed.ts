@@ -26,13 +26,13 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   db.seededAt = now.toISOString();
 
   db.profiles = [
-    { id: DEMO_USERS.admin, fullName: 'אלון ברק (דמו)', role: 'system_admin', active: true, createdAt: at(-hours(24 * 90)) },
-    { id: DEMO_USERS.manager, fullName: 'דנה לוי (דמו)', role: 'professional_manager', active: true, createdAt: at(-hours(24 * 90)) },
-    { id: DEMO_USERS.supervisor1, fullName: 'יואב כהן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)) },
-    { id: DEMO_USERS.supervisor2, fullName: 'מאיה רוזן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)) },
-    { id: DEMO_USERS.tech1, fullName: 'עומר פרץ (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)) },
-    { id: DEMO_USERS.tech2, fullName: 'ליאור אדרי (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)) },
-    { id: DEMO_USERS.viewer, fullName: 'רוני שגיא (דמו)', role: 'viewer', active: true, createdAt: at(-hours(24 * 30)) },
+    { id: DEMO_USERS.admin, fullName: 'אלון ברק (דמו)', role: 'system_admin', active: true, createdAt: at(-hours(24 * 90)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.manager, fullName: 'דנה לוי (דמו)', role: 'professional_manager', active: true, createdAt: at(-hours(24 * 90)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.supervisor1, fullName: 'יואב כהן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.supervisor2, fullName: 'מאיה רוזן (דמו)', role: 'shift_supervisor', active: true, createdAt: at(-hours(24 * 60)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.tech1, fullName: 'עומר פרץ (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.tech2, fullName: 'ליאור אדרי (דמו)', role: 'technician', active: true, createdAt: at(-hours(24 * 45)), operationalNotificationsEnabled: false },
+    { id: DEMO_USERS.viewer, fullName: 'רוני שגיא (דמו)', role: 'viewer', active: true, createdAt: at(-hours(24 * 30)), operationalNotificationsEnabled: false },
   ];
 
   db.systems = [
@@ -569,6 +569,7 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       id: 'ntf-1',
       userId: DEMO_USERS.supervisor2,
       type: 'handover_pending',
+      category: 'action_required',
       incidentId: null,
       handoverId: 'ho-pending',
       text: 'העברת משמרת מיואב כהן (דמו) ממתינה לאישורך.',
@@ -580,12 +581,25 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       id: 'ntf-2',
       userId: DEMO_USERS.tech1,
       type: 'incident_assigned',
+      category: 'action_required',
       incidentId: 'inc-7',
       handoverId: null,
       text: `תקלה ${num(7)} הוקצתה אליך לאחר פתיחה מחדש.`,
       read: false,
       createdAt: at(-hours(3)),
       dedupeKey: 'assign-inc-7-reopen',
+    },
+    {
+      id: 'ntf-3',
+      userId: DEMO_USERS.manager,
+      type: 'incident_opened',
+      category: 'update',
+      incidentId: 'inc-7',
+      handoverId: null,
+      text: `נפתחה תקלה ${num(7)} · מערכת גמא · חדר בקרה ראשי`,
+      read: true,
+      createdAt: at(-hours(5)),
+      dedupeKey: 'pm-seed-op-1-manager',
     },
   ];
 

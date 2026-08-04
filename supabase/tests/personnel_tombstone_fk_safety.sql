@@ -52,9 +52,9 @@ insert into incident_events (id, incident_id, type, actor_id, note)
 values ('00000000-0000-0000-0000-00000000f121', '00000000-0000-0000-0000-00000000f110',
         'created', '00000000-0000-0000-0000-0000000000a2', 'created');
 
-insert into notifications (id, user_id, type, incident_id, text)
+insert into notifications (id, user_id, type, incident_id, text, category)
 values ('00000000-0000-0000-0000-00000000f122', '00000000-0000-0000-0000-0000000000a2',
-        'incident_assigned', '00000000-0000-0000-0000-00000000f110', 'assigned to you');
+        'incident_assigned', '00000000-0000-0000-0000-00000000f110', 'assigned to you', 'action_required');
 
 insert into audit_logs (id, actor_id, action, entity_type, entity_id)
 values ('00000000-0000-0000-0000-00000000f123', '00000000-0000-0000-0000-0000000000a2',
