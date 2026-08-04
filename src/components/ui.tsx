@@ -15,6 +15,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -465,9 +466,20 @@ export function Dialog({
   }, [open]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex animate-fade-in items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      // Rendered through a portal, not inline where the trigger happens to
+      // live: a `fixed` element's containing block is normally the viewport,
+      // but any ancestor with a `backdrop-filter` (e.g. the app header's
+      // `backdrop-blur-sm`) or `filter`/`transform`/`contain` establishes its
+      // own containing block for `fixed` descendants instead. Without the
+      // portal, a dialog opened from inside that header collapses to the
+      // header's own ~56px box -- which is exactly what pushed this dialog's
+      // title/close button off-screen. `inset-0` on a `fixed` element (rather
+      // than `h-[100vh]`) is what makes it track iOS Safari's dynamic
+      // (chrome-collapsing) viewport correctly, so browser-chrome changes are
+      // already handled by keeping this as `fixed inset-0`.
+      className="fixed inset-0 z-50 flex animate-fade-in items-end justify-center bg-black/50 [padding:env(safe-area-inset-top)_0px_env(safe-area-inset-bottom)_0px] sm:items-center sm:[padding:calc(env(safe-area-inset-top)+1rem)_1rem_calc(env(safe-area-inset-bottom)+1rem)_1rem]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -489,7 +501,12 @@ export function Dialog({
           // than `-auto`) is deliberate: this outer panel itself never
           // scrolls -- only the body below does -- and it also keeps the
           // scrolling body's content clipped to the panel's rounded corners.
-          'flex max-h-[92dvh] w-full flex-col animate-scale-in overflow-hidden rounded-t-2xl border border-hairline bg-surface shadow-elevated sm:rounded-2xl',
+          // `max-h-full` (not a fixed `dvh` number) caps the panel to the
+          // overlay's own content box, which the safe-area padding above has
+          // already shrunk -- so the panel can never render under the notch
+          // or home-indicator without hardcoding two numbers that would have
+          // to agree.
+          'flex max-h-full w-full flex-col animate-scale-in overflow-hidden rounded-t-2xl border border-hairline bg-surface shadow-elevated sm:rounded-2xl',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
       >
@@ -499,7 +516,7 @@ export function Dialog({
             type="button"
             onClick={onClose}
             aria-label="סגירת החלון"
-            className="rounded-lg p-2 text-muted hover:bg-surface-hover"
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-hover"
           >
             ✕
           </button>
@@ -508,7 +525,8 @@ export function Dialog({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
