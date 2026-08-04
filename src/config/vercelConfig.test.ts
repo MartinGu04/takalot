@@ -19,3 +19,25 @@ describe('vercel.json SPA fallback', () => {
     expect(catchAll.source).toBe('/(.*)');
   });
 });
+
+describe('vercel.json Security Headers', () => {
+  const configPath = resolve(process.cwd(), 'vercel.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+
+  it('contains essential security headers', () => {
+    expect(Array.isArray(config.headers)).toBe(true);
+    const rootHeaders = config.headers.find(
+      (h: { source: string }) => h.source === '/(.*)',
+    );
+    expect(rootHeaders).toBeTruthy();
+    expect(Array.isArray(rootHeaders.headers)).toBe(true);
+
+    const keys = rootHeaders.headers.map((item: { key: string }) => item.key);
+    expect(keys).toContain('Content-Security-Policy');
+    expect(keys).toContain('X-Frame-Options');
+    expect(keys).toContain('X-Content-Type-Options');
+    expect(keys).toContain('Referrer-Policy');
+    expect(keys).toContain('Permissions-Policy');
+    expect(keys).toContain('Strict-Transport-Security');
+  });
+});
