@@ -28,28 +28,33 @@ function summarySentence(open: Incident[]): string {
 
 type KpiTone = 'brand' | 'red';
 
-const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; value: string }> = {
+const kpiToneStyles: Record<KpiTone, { iconBg: string; iconColor: string; iconGlow: string; value: string }> = {
   brand: {
     iconBg: 'bg-brand-50 dark:bg-brand-950/60',
     iconColor: 'text-brand-600 dark:text-brand-400',
+    iconGlow: 'shadow-[0_0_0_6px_rgba(139,92,246,0.08)] dark:shadow-[0_0_0_6px_rgba(139,92,246,0.14)]',
     value: 'text-text-primary',
   },
   red: {
     iconBg: 'bg-red-50 dark:bg-red-950/60',
     iconColor: 'text-red-600 dark:text-red-400',
+    iconGlow: 'shadow-[0_0_0_6px_rgba(239,68,68,0.08)] dark:shadow-[0_0_0_6px_rgba(239,68,68,0.14)]',
     value: 'text-red-700 dark:text-red-400',
   },
 };
 
-/** A permanent, subtle 1px border per KPI card identity -- brand/purple for
+/** A permanent, subtle border per KPI card identity -- brand/purple for
  *  open, red for critical/high. Unlike the icon/value color above (which
  *  dims to neutral once its count is zero, so an empty dashboard never looks
  *  alarming), this border is a calm category marker, not an urgency signal,
  *  so it stays constant regardless of count. Same restrained shade already
- *  used by Badge -- no new color introduced, no glow, no gradient. */
+ *  used by Badge -- no new color introduced, no glow, no gradient; slightly
+ *  more defined than the app's default hairline border so the two cards
+ *  read as clearly bounded, purposeful panels against the new atmosphere
+ *  behind them. */
 const kpiBorderStyles: Record<KpiTone, string> = {
-  brand: 'border-brand-200 dark:border-brand-800',
-  red: 'border-red-200 dark:border-red-800',
+  brand: 'border-brand-300 dark:border-brand-700',
+  red: 'border-red-300 dark:border-red-700',
 };
 
 /**
@@ -85,10 +90,12 @@ function KpiCard({
       className={`surface-interactive flex min-w-0 flex-col gap-3 p-4 text-right sm:p-5 ${kpiBorderStyles[tone]}`}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor}`}>
-          <Icon className="size-5.5" />
+        <span
+          className={`flex size-12 shrink-0 items-center justify-center rounded-xl ${t.iconBg} ${t.iconColor} ${t.iconGlow}`}
+        >
+          <Icon className="size-6" />
         </span>
-        <div className={`text-3xl font-extrabold leading-none ${t.value} sm:text-4xl`}>{value}</div>
+        <div className={`text-4xl font-extrabold tracking-tight leading-none ${t.value} sm:text-5xl`}>{value}</div>
       </div>
       <div className="min-w-0">
         {/* Deliberately no truncate: "עדכונים באיחור" / "קריטיות / גבוהות" /
@@ -197,27 +204,34 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="page-title">מצב נוכחי</h1>
-      <p className="mt-1 text-secondary" data-testid="summary-sentence">
-        {summarySentence(derived.open)}
-      </p>
+      <div className="current-state-atmosphere relative overflow-hidden rounded-2xl px-4 pt-4 pb-5 sm:px-6 sm:pt-6 sm:pb-6">
+        <div aria-hidden className="current-state-atmosphere-grid pointer-events-none absolute inset-0" />
+        <div className="relative">
+          <h1 className="text-[2rem] font-extrabold tracking-tight text-text-primary sm:text-[2.25rem]">
+            מצב נוכחי
+          </h1>
+          <p className="mt-2 text-base font-medium text-secondary" data-testid="summary-sentence">
+            {summarySentence(derived.open)}
+          </p>
 
-      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        <KpiCard
-          icon={IconPulse}
-          label="תקלות פתוחות"
-          value={derived.open.length}
-          context="כל התקלות הפעילות כרגע"
-          onClick={() => setActivePopup('open')}
-        />
-        <KpiCard
-          icon={IconAlertTriangle}
-          label="קריטיות / גבוהות"
-          value={derived.criticalOrHigh.length}
-          context="בחומרה קריטית או גבוהה"
-          tone="red"
-          onClick={() => setActivePopup('criticalOrHigh')}
-        />
+          <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <KpiCard
+              icon={IconPulse}
+              label="תקלות פתוחות"
+              value={derived.open.length}
+              context="כל התקלות הפעילות כרגע"
+              onClick={() => setActivePopup('open')}
+            />
+            <KpiCard
+              icon={IconAlertTriangle}
+              label="קריטיות / גבוהות"
+              value={derived.criticalOrHigh.length}
+              context="בחומרה קריטית או גבוהה"
+              tone="red"
+              onClick={() => setActivePopup('criticalOrHigh')}
+            />
+          </div>
+        </div>
       </div>
 
       {derived.open.length === 0 && (

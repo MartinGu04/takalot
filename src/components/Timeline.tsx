@@ -15,6 +15,7 @@ import {
   reportedToOpsLabels,
 } from '../domain/labels';
 import { formatDateTime, formatDuration, formatDate, formatTime } from '../lib/time';
+import { Avatar } from './ui';
 
 function valueLabel(field: string | null, value: string | null): string {
   if (value == null) return '—';
@@ -296,6 +297,14 @@ export function Timeline({
           Math.abs(new Date(primary.eventTime).getTime() - new Date(primary.serverTime).getTime()) > 60_000;
         const tier = emphasisTier(primary);
         const changesHeading = primary.type === 'update' ? 'שינויים בעדכון' : 'שינויים נוספים';
+        // A real internal actor -- as opposed to a system-generated row
+        // (actorId null) or an external actor display (actorLabel set,
+        // never a real profile) -- gets a compact avatar next to their
+        // name. System/external rows keep the existing type-icon roundel
+        // only; never a fictional person or avatar.
+        const isHumanActor = !!primary.actorId && !primary.actorLabel;
+        const actorProfile = isHumanActor ? profiles?.find((p) => p.id === primary.actorId) : undefined;
+        const actorDisplayName = actorName(primary.actorId, primary.actorLabel);
 
         return (
           <li key={group.operationId ?? primary.id} className="relative flex gap-3 pb-4">
@@ -320,7 +329,17 @@ export function Timeline({
                 <span className={titleClasses[tier]}>
                   {primary.type === 'correction' ? 'תיקון לרישום קודם' : eventTypeLabels[primary.type]}
                 </span>
-                <span className="text-sm text-secondary">{actorName(primary.actorId, primary.actorLabel)}</span>
+                <span className="flex items-center gap-1.5 text-sm text-secondary">
+                  {isHumanActor && (
+                    <Avatar
+                      aria-hidden
+                      src={actorProfile?.avatarUrl}
+                      name={actorDisplayName}
+                      className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
+                    />
+                  )}
+                  {actorDisplayName}
+                </span>
               </div>
               {tier === 'medium' && (
                 <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-orange-300 bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">

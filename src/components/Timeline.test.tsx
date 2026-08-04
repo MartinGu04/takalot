@@ -470,3 +470,57 @@ describe('Timeline: record corrections render as distinct audit entries', () => 
     expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Actor identity (avatar)
+// ---------------------------------------------------------------------------
+
+describe('Timeline: actor identity', () => {
+  it("shows a human actor's real stored avatar image beside their name", () => {
+    const events = [ev({ id: 'e1', type: 'acknowledged', actorId: 'u-photo' })];
+    const withPhoto: Profile[] = [
+      {
+        id: 'u-photo',
+        fullName: 'דנה לוי',
+        role: 'shift_supervisor',
+        active: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        avatarUrl: 'https://lh3.googleusercontent.com/a/photo',
+      },
+    ];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={withPhoto} />);
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).toHaveAttribute('src', 'https://lh3.googleusercontent.com/a/photo');
+    expect(screen.getByText('דנה לוי')).toBeInTheDocument();
+  });
+
+  it('falls back to an initial for a human actor with no stored avatar', () => {
+    const events = [ev({ id: 'e1', type: 'acknowledged', actorId: 'u1' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(container.querySelector('img')).toBeNull();
+    // 'יואב כהן' -> initial 'י'
+    expect(container.textContent).toContain('י');
+    expect(screen.getByText('יואב כהן')).toBeInTheDocument();
+  });
+
+  it('renders no avatar for a system-generated event (no actor id at all)', () => {
+    const events = [ev({ id: 'e1', type: 'status_change', actorId: null, field: 'status', newValue: 'monitoring' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('המערכת')).toBeInTheDocument();
+  });
+
+  it('renders no avatar for an external actor label, even though actorId happens to be set -- never a fictional person', () => {
+    const events = [ev({ id: 'e1', type: 'update', actorId: 'u1', actorLabel: 'אלתא (IAF)' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('אלתא (IAF)')).toBeInTheDocument();
+  });
+
+  it('a human actor whose profile is unavailable still renders understandably: generic fallback text, generic fallback initial, no crash', () => {
+    const events = [ev({ id: 'e1', type: 'acknowledged', actorId: 'u-unknown' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('משתמש')).toBeInTheDocument();
+  });
+});
