@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Incident, IncidentStatus, Profile, Severity } from '../domain/types';
 import { severityLabels, statusLabels, readinessLabels } from '../domain/labels';
 import { formatRelative } from '../lib/time';
-import { Badge } from './ui';
+import { Avatar, Badge } from './ui';
 import { IconChevronLeft } from './icons';
 
 export function SeverityBadge({ severity }: { severity: Severity }) {
@@ -90,6 +90,15 @@ export function IncidentCard({
   const accentClass = critical ? 'incident-card-accent-critical' : high ? 'incident-card-accent-high' : '';
   const pulseClass = live && critical ? 'incident-card-pulse-critical' : live && high ? 'incident-card-pulse-high' : '';
   const ownerLabel = ownerDisplay(incident, profiles);
+  const ownerProfile = incident.ownerUserId ? profiles?.find((p) => p.id === incident.ownerUserId) : undefined;
+  // Secondary "opened by" fact -- only when the creator is someone other
+  // than the current owner (the common case, the same person, would just
+  // repeat the identity already shown above). Never a second avatar: the
+  // owner is the one operationally relevant identity on a compact card.
+  const creatorLabel =
+    incident.createdBy !== incident.ownerUserId
+      ? (profiles?.find((p) => p.id === incident.createdBy)?.fullName ?? 'משתמש פנימי')
+      : null;
   return (
     <Link
       to={`/incidents/${incident.id}`}
@@ -171,18 +180,37 @@ export function IncidentCard({
             to the card's outer edge. */}
         <div className="flex shrink-0 flex-col items-start gap-1.5 text-start sm:w-48 sm:border-s sm:border-hairline sm:ps-4">
           <StatusBadge status={incident.status} />
-          {/* dir="auto" so an external handler written in Latin script keeps
-              its own direction; a Hebrew or mixed name such as
-              "טיפול של אלתא (IAF)" resolves to RTL from its first strong
-              character and renders its parentheses correctly. */}
-          <span
-            dir="auto"
-            className="max-w-full truncate text-sm font-medium text-text-primary"
-            title={ownerLabel}
-          >
-            {ownerLabel}
-          </span>
+          {/* The current internal owner/assignee -- the operationally
+              relevant identity on this card -- gets a compact avatar
+              alongside the name; never rendered when there is no internal
+              owner at all (nothing real to represent). */}
+          <div className="flex min-w-0 max-w-full items-center gap-2">
+            {incident.ownerUserId && (
+              <Avatar
+                aria-hidden
+                src={ownerProfile?.avatarUrl}
+                name={ownerLabel}
+                className="flex size-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[10px] font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
+              />
+            )}
+            {/* dir="auto" so an external handler written in Latin script
+                keeps its own direction; a Hebrew or mixed name such as
+                "טיפול של אלתא (IAF)" resolves to RTL from its first strong
+                character and renders its parentheses correctly. */}
+            <span
+              dir="auto"
+              className="min-w-0 truncate text-sm font-medium text-text-primary"
+              title={ownerLabel}
+            >
+              {ownerLabel}
+            </span>
+          </div>
           <span className="text-xs text-muted">עודכן {formatRelative(incident.lastUpdateAt, now)}</span>
+          {creatorLabel && (
+            <span dir="auto" className="max-w-full truncate text-xs text-muted" title={creatorLabel}>
+              נפתח על ידי {creatorLabel}
+            </span>
+          )}
         </div>
       </div>
     </Link>

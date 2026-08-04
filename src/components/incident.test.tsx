@@ -316,3 +316,64 @@ describe('IncidentCard: labeled השפעה מבצעית row', () => {
     expect(screen.queryByText(/השפעה מבצעית/)).not.toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Owner/creator identity (avatar)
+// ---------------------------------------------------------------------------
+
+describe('IncidentCard: current internal owner identity', () => {
+  it("shows the owner's real stored avatar image beside their name", () => {
+    const container = renderCardWith(makeIncident({ ownerUserId: 'p-owner' }), {
+      profiles: [
+        {
+          id: 'p-owner',
+          fullName: 'דנה לוי',
+          role: 'shift_supervisor',
+          active: true,
+          createdAt: NOW.toISOString(),
+          avatarUrl: 'https://lh3.googleusercontent.com/a/photo',
+        },
+      ],
+    });
+    const img = container.querySelector('img') as HTMLImageElement;
+    expect(img).toHaveAttribute('src', 'https://lh3.googleusercontent.com/a/photo');
+    expect(screen.getByText('דנה לוי')).toBeInTheDocument();
+  });
+
+  it('falls back to an initial when the owner has no stored avatar', () => {
+    const container = renderCardWith(makeIncident({ ownerUserId: 'p-owner' }), {
+      profiles: [
+        { id: 'p-owner', fullName: 'דנה לוי', role: 'shift_supervisor', active: true, createdAt: NOW.toISOString() },
+      ],
+    });
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).toContain('ד');
+  });
+
+  it('renders no owner avatar at all when the incident has no internal owner', () => {
+    const container = renderCardWith(makeIncident({ ownerUserId: null }));
+    // No image, and no initials bubble for a nonexistent identity -- only
+    // the "ללא בעל אחריות פנימי" text itself.
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('ללא בעל אחריות פנימי')).toBeInTheDocument();
+  });
+
+  it('shows a secondary "נפתח על ידי" line when the creator differs from the current owner', () => {
+    renderCardWith(makeIncident({ ownerUserId: 'p-owner', createdBy: 'p-creator' }), {
+      profiles: [
+        { id: 'p-owner', fullName: 'דנה לוי', role: 'shift_supervisor', active: true, createdAt: NOW.toISOString() },
+        { id: 'p-creator', fullName: 'יואב כהן', role: 'technician', active: true, createdAt: NOW.toISOString() },
+      ],
+    });
+    expect(screen.getByText('נפתח על ידי יואב כהן')).toBeInTheDocument();
+  });
+
+  it('omits the creator line when the creator is the same person as the current owner (no redundant repeat)', () => {
+    renderCardWith(makeIncident({ ownerUserId: 'p-owner', createdBy: 'p-owner' }), {
+      profiles: [
+        { id: 'p-owner', fullName: 'דנה לוי', role: 'shift_supervisor', active: true, createdAt: NOW.toISOString() },
+      ],
+    });
+    expect(screen.queryByText(/נפתח על ידי/)).not.toBeInTheDocument();
+  });
+});
