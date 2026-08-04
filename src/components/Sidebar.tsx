@@ -6,7 +6,6 @@ import type { Profile } from '../domain/types';
 import { navItems } from './navItems';
 import { Avatar, TruncatedTooltip } from './ui';
 import { ThemeToggle } from './ThemeToggle';
-import { OperationalNotificationsSwitch } from './OperationalNotificationsSwitch';
 import { IconLogOut, IconPlus } from './icons';
 import { AvariaIcon } from './AvariaBrand';
 
@@ -68,36 +67,31 @@ export function Sidebar({ user }: { user: Profile }) {
       </nav>
 
       <div className="border-t border-hairline p-3.5">
-        <div className="rounded-xl bg-surface-active/60 p-3">
-          <div className="flex items-center gap-2.5">
-            <Avatar
-              aria-hidden
-              src={avatarUrl}
-              name={user.fullName}
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-base font-bold text-white"
-            />
-            {/* The signed-in name is the one label here that can be arbitrarily
-                long, so truncation is kept (the compact layout depends on it)
-                and the full value is recovered on hover AND keyboard focus
-                instead of being lost to the ellipsis. The role label below is a
-                fixed enum label and needs no such treatment. */}
-            <div className="min-w-0 flex-1">
-              <TruncatedTooltip text={user.fullName} className="text-sm font-bold text-text-primary" />
-              <p className="mt-0.5 truncate text-xs text-muted">{roleLabels[user.role]}</p>
-            </div>
-            <ThemeToggle />
-            <button
-              type="button"
-              onClick={logout}
-              aria-label="התנתקות"
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-red-700 dark:hover:text-red-400"
-            >
-              <IconLogOut className="size-4.5" />
-            </button>
+        <div className="flex items-center gap-2.5 rounded-xl bg-surface-active/60 p-3">
+          <Avatar
+            aria-hidden
+            src={avatarUrl}
+            name={user.fullName}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-base font-bold text-white"
+          />
+          {/* The signed-in name is the one label here that can be arbitrarily
+              long, so truncation is kept (the compact layout depends on it)
+              and the full value is recovered on hover AND keyboard focus
+              instead of being lost to the ellipsis. The role label below is a
+              fixed enum label and needs no such treatment. */}
+          <div className="min-w-0 flex-1">
+            <TruncatedTooltip text={user.fullName} className="text-sm font-bold text-text-primary" />
+            <p className="mt-0.5 truncate text-xs text-muted">{roleLabels[user.role]}</p>
           </div>
-          {/* Renders nothing (and therefore adds no border/spacing) unless
-              the signed-in role is system_admin -- see the component. */}
-          <OperationalNotificationsSwitch variant="card" />
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={logout}
+            aria-label="התנתקות"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-red-700 dark:hover:text-red-400"
+          >
+            <IconLogOut className="size-4.5" />
+          </button>
         </div>
       </div>
     </aside>

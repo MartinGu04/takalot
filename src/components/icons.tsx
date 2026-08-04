@@ -299,3 +299,13 @@ export function IconClipboardList(props: IconProps) {
     </svg>
   );
 }
+
+/** Gear/settings icon -- used for the notification-center's system_admin-only "הגדרות התראות" trigger. */
+export function IconSettings(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="10" cy="10" r="2.6" />
+      <path d="M10 3.2v1.7M10 15.1v1.7M16.8 10h-1.7M4.9 10H3.2M14.8 5.2l-1.2 1.2M6.4 13.4l-1.2 1.2M14.8 14.8l-1.2-1.2M6.4 6.6 5.2 5.4" />
+    </svg>
+  );
+}

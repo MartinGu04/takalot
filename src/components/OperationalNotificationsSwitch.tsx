@@ -2,9 +2,9 @@
 // (see NotificationCategory / notify_operational_recipients). Rendered only
 // for a signed-in system_admin -- a professional_manager already receives
 // these unconditionally and has nothing to opt into, and every other role
-// never becomes a recipient. Shared between the desktop Sidebar account
-// card and the mobile user menu so behavior and accessibility never
-// diverge between the two placements.
+// never becomes a recipient. Lives inside the "הגדרות התראות" dialog opened
+// from the notification-center gear (see NotificationsMenu) -- not in the
+// account/user-menu areas, so there is exactly one access point.
 import { useAuth, useSession } from '../auth/AuthContext';
 import { useAppMutation, repo } from '../data/hooks';
 import { Switch } from './ui';
@@ -12,7 +12,7 @@ import { Switch } from './ui';
 const LABEL = 'עדכונים תפעוליים';
 const SUPPORTING_TEXT = 'פתיחה, עדכון, סגירה, פתיחה מחדש וביטול תקלות';
 
-export function OperationalNotificationsSwitch({ variant = 'card' }: { variant?: 'card' | 'compact' }) {
+export function OperationalNotificationsSwitch() {
   const { user, updateUser } = useAuth();
   const session = useSession();
 
@@ -33,17 +33,8 @@ export function OperationalNotificationsSwitch({ variant = 'card' }: { variant?:
   if (!user || user.role !== 'system_admin') return null;
   const checked = user.operationalNotificationsEnabled ?? false;
 
-  if (variant === 'compact') {
-    return (
-      <div className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5">
-        <span className="text-sm text-muted">{LABEL}</span>
-        <Switch checked={checked} disabled={mutation.isPending} onChange={() => mutation.mutate(!checked)} label={LABEL} />
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-2.5 flex items-start justify-between gap-3 border-t border-hairline pt-2.5">
+    <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-sm font-medium text-text-primary">{LABEL}</p>
         <p className="mt-0.5 text-xs text-muted">{SUPPORTING_TEXT}</p>

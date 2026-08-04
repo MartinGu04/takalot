@@ -6,12 +6,14 @@
 // component never fetches unbounded history.
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '../auth/AuthContext';
+import { useAuth, useSession } from '../auth/AuthContext';
 import { useNotifications, useAppMutation, repo } from '../data/hooks';
 import { notificationTypeLabels, notificationFilterLabels, type NotificationFilter } from '../domain/labels';
 import type { AppNotification, NotificationType } from '../domain/types';
 import { formatRelative } from '../lib/time';
 import { FloatingPopover } from './FloatingPopover';
+import { Dialog } from './ui';
+import { OperationalNotificationsSwitch } from './OperationalNotificationsSwitch';
 import {
   IconBell,
   IconPulse,
@@ -22,6 +24,7 @@ import {
   IconFlag,
   IconHeadset,
   IconClock,
+  IconSettings,
 } from './icons';
 
 const FILTERS: NotificationFilter[] = ['all', 'action_required', 'update'];
@@ -83,8 +86,10 @@ function NotificationRow({ notification, onSelect }: { notification: AppNotifica
 
 export function NotificationsMenu() {
   const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [filter, setFilter] = useState<NotificationFilter>('all');
   const { data: notifications } = useNotifications();
+  const { user } = useAuth();
   const session = useSession();
   const navigate = useNavigate();
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -162,15 +167,33 @@ export function NotificationsMenu() {
       >
         <div className="flex items-center justify-between gap-2 border-b border-hairline px-3 py-2">
           <span className="card-title">התראות</span>
-          {unread > 0 && (
-            <button
-              type="button"
-              className="text-xs text-brand-700 hover:underline dark:text-brand-400"
-              onClick={() => markAll.mutate(undefined)}
-            >
-              סימון הכול כנקרא
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {user?.role === 'system_admin' && (
+              <button
+                type="button"
+                aria-label="הגדרות התראות"
+                className="flex size-7 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-hover"
+                onClick={() => {
+                  // Avoid two competing floating panels: close this popover
+                  // before opening the settings dialog (a full Dialog, not a
+                  // nested FloatingPopover -- see OperationalNotificationsSwitch).
+                  setOpen(false);
+                  setSettingsOpen(true);
+                }}
+              >
+                <IconSettings className="size-4" />
+              </button>
+            )}
+            {unread > 0 && (
+              <button
+                type="button"
+                className="text-xs text-brand-700 hover:underline dark:text-brand-400"
+                onClick={() => markAll.mutate(undefined)}
+              >
+                סימון הכול כנקרא
+              </button>
+            )}
+          </div>
         </div>
         <div role="group" aria-label="סינון התראות" className="flex gap-1 border-b border-hairline px-2 py-1.5">
           {FILTERS.map((f) => (
@@ -198,6 +221,11 @@ export function NotificationsMenu() {
           ))}
         </div>
       </FloatingPopover>
+      {user?.role === 'system_admin' && (
+        <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} title="הגדרות התראות">
+          <OperationalNotificationsSwitch />
+        </Dialog>
+      )}
     </>
   );
 }

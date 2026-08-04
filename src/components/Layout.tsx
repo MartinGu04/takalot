@@ -15,7 +15,6 @@ import { DepartmentLogos } from './DepartmentLogos';
 import { FloatingPopover } from './FloatingPopover';
 import { LiveClock } from './LiveClock';
 import { NotificationsMenu } from './NotificationsMenu';
-import { OperationalNotificationsSwitch } from './OperationalNotificationsSwitch';
 
 /** Fixed number of direct destination slots in the mobile bottom nav (see
  *  the nav itself, below). When a role has more destinations than this, the
@@ -161,7 +160,6 @@ function MobileUserMenu() {
           <span className="text-sm text-muted">מצב תצוגה</span>
           <ThemeToggle />
         </div>
-        <OperationalNotificationsSwitch variant="compact" />
         {hasCapability(user.role, 'manage_personnel') && (
           <Link
             to="/personnel"
