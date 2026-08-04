@@ -13,7 +13,10 @@ export const DEPARTMENT_LOGOS = [
   },
 ] as const;
 
-export function DepartmentLogos({ className }: { className?: string } = {}) {
+export function DepartmentLogos({
+  className,
+  badgeClassName,
+}: { className?: string; badgeClassName?: string } = {}) {
   return (
     <div
       className={className ?? 'hidden shrink-0 items-center gap-1.5 md:flex'}
@@ -24,7 +27,10 @@ export function DepartmentLogos({ className }: { className?: string } = {}) {
         <span
           key={logo.key}
           data-testid={`department-logo-${logo.key}`}
-          className="flex size-10 shrink-0 items-center justify-center border border-hairline-strong bg-surface lg:size-[46px]"
+          className={
+            badgeClassName ??
+            'flex size-10 shrink-0 items-center justify-center border border-hairline-strong bg-surface lg:size-[46px]'
+          }
           // The circular crop must remove only the source image's square
           // black outer corners -- never any part of the emblem, ring, or
           // text -- so this is an explicit 50%/hidden crop, not a

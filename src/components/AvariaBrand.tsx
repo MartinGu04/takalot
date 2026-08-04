@@ -63,34 +63,66 @@ export function AvariaLoginAtmosphere() {
         className="absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 85% 55% at 12% -5%, rgba(139,92,246,0.24), transparent 60%), ' +
-            'radial-gradient(ellipse 65% 55% at 100% 105%, rgba(88,28,135,0.30), transparent 60%), ' +
+            'radial-gradient(ellipse 85% 55% at 12% -5%, rgba(139,92,246,0.30), transparent 60%), ' +
+            'radial-gradient(ellipse 70% 60% at 100% 105%, rgba(88,28,135,0.38), transparent 62%), ' +
             'linear-gradient(160deg, #05030c 0%, #0a0716 45%, #100a1f 100%)',
         }}
       />
-      <div className="absolute -top-24 -right-16 size-[26rem] rounded-full bg-brand-600/20 blur-[110px] lg:size-[34rem]" />
-      <div className="absolute -bottom-32 -left-20 size-[22rem] rounded-full bg-brand-900/50 blur-[100px] lg:size-[30rem]" />
+      <div className="absolute -top-24 -right-16 size-[28rem] rounded-full bg-brand-600/28 blur-[110px] lg:size-[38rem]" />
+      <div className="absolute -bottom-32 -left-20 size-[24rem] rounded-full bg-brand-900/60 blur-[100px] lg:size-[34rem]" />
+      {/* A second, more localized glow so the illumination reads as coming
+          from specific corners/content rather than one flat wash. */}
+      <div className="absolute left-1/4 top-0 size-72 rounded-full bg-brand-500/16 blur-[90px] lg:size-96" />
       <div
-        className="absolute inset-0 opacity-[0.06]"
+        className="absolute inset-0 opacity-[0.1]"
         style={{
           backgroundImage: 'radial-gradient(rgba(216,203,255,0.9) 1px, transparent 1px)',
           backgroundSize: '26px 26px',
         }}
       />
+      {/* Faint circular/radar geometry, echoing a technical readout without
+          any invented labels or values. */}
       <svg
-        className="absolute inset-x-0 bottom-[20%] w-full opacity-[0.09] lg:bottom-[14%]"
+        className="absolute -left-24 bottom-0 size-[26rem] opacity-[0.10] lg:size-[34rem]"
+        viewBox="0 0 200 200"
+        fill="none"
+      >
+        <circle cx="100" cy="100" r="40" stroke="#d8cbff" strokeWidth="0.6" />
+        <circle cx="100" cy="100" r="70" stroke="#d8cbff" strokeWidth="0.6" />
+        <circle cx="100" cy="100" r="98" stroke="#d8cbff" strokeWidth="0.6" />
+      </svg>
+      <svg
+        className="absolute inset-x-0 bottom-[20%] w-full opacity-[0.13] lg:bottom-[14%]"
         viewBox="0 0 800 60"
         preserveAspectRatio="none"
         fill="none"
       >
         <path d="M0 30H130l22-24 24 46 22-34 18 12H800" stroke="#d8cbff" strokeWidth="1.4" />
       </svg>
-      <span className="absolute left-[14%] top-[26%] size-1 rounded-full bg-brand-200/70 [animation:avaria-particle-drift_10s_ease-in-out_infinite]" />
-      <span className="absolute left-[78%] top-[64%] size-1 rounded-full bg-brand-200/60 [animation:avaria-particle-drift_12s_ease-in-out_infinite_1.5s]" />
-      <span className="absolute left-[45%] top-[12%] size-[3px] rounded-full bg-brand-100/50 [animation:avaria-particle-drift_14s_ease-in-out_infinite_3s]" />
-      <span className="absolute left-[85%] top-[22%] size-[3px] rounded-full bg-brand-100/40" />
-      <span className="absolute left-[8%] top-[72%] size-[3px] rounded-full bg-brand-100/40" />
+      <span className="absolute left-[14%] top-[26%] size-1 rounded-full bg-brand-200/80 [animation:avaria-particle-drift_10s_ease-in-out_infinite]" />
+      <span className="absolute left-[78%] top-[64%] size-1 rounded-full bg-brand-200/70 [animation:avaria-particle-drift_12s_ease-in-out_infinite_1.5s]" />
+      <span className="absolute left-[45%] top-[12%] size-[3px] rounded-full bg-brand-100/60 [animation:avaria-particle-drift_14s_ease-in-out_infinite_3s]" />
+      <span className="absolute left-[85%] top-[22%] size-[3px] rounded-full bg-brand-100/50" />
+      <span className="absolute left-[8%] top-[72%] size-[3px] rounded-full bg-brand-100/50" />
+      <span className="absolute left-[60%] top-[38%] size-1 rounded-full bg-brand-100/40 [animation:avaria-particle-drift_11s_ease-in-out_infinite_2.5s]" />
       <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/50 to-transparent" />
+    </div>
+  );
+}
+
+/** The two approved unit logos, anchored to the page's top-left corner
+ * (physically left, regardless of the page's RTL direction -- matching the
+ * approved mockup) as a small, secondary identity mark. Positioned relative
+ * to whichever `position: relative` full-viewport wrapper it's placed in
+ * (the login page root, not the brand column), so it stays in the true
+ * page corner on both the desktop split and the stacked mobile layout. */
+export function AvariaUnitLogosCorner() {
+  return (
+    <div className="dark absolute left-4 top-4 z-20 sm:left-6 sm:top-6 lg:left-8 lg:top-8">
+      <DepartmentLogos
+        className="flex shrink-0 items-center gap-2 sm:gap-2.5"
+        badgeClassName="flex size-14 shrink-0 items-center justify-center border border-hairline-strong bg-surface sm:size-16 lg:size-[4.5rem]"
+      />
     </div>
   );
 }
@@ -106,17 +138,12 @@ export function AvariaAuthBrandPanel({
   titleTestId,
   compact = false,
   animate = false,
-  showDepartmentLogos = false,
 }: {
   titleTestId?: string;
   compact?: boolean;
   /** One-time entrance fade/settle for the login screen only (never the
    * shared loading/unauthorized/error auth screens). */
   animate?: boolean;
-  /** Adds the two approved unit logos as a restrained identity strip below
-   * the tagline. Login screen only -- left off the loading splash and the
-   * compact auth-state screens to keep them minimal. */
-  showDepartmentLogos?: boolean;
 }) {
   if (compact) {
     return (
@@ -163,7 +190,7 @@ export function AvariaAuthBrandPanel({
   return (
     <section
       aria-label="AVARIA"
-      className="relative z-10 flex shrink-0 flex-col items-center justify-center gap-4 px-6 pt-10 pb-6 text-center sm:px-10 lg:w-[44%] lg:gap-7 lg:px-12 lg:py-14"
+      className="relative z-10 flex shrink-0 flex-col items-center justify-center gap-3 px-6 pt-8 pb-4 text-center sm:px-10 lg:w-[44%] lg:gap-7 lg:px-12 lg:py-14"
     >
       {/* The logo's flat purple reads weakly straight against the shared
           purple atmosphere, so a soft near-black ink pool sits behind it --
@@ -175,33 +202,44 @@ export function AvariaAuthBrandPanel({
           wordmark's own band via object-cover on a wide aspect box (the
           canvas's huge transparent margin is never displayed); desktop shows
           the full canvas uncropped, large and prominent. */}
-      <h1 data-testid={titleTestId} className={animate ? '[animation:login-entrance_380ms_ease-out_80ms_both]' : ''}>
-        <span className="relative mx-auto block aspect-[16/5] w-[78%] max-w-xs overflow-hidden rounded-2xl sm:max-w-sm lg:aspect-auto lg:w-fit lg:max-w-none lg:overflow-visible">
-          <span
-            aria-hidden
-            className="absolute inset-0"
-            style={{
-              backgroundImage:
-                'radial-gradient(ellipse at center, rgba(6,3,14,0.55) 0%, rgba(6,3,14,0.24) 55%, rgba(6,3,14,0) 80%)',
-            }}
-          />
-          <AvariaFullLogo className="relative h-full w-full object-cover lg:h-auto lg:w-auto lg:max-w-[560px] lg:object-contain" />
-        </span>
-      </h1>
-      <span aria-hidden className="block h-0.5 w-10 rounded-full bg-brand-500 lg:w-14" />
-      <p className="max-w-sm text-sm font-medium tracking-wide text-white/60 sm:text-base lg:text-lg">
+      <div className="relative flex items-center justify-center">
+        {/* Restrained circular/radar geometry + a waveform trace behind the
+            mark -- abstract technical texture only, never a real or
+            invented reading. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="absolute size-48 rounded-full border border-brand-300/15 sm:size-64 lg:size-[26rem]" />
+          <span className="absolute size-32 rounded-full border border-brand-300/20 sm:size-44 lg:size-72" />
+          <span className="absolute hidden rounded-full border border-brand-300/12 lg:block lg:size-[34rem]" />
+          <svg
+            className="absolute inset-x-[-15%] w-[130%] opacity-[0.22]"
+            viewBox="0 0 800 40"
+            preserveAspectRatio="none"
+            fill="none"
+          >
+            <path d="M0 20H310l16-16 18 32 16-24 14 8H800" stroke="#d8cbff" strokeWidth="1.6" />
+          </svg>
+        </div>
+        <h1
+          data-testid={titleTestId}
+          className={`relative ${animate ? '[animation:login-entrance_380ms_ease-out_80ms_both]' : ''}`}
+        >
+          <span className="relative mx-auto block aspect-[16/5] w-[84%] max-w-sm overflow-hidden rounded-2xl sm:max-w-md lg:aspect-auto lg:w-fit lg:max-w-none lg:overflow-visible">
+            <span
+              aria-hidden
+              className="absolute inset-0"
+              style={{
+                backgroundImage:
+                  'radial-gradient(ellipse at center, rgba(6,3,14,0.55) 0%, rgba(6,3,14,0.24) 55%, rgba(6,3,14,0) 80%)',
+              }}
+            />
+            <AvariaFullLogo className="relative h-full w-full object-cover lg:h-auto lg:w-auto lg:max-w-[680px] lg:object-contain" />
+          </span>
+        </h1>
+      </div>
+      <span aria-hidden className="block h-1 w-14 rounded-full bg-brand-500 lg:mt-1 lg:w-16" />
+      <p className="max-w-sm text-base font-semibold tracking-wide text-white/75 sm:text-lg lg:text-xl">
         {APP_TAGLINE}
       </p>
-      {showDepartmentLogos && (
-        // Forces the app's dark surface/hairline tokens for this strip
-        // regardless of the page's own (light-mode-default) theme, so the
-        // badges read as intentional dark chrome against the navy backdrop
-        // instead of a stray light rectangle -- the shared token system's
-        // own `.dark` scope, not a one-off color.
-        <div className="dark mt-1 hidden items-center gap-3 lg:flex">
-          <DepartmentLogos className="flex shrink-0 items-center gap-2.5" />
-        </div>
-      )}
     </section>
   );
 }

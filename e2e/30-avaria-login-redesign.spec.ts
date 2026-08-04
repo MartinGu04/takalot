@@ -122,7 +122,7 @@ test.describe('typography hierarchy', () => {
 });
 
 test.describe('branding', () => {
-  test('the two approved unit logos appear as a restrained strip on desktop, without competing with the sign-in action', async ({
+  test('the two approved unit logos sit in the top-left corner on desktop, clearly smaller than the AVARIA mark and clear of the sign-in action', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -134,17 +134,35 @@ test.describe('branding', () => {
     await expect(page.getByTestId('department-logo-strategic-communication')).toBeVisible();
     await expect(logos).toHaveAttribute('aria-hidden', 'true');
 
-    // Clearly smaller than the primary AVARIA mark, and positioned well
-    // clear of the sign-in action's own footprint.
+    // Top-left page corner (physically left, regardless of RTL), well clear
+    // of both the sign-in action and the primary AVARIA mark.
     const logosBox = await logos.boundingBox();
+    expect(logosBox!.x).toBeLessThan(120);
+    expect(logosBox!.y).toBeLessThan(80);
+
     const brandLogoBox = await page.getByRole('img', { name: 'AVARIA' }).boundingBox();
     expect(logosBox!.width).toBeLessThan(brandLogoBox!.width);
+
+    const googleFirstAction = page.locator('[data-testid^="login-"]').first();
+    const actionBox = await googleFirstAction.boundingBox();
+    expect(logosBox!.y + logosBox!.height).toBeLessThan(actionBox!.y);
   });
 
-  test('the unit logos stay off the mobile layout to avoid crowding the form', async ({ page }) => {
+  test('the unit logos also appear compactly near the top on mobile, without crowding the primary content', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/login');
-    await expect(page.getByTestId('department-logos')).toBeHidden();
+
+    const logos = page.getByTestId('department-logos');
+    await expect(logos).toBeVisible();
+    const logosBox = await logos.boundingBox();
+    expect(logosBox!.x).toBeLessThan(60);
+    expect(logosBox!.y).toBeLessThan(40);
+
+    const heading = page.getByRole('heading', { name: 'כניסה למערכת' });
+    const headingBox = await heading.boundingBox();
+    expect(logosBox!.y + logosBox!.height).toBeLessThan(headingBox!.y);
   });
 });
 
