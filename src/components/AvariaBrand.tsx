@@ -190,7 +190,7 @@ export function AvariaAuthBrandPanel({
   return (
     <section
       aria-label="AVARIA"
-      className="relative z-10 flex shrink-0 flex-col items-center justify-center gap-3 px-6 pt-8 pb-4 text-center sm:px-10 lg:w-[44%] lg:gap-7 lg:px-12 lg:py-14"
+      className="relative z-10 flex shrink-0 flex-col items-center justify-center gap-3 px-6 pt-24 pb-4 text-center sm:px-10 sm:pt-8 lg:w-[44%] lg:gap-7 lg:px-12 lg:py-14"
     >
       {/* The logo's flat purple reads weakly straight against the shared
           purple atmosphere, so a soft near-black ink pool sits behind it --
