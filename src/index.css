@@ -155,6 +155,14 @@ html {
 body {
   @apply bg-canvas text-text-primary;
   min-height: 100dvh;
+  /* Defensive backstop only -- never the fix for an actual oversized
+     element (see the login page's overflow-x-hidden column and the
+     brand-panel svg bleed for the real fixes this backs up). Guards the
+     whole app against ever becoming horizontally pannable, on any page,
+     from any future regression of the same kind. overflow-x: hidden (not
+     clip) for the widest possible browser support; it does not change
+     body's vertical scroll behavior in any browser that matters here. */
+  overflow-x: hidden;
 }
 
 /* Calm, readable focus states everywhere */

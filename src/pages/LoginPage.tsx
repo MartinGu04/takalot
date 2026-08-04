@@ -89,12 +89,25 @@ export default function LoginPage() {
       <AvariaUnitLogosCorner />
       <AvariaAuthBrandPanel titleTestId="brand-name" animate />
 
-      <div className="relative z-10 flex flex-1 flex-col justify-center overflow-y-auto px-6 pt-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10 sm:py-12 lg:px-14 lg:py-12 xl:px-16">
+      {/* overflow-x-hidden is deliberate, not decorative: CSS resolves a
+          lone overflow-y (auto/scroll) by computing the OTHER axis as auto
+          too (never staying "visible"), which turned this column into its
+          own horizontally-scrollable box on real mobile browsers the
+          instant any absolutely positioned descendant (the glow below) was
+          wider than it -- the outer root's overflow-hidden never catches
+          that, since it clips this column's own box, not the separate
+          scroll container this column becomes. Pairing both axes explicitly
+          closes that off; overflow-y-auto itself is a defensive fallback
+          only (the page already scrolls at the document level). */}
+      <div className="relative z-10 flex flex-1 flex-col justify-center overflow-x-hidden overflow-y-auto px-6 pt-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-10 sm:py-12 lg:px-14 lg:py-12 xl:px-16">
         {/* A soft, localized glow behind the primary content -- illumination
-            focused on what matters, not a flat wash across the column. */}
+            focused on what matters, not a flat wash across the column.
+            Sized to stay within a narrow phone's own width so it never
+            needs clipping to look right; the approved larger desktop size
+            returns at lg. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute left-1/2 top-1/2 size-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600/10 blur-[120px]"
+          className="pointer-events-none absolute left-1/2 top-1/2 size-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600/10 blur-[120px] sm:size-96 lg:size-[36rem]"
         />
         <div
           data-testid="auth-entrance-panel"
@@ -185,7 +198,7 @@ export default function LoginPage() {
                 >
                   <IconLock className="size-5" />
                 </span>
-                <p className="text-sm text-white/80">
+                <p className="min-w-0 text-sm text-white/80">
                   הגישה בהזמנה בלבד: התחברות Google מזהה אתכם, אך נדרש גם פרופיל משתמש פעיל שהוגדר על ידי
                   מנהל המערכת.
                 </p>

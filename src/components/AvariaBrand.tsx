@@ -205,13 +205,19 @@ export function AvariaAuthBrandPanel({
       <div className="relative flex items-center justify-center">
         {/* Restrained circular/radar geometry + a waveform trace behind the
             mark -- abstract technical texture only, never a real or
-            invented reading. */}
+            invented reading. Left free to bleed past this narrow (logo-
+            width, not column-width) box both here and vertically -- the
+            page root's own overflow-hidden gives it its final, generous
+            clip at the true page edge, well clear of this box. The svg's
+            inset/width are percentages of THIS box though, so a generous
+            bleed scales up fast on a narrow phone; kept modest below sm,
+            widening back to the approved desktop bleed at lg. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="absolute size-48 rounded-full border border-brand-300/15 sm:size-64 lg:size-[26rem]" />
           <span className="absolute size-32 rounded-full border border-brand-300/20 sm:size-44 lg:size-72" />
           <span className="absolute hidden rounded-full border border-brand-300/12 lg:block lg:size-[34rem]" />
           <svg
-            className="absolute inset-x-[-15%] w-[130%] opacity-[0.22]"
+            className="absolute inset-x-[-4%] w-[108%] opacity-[0.22] sm:inset-x-[-8%] sm:w-[116%] lg:inset-x-[-15%] lg:w-[130%]"
             viewBox="0 0 800 40"
             preserveAspectRatio="none"
             fill="none"
