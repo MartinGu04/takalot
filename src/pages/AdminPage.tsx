@@ -21,16 +21,15 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useSession } from '../auth/AuthContext';
-import { useProfiles, useSystems, useLocations, useAuditLogs, useAppMutation, repo } from '../data/hooks';
+import { useSystems, useLocations, useAppMutation, repo } from '../data/hooks';
 import { hasCapability } from '../domain/permissions';
 import { LOCATION_CATEGORY_ORDER, SYSTEM_CATEGORY_ORDER, locationCategoryLabels, systemCategoryLabels } from '../domain/labels';
-import { Badge, Button, Dialog, EmptyState, ErrorState, Field, Input, Select, Spinner, useToast } from '../components/ui';
+import { Badge, Button, Dialog, ErrorState, Field, Input, Select, Spinner, useToast } from '../components/ui';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ChangeCategoryDialog } from '../components/dialogs/ChangeCategoryDialog';
 import { ActionMenu, type ActionMenuItem } from '../components/ActionMenu';
 import { IconGripVertical } from '../components/icons';
 import type { LocationCategory, LocationRecord, SystemCategory, SystemRecord } from '../domain/types';
-import { formatDateTime } from '../lib/time';
 
 type ConfigKind = 'systems' | 'locations';
 type ConfigRecord = SystemRecord | LocationRecord;
@@ -582,57 +581,9 @@ function ConfigTab({ kind }: { kind: ConfigKind }) {
   );
 }
 
-function AuditTab() {
-  const [incidentNumber, setIncidentNumber] = useState('');
-  const [action, setAction] = useState('');
-  const { data: logs, isLoading } = useAuditLogs({ incidentNumber: incidentNumber || undefined, action: action || undefined }, true);
-  const { data: profiles } = useProfiles();
-  const name = (id: string | null) => (id ? (profiles?.find((p) => p.id === id)?.fullName ?? id) : 'המערכת');
-
-  return (
-    <div>
-      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <Input placeholder="סינון לפי מספר תקלה…" value={incidentNumber} onChange={(e) => setIncidentNumber(e.target.value)} />
-        <Input placeholder="סינון לפי סוג פעולה…" value={action} onChange={(e) => setAction(e.target.value)} />
-      </div>
-      {isLoading ? (
-        <Spinner />
-      ) : (logs ?? []).length === 0 ? (
-        <EmptyState title="אין רישומי יומן התואמים לסינון" />
-      ) : (
-        <div className="overflow-x-auto surface">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-active text-right">
-              <tr>
-                <th className="p-2">זמן</th>
-                <th className="p-2">משתמש</th>
-                <th className="p-2">פעולה</th>
-                <th className="p-2">ישות</th>
-                <th className="p-2">תקלה</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(logs ?? []).map((l) => (
-                <tr key={l.id} className="border-t border-hairline">
-                  <td className="p-2 whitespace-nowrap">{formatDateTime(l.createdAt)}</td>
-                  <td className="p-2">{name(l.actorId)}</td>
-                  <td className="p-2">{l.action}</td>
-                  <td className="p-2">{l.entityType}</td>
-                  <td className="p-2">{l.incidentNumber ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
 const TABS = [
   { key: 'systems', label: 'מערכות / עמדות' },
   { key: 'locations', label: 'מיקומים' },
-  { key: 'audit', label: 'יומן פעילות' },
 ] as const;
 
 export default function AdminPage() {
@@ -661,7 +612,6 @@ export default function AdminPage() {
       <div className="mt-4">
         {tab === 'systems' && <ConfigTab kind="systems" />}
         {tab === 'locations' && <ConfigTab kind="locations" />}
-        {tab === 'audit' && <AuditTab />}
       </div>
     </div>
   );

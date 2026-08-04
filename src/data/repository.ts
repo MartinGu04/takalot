@@ -93,9 +93,17 @@ export type IncidentSort = 'priority' | 'newest' | 'oldest' | 'next_update' | 'l
 export interface AuditFilters {
   actorId?: string;
   action?: string;
-  incidentNumber?: string;
-  from?: string;
-  to?: string;
+  entityType?: string;
+  from?: string; // ISO
+  to?: string; // ISO
+  /** Free-text search across entity label, incident number, and summary. */
+  search?: string;
+}
+
+export interface AuditLogPage {
+  items: AuditLog[];
+  /** Total rows matching the filters, independent of the current page size. */
+  total: number;
 }
 
 export interface Session {
@@ -277,7 +285,14 @@ export interface Repository {
   markAllNotificationsRead(session: Session): Promise<void>;
 
   // --- audit ---
-  listAuditLogs(session: Session, filters?: AuditFilters): Promise<AuditLog[]>;
+  /**
+   * Bounded, server-side-paginated read of the system-wide audit log.
+   * page is 1-based; pageSize is clamped server-side (supabase mode) to a
+   * hard maximum regardless of what is requested -- never an unbounded
+   * history fetch. Restricted to professional_manager/system_admin at the
+   * database level independent of this method's own FORBIDDEN check.
+   */
+  listAuditLogs(session: Session, filters: AuditFilters, page: number, pageSize: number): Promise<AuditLogPage>;
   recordExport(session: Session, info: ExportAuditInfo): Promise<void>;
 
   /** Permission check that mirrors backend policy (used by UI and export layer). */

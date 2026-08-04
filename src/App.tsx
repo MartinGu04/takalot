@@ -25,6 +25,7 @@ const ArchivePage = lazy(() => import('./pages/ArchivePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const PersonnelPage = lazy(() => import('./pages/PersonnelPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
@@ -88,6 +89,7 @@ function AppRoutes() {
           <Route path="/archive" element={<RequireAuth><ArchivePage /></RequireAuth>} />
           <Route path="/personnel" element={<RequireAuth cap="manage_personnel"><PersonnelPage /></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth cap="manage_users"><AdminPage /></RequireAuth>} />
+          <Route path="/audit-log" element={<RequireAuth cap="view_audit_log"><AuditLogPage /></RequireAuth>} />
           <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
           <Route path="*" element={<NotFound />} />
         </Routes>

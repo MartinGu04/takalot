@@ -41,8 +41,8 @@ describe('mobile bottom-nav overflow (עוד)', () => {
 
   it.each([
     ['shift_supervisor', 'login-u-supervisor-1', ['כוח אדם', 'ניתוחים']],
-    ['professional_manager', 'login-u-manager', ['כוח אדם', 'ניתוחים']],
-    ['system_admin', 'login-u-admin', ['כוח אדם', 'ניהול', 'ניתוחים']],
+    ['professional_manager', 'login-u-manager', ['כוח אדם', 'יומן ביקורת', 'ניתוחים']],
+    ['system_admin', 'login-u-admin', ['כוח אדם', 'ניהול', 'יומן ביקורת', 'ניתוחים']],
   ] as const)(
     '%s: shows 3 direct destinations plus an עוד slot holding %o',
     async (_role, testId, expectedOverflow) => {
@@ -162,7 +162,7 @@ describe('mobile bottom-nav overflow (עוד)', () => {
 
     const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' });
     const labels = within(sidebar).getAllByRole('link').map((l) => l.textContent);
-    expect(labels).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'ניתוחים']);
+    expect(labels).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'יומן ביקורת', 'ניתוחים']);
     expect(within(sidebar).queryByRole('button', { name: 'עוד' })).not.toBeInTheDocument();
   });
 });

@@ -20,8 +20,11 @@ export type Capability =
   | 'manage_users'
   | 'manage_personnel'
   | 'manage_config'
-  | 'view_audit_full'
-  | 'view_audit_incidents'
+  /** Read access to the system-wide audit log (יומן ביקורת) -- professional_manager
+   *  and system_admin only, both at full parity (never a subset by entity type).
+   *  Enforced independently at the database level (RLS + list_audit_events'
+   *  own role check); this capability only controls frontend visibility. */
+  | 'view_audit_log'
   | 'complete_follow_up';
 
 /**
@@ -57,8 +60,7 @@ const matrix: Record<Role, Capability[]> = {
     'manage_users',
     'manage_personnel',
     'manage_config',
-    'view_audit_full',
-    'view_audit_incidents',
+    'view_audit_log',
     'complete_follow_up',
   ],
   professional_manager: [
@@ -75,7 +77,7 @@ const matrix: Record<Role, Capability[]> = {
     'create_handover',
     'accept_handover',
     'manage_personnel',
-    'view_audit_incidents',
+    'view_audit_log',
     'complete_follow_up',
   ],
   shift_supervisor: [

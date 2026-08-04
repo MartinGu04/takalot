@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react';
 import type { Role } from '../domain/types';
-import { IconAlertTriangle, IconArchive, IconChartBar, IconPulse, IconShield, IconUsers } from './icons';
+import { IconAlertTriangle, IconArchive, IconChartBar, IconClipboardList, IconPulse, IconShield, IconUsers } from './icons';
 
 export interface NavItem {
   to: string;
@@ -26,6 +26,15 @@ export function navItems(role: Role): NavItem[] {
     items.push({ to: '/personnel', label: 'כוח אדם', icon: IconUsers });
   }
   if (role === 'system_admin') items.push({ to: '/admin', label: 'ניהול', icon: IconShield });
+  // יומן ביקורת (system-wide audit log): professional_manager and
+  // system_admin only, both at full parity. Deliberately appended here,
+  // among the other role-gated destinations -- for both roles this list
+  // already exceeds MOBILE_NAV_DIRECT_SLOTS (Layout.tsx), so it lands in
+  // the mobile "עוד" overflow sheet rather than displacing a direct slot,
+  // and shows as a normal destination in the (unrestricted) desktop sidebar.
+  if (['professional_manager', 'system_admin'].includes(role)) {
+    items.push({ to: '/audit-log', label: 'יומן ביקורת', icon: IconClipboardList });
+  }
   // Every authenticated role gets ניתוחים -- appended last (not alongside
   // the unconditional items above) so it never displaces כוח אדם/ניהול from
   // the mobile bottom nav's fixed 4-item slice for roles that already fill it.

@@ -57,6 +57,7 @@ import { newId } from '../../lib/id';
 import { AppError } from '../repository';
 import type {
   AuditFilters,
+  AuditLogPage,
   ExportAuditInfo,
   IncidentFilters,
   IncidentSort,
@@ -270,15 +271,26 @@ export class LocalDemoRepository implements Repository {
     entityId: string,
     extra: Partial<AuditLog> = {},
   ): void {
+    // Actor snapshot, mirroring write_audit()'s server-side behavior: the
+    // display name is captured at write time from the acting profile,
+    // independent of a later rename. Email has no demo-mode equivalent
+    // (there is no auth.users here), so it stays null -- "where available"
+    // per the audit data model, and it is genuinely not available here.
+    const actorDisplayName = actorId ? (this.db.profiles.find((p) => p.id === actorId)?.fullName ?? null) : null;
     this.db.auditLogs.push({
       id: newId(),
       actorId,
+      actorDisplayName,
+      actorEmail: null,
       action,
       entityType,
       entityId,
+      entityLabel: null,
+      summary: null,
       incidentNumber: null,
       before: null,
       after: null,
+      metadata: null,
       correlationId: newId().slice(0, 8),
       createdAt: this.now().toISOString(),
       ...extra,
@@ -562,7 +574,10 @@ export class LocalDemoRepository implements Repository {
       createdAt: this.now().toISOString(),
     };
     this.db.systems.push(record);
-    this.audit(actor.id, 'system_created', 'system', record.id, { after: JSON.stringify(record) });
+    this.audit(actor.id, 'system_created', 'system', record.id, {
+      after: JSON.stringify(record),
+      entityLabel: record.name,
+    });
     this.persist();
     return record;
   }
@@ -579,6 +594,7 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'system_renamed', 'system', id, {
       before: JSON.stringify({ name: before }),
       after: JSON.stringify({ name: record.name }),
+      entityLabel: record.name,
     });
     this.persist();
   }
@@ -592,7 +608,11 @@ export class LocalDemoRepository implements Repository {
     }
     if (record.archived === archived) return;
     record.archived = archived;
-    this.audit(actor.id, archived ? 'system_archived' : 'system_restored', 'system', id);
+    this.audit(actor.id, archived ? 'system_archived' : 'system_restored', 'system', id, {
+      before: JSON.stringify({ archived: !archived }),
+      after: JSON.stringify({ archived }),
+      entityLabel: record.name,
+    });
     this.persist();
   }
 
@@ -644,6 +664,7 @@ export class LocalDemoRepository implements Repository {
       this.audit(actor.id, 'system_delete_archived', 'system', id, {
         before: JSON.stringify({ archived: wasArchived }),
         after: JSON.stringify({ archived: true }),
+        entityLabel: record.name,
       });
       this.persist();
       return 'archived';
@@ -655,7 +676,10 @@ export class LocalDemoRepository implements Repository {
       .forEach((system, position) => {
         system.displayOrder = position + 1;
       });
-    this.audit(actor.id, 'system_deleted', 'system', id, { before: JSON.stringify(record) });
+    this.audit(actor.id, 'system_deleted', 'system', id, {
+      before: JSON.stringify(record),
+      entityLabel: record.name,
+    });
     this.persist();
     return 'deleted';
   }
@@ -678,7 +702,10 @@ export class LocalDemoRepository implements Repository {
       createdAt: this.now().toISOString(),
     };
     this.db.locations.push(record);
-    this.audit(actor.id, 'location_created', 'location', record.id, { after: JSON.stringify(record) });
+    this.audit(actor.id, 'location_created', 'location', record.id, {
+      after: JSON.stringify(record),
+      entityLabel: record.name,
+    });
     this.persist();
     return record;
   }
@@ -695,6 +722,7 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'location_renamed', 'location', id, {
       before: JSON.stringify({ name: before }),
       after: JSON.stringify({ name: record.name }),
+      entityLabel: record.name,
     });
     this.persist();
   }
@@ -708,7 +736,11 @@ export class LocalDemoRepository implements Repository {
     }
     if (record.archived === archived) return;
     record.archived = archived;
-    this.audit(actor.id, archived ? 'location_archived' : 'location_restored', 'location', id);
+    this.audit(actor.id, archived ? 'location_archived' : 'location_restored', 'location', id, {
+      before: JSON.stringify({ archived: !archived }),
+      after: JSON.stringify({ archived }),
+      entityLabel: record.name,
+    });
     this.persist();
   }
 
@@ -764,6 +796,7 @@ export class LocalDemoRepository implements Repository {
       this.audit(actor.id, 'location_delete_archived', 'location', id, {
         before: JSON.stringify({ archived: wasArchived }),
         after: JSON.stringify({ archived: true }),
+        entityLabel: record.name,
       });
       this.persist();
       return 'archived';
@@ -775,7 +808,10 @@ export class LocalDemoRepository implements Repository {
       .forEach((location, position) => {
         location.displayOrder = position + 1;
       });
-    this.audit(actor.id, 'location_deleted', 'location', id, { before: JSON.stringify(record) });
+    this.audit(actor.id, 'location_deleted', 'location', id, {
+      before: JSON.stringify(record),
+      entityLabel: record.name,
+    });
     this.persist();
     return 'deleted';
   }
@@ -820,6 +856,7 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'user_role_changed', 'profile', userId, {
       before: JSON.stringify({ role: before }),
       after: JSON.stringify({ role }),
+      entityLabel: profile.fullName,
     });
     this.persist();
   }
@@ -842,8 +879,13 @@ export class LocalDemoRepository implements Repository {
     if (!active && profile.role === 'system_admin' && profile.active && this.countActiveAdmins() <= 1) {
       throw new AppError('VALIDATION', 'לא ניתן להשבית את מנהל המערכת הפעיל האחרון.');
     }
+    const wasActive = profile.active;
     profile.active = active;
-    this.audit(actor.id, active ? 'user_activated' : 'user_deactivated', 'profile', userId);
+    this.audit(actor.id, active ? 'user_activated' : 'user_deactivated', 'profile', userId, {
+      before: JSON.stringify({ active: wasActive }),
+      after: JSON.stringify({ active }),
+      entityLabel: profile.fullName,
+    });
     this.persist();
   }
 
@@ -876,6 +918,7 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'user_renamed', 'profile', userId, {
       before: JSON.stringify({ fullName: before }),
       after: JSON.stringify({ fullName: profile.fullName }),
+      entityLabel: profile.fullName,
     });
     this.persist();
   }
@@ -906,7 +949,11 @@ export class LocalDemoRepository implements Repository {
     profile.active = false;
     profile.deletedAt = this.now().toISOString();
     profile.deletedBy = actor.id;
-    this.audit(actor.id, 'user_tombstoned', 'profile', userId);
+    this.audit(actor.id, 'user_tombstoned', 'profile', userId, {
+      before: JSON.stringify({ active: true }),
+      after: JSON.stringify({ active: false, deleted: true }),
+      entityLabel: profile.fullName,
+    });
     this.persist();
   }
 
@@ -1457,6 +1504,7 @@ export class LocalDemoRepository implements Repository {
     this.audit(actor.id, 'incident_created', 'incident', incident.id, {
       incidentNumber: incident.number,
       after: JSON.stringify({ number: incident.number, severity: incident.severity, status: incident.status }),
+      entityLabel: incident.number,
     });
 
     if (incident.ownerUserId && incident.ownerUserId !== actor.id) {
@@ -1586,6 +1634,12 @@ export class LocalDemoRepository implements Repository {
         eventTime: input.eventTime,
         operationId,
       });
+      this.audit(actor.id, 'incident_status_changed', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        before: JSON.stringify({ status: incident.status }),
+        after: JSON.stringify({ status: input.status }),
+        entityLabel: incident.number,
+      });
     }
     if (input.severity !== incident.severity) {
       this.addEvent(incidentId, 'severity_change', actor.id, {
@@ -1600,6 +1654,7 @@ export class LocalDemoRepository implements Repository {
         incidentNumber: incident.number,
         before: JSON.stringify({ severity: incident.severity }),
         after: JSON.stringify({ severity: input.severity }),
+        entityLabel: incident.number,
       });
     }
     // Internal owner is now mandatory (updateIncidentSchema's own
@@ -1625,6 +1680,7 @@ export class LocalDemoRepository implements Repository {
         incidentNumber: incident.number,
         before: JSON.stringify({ owner: oldOwnerLabel }),
         after: JSON.stringify({ owner: newOwnerLabel }),
+        entityLabel: incident.number,
       });
       if (input.ownerUserId && input.ownerUserId !== actor.id) {
         this.notify(input.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
@@ -1647,6 +1703,20 @@ export class LocalDemoRepository implements Repository {
         newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
         eventTime: input.eventTime,
         operationId,
+      });
+      this.audit(actor.id, 'incident_external_handler_changed', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        before: JSON.stringify({
+          externalHandlerName: oldExtName,
+          externalHandlerContactPerson: oldExtPerson,
+          externalHandlerContactDetails: oldExtDetails,
+        }),
+        after: JSON.stringify({
+          externalHandlerName: newExtName,
+          externalHandlerContactPerson: newExtPerson,
+          externalHandlerContactDetails: newExtDetails,
+        }),
+        entityLabel: incident.number,
       });
     }
     incident.status = input.status;
@@ -1672,9 +1742,12 @@ export class LocalDemoRepository implements Repository {
     incident.updatedBy = actor.id;
     incident.lastUpdateAt = ts;
 
-    this.audit(actor.id, 'incident_updated', 'incident', incidentId, {
-      incidentNumber: incident.number,
-    });
+    // No generic catch-all audit event here: status/severity/owner/external-
+    // handler changes each already write their own dedicated event above,
+    // and this update flow has no other incident-row field left to revise
+    // (operationalImpact is creation-only; see the comment above). A
+    // content-only submission that changes none of those four therefore
+    // correctly writes zero audit_logs rows -- no noise for a no-op.
     this.persist();
     return { ...incident };
   }
@@ -1789,6 +1862,7 @@ export class LocalDemoRepository implements Repository {
         incidentNumber: incident.number,
         before: JSON.stringify({ owner: oldLabel }),
         after: JSON.stringify({ owner: newLabel }),
+        entityLabel: incident.number,
       });
       if (input.ownerUserId && input.ownerUserId !== actor.id) {
         this.notify(input.ownerUserId, 'incident_assigned', `תקלה ${incident.number} הוקצתה אליך.`, {
@@ -1804,6 +1878,20 @@ export class LocalDemoRepository implements Repository {
         oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
         newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
         operationId,
+      });
+      this.audit(actor.id, 'incident_external_handler_changed', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        before: JSON.stringify({
+          externalHandlerName: oldExtName,
+          externalHandlerContactPerson: oldExtPerson,
+          externalHandlerContactDetails: oldExtDetails,
+        }),
+        after: JSON.stringify({
+          externalHandlerName: newExtName,
+          externalHandlerContactPerson: newExtPerson,
+          externalHandlerContactDetails: newExtDetails,
+        }),
+        entityLabel: incident.number,
       });
     }
 
@@ -1889,6 +1977,7 @@ export class LocalDemoRepository implements Repository {
     incident.updatedBy = actor.id;
     incident.lastUpdateAt = ts;
     const operationId = newId();
+    const oldStatusForAudit = incident.status;
 
     if (fullyReady) {
       // Full readiness: the incident actually closes. Owner columns are
@@ -1911,7 +2000,9 @@ export class LocalDemoRepository implements Repository {
       });
       this.audit(actor.id, 'incident_closed', 'incident', incidentId, {
         incidentNumber: incident.number,
-        after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
+        before: JSON.stringify({ status: oldStatusForAudit }),
+        after: JSON.stringify({ status: incident.status, readiness: input.readiness }),
+        entityLabel: incident.number,
       });
       if (incident.reportedToOps !== oldReportedToOps || incident.reportedToOpsRecipient !== oldRecipient) {
         this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
@@ -1930,6 +2021,20 @@ export class LocalDemoRepository implements Repository {
           newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
           eventTime: input.eventTime,
           operationId,
+        });
+        this.audit(actor.id, 'incident_external_handler_changed', 'incident', incidentId, {
+          incidentNumber: incident.number,
+          before: JSON.stringify({
+            externalHandlerName: oldExtName,
+            externalHandlerContactPerson: oldExtPerson,
+            externalHandlerContactDetails: oldExtDetails,
+          }),
+          after: JSON.stringify({
+            externalHandlerName: newExtName,
+            externalHandlerContactPerson: newExtPerson,
+            externalHandlerContactDetails: newExtDetails,
+          }),
+          entityLabel: incident.number,
         });
       }
     } else {
@@ -1959,7 +2064,9 @@ export class LocalDemoRepository implements Repository {
       });
       this.audit(actor.id, 'incident_partial_readiness', 'incident', incidentId, {
         incidentNumber: incident.number,
-        after: JSON.stringify({ readiness: input.readiness, rootCause: incident.rootCause }),
+        before: JSON.stringify({ status: oldStatus }),
+        after: JSON.stringify({ status: incident.status, readiness: input.readiness }),
+        entityLabel: incident.number,
       });
       if (incident.reportedToOps !== oldReportedToOps || incident.reportedToOpsRecipient !== oldRecipient) {
         this.addEvent(incidentId, 'reported_to_ops_change', actor.id, {
@@ -1978,6 +2085,20 @@ export class LocalDemoRepository implements Repository {
           newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
           eventTime: input.eventTime,
           operationId,
+        });
+        this.audit(actor.id, 'incident_external_handler_changed', 'incident', incidentId, {
+          incidentNumber: incident.number,
+          before: JSON.stringify({
+            externalHandlerName: oldExtName,
+            externalHandlerContactPerson: oldExtPerson,
+            externalHandlerContactDetails: oldExtDetails,
+          }),
+          after: JSON.stringify({
+            externalHandlerName: newExtName,
+            externalHandlerContactPerson: newExtPerson,
+            externalHandlerContactDetails: newExtDetails,
+          }),
+          entityLabel: incident.number,
         });
       }
     }
@@ -2029,6 +2150,8 @@ export class LocalDemoRepository implements Repository {
       incidentNumber: incident.number,
       before: JSON.stringify({ status: oldStatus }),
       after: JSON.stringify({ status: 'cancelled', cancellationReason: reason }),
+      entityLabel: incident.number,
+      summary: reason,
     });
     this.persist();
     return { ...incident };
@@ -2076,7 +2199,10 @@ export class LocalDemoRepository implements Repository {
     });
     this.audit(actor.id, 'incident_reopened', 'incident', incidentId, {
       incidentNumber: incident.number,
-      after: JSON.stringify({ reason: input.reason.trim() }),
+      before: JSON.stringify({ status: 'closed' }),
+      after: JSON.stringify({ status: 'reopened' }),
+      entityLabel: incident.number,
+      summary: input.reason.trim(),
     });
 
     if (newExtName !== oldExtName || newExtPerson !== oldExtPerson || newExtDetails !== oldExtDetails) {
@@ -2085,6 +2211,20 @@ export class LocalDemoRepository implements Repository {
         oldValue: externalHandlerSnapshot(oldExtName, oldExtPerson, oldExtDetails),
         newValue: externalHandlerSnapshot(newExtName, newExtPerson, newExtDetails),
         operationId,
+      });
+      this.audit(actor.id, 'incident_external_handler_changed', 'incident', incidentId, {
+        incidentNumber: incident.number,
+        before: JSON.stringify({
+          externalHandlerName: oldExtName,
+          externalHandlerContactPerson: oldExtPerson,
+          externalHandlerContactDetails: oldExtDetails,
+        }),
+        after: JSON.stringify({
+          externalHandlerName: newExtName,
+          externalHandlerContactPerson: newExtPerson,
+          externalHandlerContactDetails: newExtDetails,
+        }),
+        entityLabel: incident.number,
       });
     }
 
@@ -2346,23 +2486,41 @@ export class LocalDemoRepository implements Repository {
 
   // --- audit ---
 
-  async listAuditLogs(session: Session, filters: AuditFilters = {}): Promise<AuditLog[]> {
+  async listAuditLogs(
+    session: Session,
+    filters: AuditFilters = {},
+    page: number = 1,
+    pageSize: number = 25,
+  ): Promise<AuditLogPage> {
     const actor = this.requireSession(session);
-    const full = hasCapability(actor.role, 'view_audit_full', this.db.policy, actor.id);
-    const incidentsOnly = hasCapability(actor.role, 'view_audit_incidents', this.db.policy, actor.id);
-    if (!full && !incidentsOnly) {
-      throw new AppError('FORBIDDEN', 'אין לך הרשאה לצפות ביומן הפעילות.');
+    if (!hasCapability(actor.role, 'view_audit_log', this.db.policy, actor.id)) {
+      throw new AppError('FORBIDDEN', 'אין לך הרשאה לצפות ביומן הביקורת.');
     }
     let rows = [...this.db.auditLogs];
-    if (!full) rows = rows.filter((r) => r.entityType === 'incident' || r.entityType === 'handover');
     if (filters.actorId) rows = rows.filter((r) => r.actorId === filters.actorId);
-    if (filters.action) rows = rows.filter((r) => r.action.includes(filters.action!));
-    if (filters.incidentNumber) {
-      rows = rows.filter((r) => r.incidentNumber?.includes(filters.incidentNumber!.trim()));
-    }
+    if (filters.action) rows = rows.filter((r) => r.action === filters.action);
+    if (filters.entityType) rows = rows.filter((r) => r.entityType === filters.entityType);
     if (filters.from) rows = rows.filter((r) => r.createdAt >= filters.from!);
     if (filters.to) rows = rows.filter((r) => r.createdAt <= filters.to!);
-    return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (filters.search) {
+      const q = filters.search.trim().toLocaleLowerCase('he-IL');
+      if (q) {
+        rows = rows.filter((r) =>
+          r.entityLabel?.toLocaleLowerCase('he-IL').includes(q)
+          || r.incidentNumber?.toLocaleLowerCase('he-IL').includes(q)
+          || r.summary?.toLocaleLowerCase('he-IL').includes(q),
+        );
+      }
+    }
+    rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    const total = rows.length;
+    // Server-side pagination, hard-clamped -- mirrors list_audit_events'
+    // own clamp so demo mode cannot silently diverge into an unbounded
+    // fetch just because there is no real network boundary here.
+    const clampedSize = Math.min(Math.max(pageSize, 1), 100);
+    const clampedPage = Math.max(page, 1);
+    const start = (clampedPage - 1) * clampedSize;
+    return { items: rows.slice(start, start + clampedSize), total };
   }
 
   async recordExport(session: Session, info: ExportAuditInfo): Promise<void> {
