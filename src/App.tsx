@@ -13,6 +13,8 @@ import {
 import { getAppMode } from './data/appMode';
 import { hasCapability, type Capability } from './domain/permissions';
 import LoginPage from './pages/LoginPage';
+import { OfflineBanner } from './pwa/OfflineBanner';
+import { UpdatePrompt } from './pwa/UpdatePrompt';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const IncidentsPage = lazy(() => import('./pages/IncidentsPage'));
@@ -118,9 +120,11 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
+          <OfflineBanner />
           <BrowserRouter>
             <AppRoutes />
           </BrowserRouter>
+          <UpdatePrompt />
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
