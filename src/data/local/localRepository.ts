@@ -5,9 +5,6 @@
 import type {
   AppNotification,
   AuditLog,
-  Handover,
-  HandoverAddendum,
-  HandoverItem,
   Incident,
   IncidentEvent,
   IncidentUpdate,
@@ -32,7 +29,6 @@ import {
   cancelIncidentSchema,
   closeIncidentSchema,
   correctionSchema,
-  createHandoverSchema,
   createIncidentSchema,
   pendingPersonnelInputSchema,
   renamePersonnelInputSchema,
@@ -43,7 +39,6 @@ import {
   type CancelIncidentInput,
   type CloseIncidentInput,
   type CorrectionInput,
-  type CreateHandoverInput,
   type CreateIncidentInput,
   type PendingPersonnelInput,
   type RenamePersonnelInput,
@@ -2409,144 +2404,6 @@ export class LocalDemoRepository implements Repository {
     });
     this.persist();
     return { ...incident };
-  }
-
-  // --- handovers ---
-
-  async listHandovers(session: Session): Promise<Handover[]> {
-    this.requireSession(session);
-    return [...this.db.handovers].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  async getHandover(session: Session, id: string) {
-    this.requireSession(session);
-    const handover = this.db.handovers.find((h) => h.id === id);
-    if (!handover) return null;
-    return {
-      handover,
-      items: this.db.handoverItems.filter((i) => i.handoverId === id),
-      addenda: this.db.handoverAddenda
-        .filter((a) => a.handoverId === id)
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-    };
-  }
-
-  async createHandover(session: Session, rawInput: CreateHandoverInput): Promise<Handover> {
-    const actor = this.requireCap(session, 'create_handover');
-    const input = parseOrThrow(createHandoverSchema, rawInput);
-    const toUser = this.db.profiles.find((p) => p.id === input.toUserId);
-    if (!toUser || !toUser.active) {
-      throw new AppError('VALIDATION', 'יש לבחור אחמ״ש נכנס פעיל.');
-    }
-    if (toUser.id === actor.id) {
-      throw new AppError('VALIDATION', 'לא ניתן להעביר משמרת לעצמך.');
-    }
-
-    const ts = this.now().toISOString();
-    const handover: Handover = {
-      id: newId(),
-      createdBy: actor.id,
-      createdAt: ts,
-      toUserId: input.toUserId,
-      generalNote: (input.generalNote ?? '').trim(),
-      status: 'pending',
-      acceptedAt: null,
-      acceptedBy: null,
-    };
-    this.db.handovers.push(handover);
-
-    // Snapshot: all open incidents + closed incidents with pending follow-up.
-    const included = this.db.incidents.filter(
-      (i) => isOpen(i.status) || (i.followUpRequired && !i.followUpCompletedAt),
-    );
-    const systemsById = new Map(this.db.systems.map((s) => [s.id, s.name]));
-    const locationsById = new Map(this.db.locations.map((l) => [l.id, l.name]));
-    // Allocated ONCE, outside the loop: one handover-creation action, shared
-    // across every included incident's own timeline -- not N separate
-    // operations, mirroring create_handover (migration 0026).
-    const operationId = newId();
-    for (const inc of included) {
-      const lastUpdate = this.db.incidentUpdates
-        .filter((u) => u.incidentId === inc.id)
-        .sort((a, b) => b.eventTime.localeCompare(a.eventTime))[0];
-      const item: HandoverItem = {
-        id: newId(),
-        handoverId: handover.id,
-        incidentId: inc.id,
-        note: (input.itemNotes[inc.id] ?? '').trim(),
-        snapshotNumber: inc.number,
-        snapshotStatus: inc.status,
-        snapshotSeverity: inc.severity,
-        snapshotOwnerLabel: this.ownerLabel(inc.ownerUserId, inc.ownerExternalName),
-        snapshotSystemName: systemsById.get(inc.systemId) ?? '',
-        snapshotLocationName: locationsById.get(inc.locationId) ?? '',
-        snapshotImpact: inc.operationalImpact,
-        snapshotLastAction: lastUpdate?.actionsTaken ?? '',
-        snapshotNextSteps: lastUpdate?.nextSteps ?? '',
-        snapshotNextUpdateDue: inc.nextUpdateDue,
-      };
-      this.db.handoverItems.push(item);
-      this.addEvent(inc.id, 'handover_included', actor.id, { refId: handover.id, operationId });
-    }
-
-    this.notify(
-      input.toUserId,
-      'handover_pending',
-      'action_required',
-      `העברת משמרת מ${actor.fullName} ממתינה לאישורך.`,
-      { handoverId: handover.id, dedupeKey: `handover-${handover.id}` },
-    );
-    this.audit(actor.id, 'handover_created', 'handover', handover.id, {
-      after: JSON.stringify({ toUserId: input.toUserId, items: included.length }),
-    });
-    this.persist();
-    return { ...handover };
-  }
-
-  async acceptHandover(session: Session, handoverId: string): Promise<Handover> {
-    const actor = this.requireCap(session, 'accept_handover');
-    const handover = this.db.handovers.find((h) => h.id === handoverId);
-    if (!handover) throw new AppError('NOT_FOUND', 'העברת המשמרת לא נמצאה.');
-    if (handover.status === 'accepted') {
-      throw new AppError('VALIDATION', 'העברת המשמרת כבר אושרה.');
-    }
-    if (handover.toUserId !== actor.id) {
-      throw new AppError('FORBIDDEN', 'רק האחמ״ש הנכנס שנבחר יכול לאשר את ההעברה.');
-    }
-    const ts = this.now().toISOString();
-    handover.status = 'accepted';
-    handover.acceptedAt = ts;
-    handover.acceptedBy = actor.id;
-
-    // Allocated ONCE, outside the loop: one acceptance action, shared across
-    // every incident it covers -- mirrors accept_handover (migration 0026).
-    const operationId = newId();
-    for (const item of this.db.handoverItems.filter((i) => i.handoverId === handoverId)) {
-      this.addEvent(item.incidentId, 'handover_accepted', actor.id, { refId: handoverId, operationId });
-    }
-    this.audit(actor.id, 'handover_accepted', 'handover', handoverId);
-    this.persist();
-    return { ...handover };
-  }
-
-  async addHandoverAddendum(session: Session, handoverId: string, text: string): Promise<void> {
-    const actor = this.requireCap(session, 'create_handover');
-    const handover = this.db.handovers.find((h) => h.id === handoverId);
-    if (!handover) throw new AppError('NOT_FOUND', 'העברת המשמרת לא נמצאה.');
-    if (handover.status !== 'accepted') {
-      throw new AppError('VALIDATION', 'תוספת ניתן להוסיף רק להעברה שאושרה. עד אז ניתן לבטל וליצור העברה חדשה.');
-    }
-    if (!text.trim()) throw new AppError('VALIDATION', 'יש להזין תוכן לתוספת.');
-    const addendum: HandoverAddendum = {
-      id: newId(),
-      handoverId,
-      authorId: actor.id,
-      text: text.trim(),
-      createdAt: this.now().toISOString(),
-    };
-    this.db.handoverAddenda.push(addendum);
-    this.audit(actor.id, 'handover_addendum', 'handover', handoverId);
-    this.persist();
   }
 
   // --- notifications ---

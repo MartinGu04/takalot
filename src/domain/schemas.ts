@@ -419,14 +419,6 @@ export const correctionSchema = z.object({
 
 export type CorrectionInput = z.infer<typeof correctionSchema>;
 
-export const createHandoverSchema = z.object({
-  toUserId: z.string().min(1, 'יש לבחור אחמ״ש נכנס'),
-  generalNote: z.string().max(2000, 'הערה כללית: עד 2000 תווים').optional().default(''),
-  itemNotes: z.record(z.string().max(1000)).default({}),
-});
-
-export type CreateHandoverInput = z.infer<typeof createHandoverSchema>;
-
 export const roleSchema = z.enum([
   'system_admin',
   'professional_manager',

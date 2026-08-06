@@ -70,7 +70,6 @@ vi.mock('../data', () => ({
     listIncidents: async () => [],
     countClosedIncidents: async () => 0,
     listNotifications: async () => [],
-    listHandovers: async () => [],
     canExport: async () => false,
   }),
 }));

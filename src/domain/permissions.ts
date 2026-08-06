@@ -15,8 +15,6 @@ export type Capability =
   | 'cancel_incident'
   | 'reopen_incident'
   | 'export_data'
-  | 'create_handover'
-  | 'accept_handover'
   | 'manage_users'
   | 'manage_personnel'
   | 'manage_config'
@@ -55,8 +53,6 @@ const matrix: Record<Role, Capability[]> = {
     'cancel_incident',
     'reopen_incident',
     'export_data',
-    'create_handover',
-    'accept_handover',
     'manage_users',
     'manage_personnel',
     'manage_config',
@@ -74,8 +70,6 @@ const matrix: Record<Role, Capability[]> = {
     'cancel_incident',
     'reopen_incident',
     'export_data',
-    'create_handover',
-    'accept_handover',
     'manage_personnel',
     'view_audit_log',
     'complete_follow_up',
@@ -90,8 +84,6 @@ const matrix: Record<Role, Capability[]> = {
     'close_incident',
     'cancel_incident',
     'export_data',
-    'create_handover',
-    'accept_handover',
     'manage_personnel',
     'complete_follow_up',
     // 'reopen_incident' is granted only via PolicyFlags.allowSupervisorReopen

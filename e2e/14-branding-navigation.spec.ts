@@ -45,8 +45,6 @@ test.describe('desktop sidebar', () => {
     expect(sidebarBox?.width).toBeCloseTo(280, 0);
 
     const links = sidebar.getByRole('link');
-    // העברת משמרת is deliberately not a primary destination -- the /handovers
-    // page/route are untouched, just not linked from navigation.
     await expect(links).toHaveText(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'ניתוחים']);
 
     // Mobile bottom nav must not also be visible at desktop width.

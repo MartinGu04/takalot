@@ -5,9 +5,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AppNotification,
   AuditLog,
-  Handover,
-  HandoverAddendum,
-  HandoverItem,
   Incident,
   IncidentEvent,
   IncidentUpdate,
@@ -25,7 +22,6 @@ import type {
   CancelIncidentInput,
   CloseIncidentInput,
   CorrectionInput,
-  CreateHandoverInput,
   CreateIncidentInput,
   PendingPersonnelInput,
   RenamePersonnelInput,
@@ -682,107 +678,6 @@ export class SupabaseRepository implements Repository {
       p_note: note,
     });
     return mapIncident(data);
-  }
-
-  async listHandovers(_s: Session): Promise<Handover[]> {
-    const { data, error } = await this.client
-      .from('handovers')
-      .select('*')
-      .order('created_at', { ascending: false });
-    wrap(error);
-    return (data ?? []).map((r) => ({
-      id: r.id,
-      createdBy: r.created_by,
-      createdAt: r.created_at,
-      toUserId: r.to_user_id,
-      generalNote: r.general_note,
-      status: r.status,
-      acceptedAt: r.accepted_at,
-      acceptedBy: r.accepted_by,
-    }));
-  }
-
-  async getHandover(_s: Session, id: string) {
-    const { data, error } = await this.client.from('handovers').select('*').eq('id', id).maybeSingle();
-    wrap(error);
-    if (!data) return null;
-    const [items, addenda] = await Promise.all([
-      this.client.from('handover_items').select('*').eq('handover_id', id),
-      this.client.from('handover_addenda').select('*').eq('handover_id', id).order('created_at'),
-    ]);
-    wrap(items.error);
-    wrap(addenda.error);
-    return {
-      handover: {
-        id: data.id,
-        createdBy: data.created_by,
-        createdAt: data.created_at,
-        toUserId: data.to_user_id,
-        generalNote: data.general_note,
-        status: data.status,
-        acceptedAt: data.accepted_at,
-        acceptedBy: data.accepted_by,
-      } as Handover,
-      items: (items.data ?? []).map(
-        (r): HandoverItem => ({
-          id: r.id,
-          handoverId: r.handover_id,
-          incidentId: r.incident_id,
-          note: r.note,
-          snapshotNumber: r.snapshot_number,
-          snapshotStatus: r.snapshot_status,
-          snapshotSeverity: r.snapshot_severity,
-          snapshotOwnerLabel: r.snapshot_owner_label,
-          snapshotSystemName: r.snapshot_system_name,
-          snapshotLocationName: r.snapshot_location_name,
-          snapshotImpact: r.snapshot_impact,
-          snapshotLastAction: r.snapshot_last_action,
-          snapshotNextSteps: r.snapshot_next_steps,
-          snapshotNextUpdateDue: r.snapshot_next_update_due,
-        }),
-      ),
-      addenda: (addenda.data ?? []).map(
-        (r): HandoverAddendum => ({
-          id: r.id,
-          handoverId: r.handover_id,
-          authorId: r.author_id,
-          text: r.text,
-          createdAt: r.created_at,
-        }),
-      ),
-    };
-  }
-
-  async createHandover(_s: Session, input: CreateHandoverInput): Promise<Handover> {
-    const data = await this.rpc<Record<string, unknown>>('create_handover', { p_input: input });
-    return {
-      id: data.id as string,
-      createdBy: data.created_by as string,
-      createdAt: data.created_at as string,
-      toUserId: data.to_user_id as string,
-      generalNote: data.general_note as string,
-      status: data.status as Handover['status'],
-      acceptedAt: data.accepted_at as string | null,
-      acceptedBy: data.accepted_by as string | null,
-    };
-  }
-
-  async acceptHandover(_s: Session, handoverId: string): Promise<Handover> {
-    const data = await this.rpc<Record<string, unknown>>('accept_handover', { p_handover_id: handoverId });
-    return {
-      id: data.id as string,
-      createdBy: data.created_by as string,
-      createdAt: data.created_at as string,
-      toUserId: data.to_user_id as string,
-      generalNote: data.general_note as string,
-      status: data.status as Handover['status'],
-      acceptedAt: data.accepted_at as string | null,
-      acceptedBy: data.accepted_by as string | null,
-    };
-  }
-
-  async addHandoverAddendum(_s: Session, handoverId: string, text: string): Promise<void> {
-    await this.rpc('add_handover_addendum', { p_handover_id: handoverId, p_text: text });
   }
 
   // Bounded: the bell is a compact notification center, not an audit log --

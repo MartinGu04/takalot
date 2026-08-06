@@ -2,9 +2,6 @@
 import type {
   AppNotification,
   AuditLog,
-  Handover,
-  HandoverAddendum,
-  HandoverItem,
   Incident,
   IncidentEvent,
   IncidentUpdate,
@@ -32,9 +29,6 @@ export interface DemoDatabase {
   incidents: Incident[];
   incidentUpdates: IncidentUpdate[];
   incidentEvents: IncidentEvent[];
-  handovers: Handover[];
-  handoverItems: HandoverItem[];
-  handoverAddenda: HandoverAddendum[];
   notifications: StoredNotification[];
   auditLogs: AuditLog[];
   /** Optional for databases persisted before 0008's model existed. */
@@ -53,9 +47,6 @@ export function emptyDatabase(): DemoDatabase {
     incidents: [],
     incidentUpdates: [],
     incidentEvents: [],
-    handovers: [],
-    handoverItems: [],
-    handoverAddenda: [],
     notifications: [],
     auditLogs: [],
     pendingPersonnel: [],

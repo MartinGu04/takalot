@@ -48,9 +48,9 @@ test.describe('sticky desktop sidebar', () => {
     expect(after?.x).toBe(before?.x);
   });
 
-  test('does not create desktop horizontal overflow on archive/admin/handovers', async ({ page }) => {
+  test('does not create desktop horizontal overflow on archive/admin', async ({ page }) => {
     await loginAs(page, DEMO_USERS.admin);
-    for (const path of ['/archive', '/admin', '/handovers']) {
+    for (const path of ['/archive', '/admin']) {
       await page.goto(path);
       const { scrollWidth, clientWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,

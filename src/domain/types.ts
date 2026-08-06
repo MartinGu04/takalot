@@ -40,6 +40,9 @@ export type EventType =
   | 'deadline_change'
   | 'reported_to_ops_change'
   | 'correction'
+  // 'handover_included'/'handover_accepted': written by the now-removed
+  // shift-handover feature. Kept for read compatibility with historical
+  // incident timeline rows, exactly like 'handover_pending' below.
   | 'handover_included'
   | 'handover_accepted'
   | 'closed'
@@ -288,45 +291,6 @@ export interface IncidentEvent {
   operationId: string | null;
 }
 
-export type HandoverStatus = 'pending' | 'accepted';
-
-export interface Handover {
-  id: string;
-  createdBy: string;
-  createdAt: string;
-  toUserId: string;
-  generalNote: string;
-  status: HandoverStatus;
-  acceptedAt: string | null;
-  acceptedBy: string | null;
-}
-
-export interface HandoverItem {
-  id: string;
-  handoverId: string;
-  incidentId: string;
-  note: string;
-  // Snapshot fields frozen at handover creation
-  snapshotNumber: string;
-  snapshotStatus: IncidentStatus;
-  snapshotSeverity: Severity;
-  snapshotOwnerLabel: string;
-  snapshotSystemName: string;
-  snapshotLocationName: string;
-  snapshotImpact: string;
-  snapshotLastAction: string;
-  snapshotNextSteps: string;
-  snapshotNextUpdateDue: string | null;
-}
-
-export interface HandoverAddendum {
-  id: string;
-  handoverId: string;
-  authorId: string;
-  text: string;
-  createdAt: string;
-}
-
 export type NotificationType =
   | 'incident_assigned'
   // 'update_overdue': the next-update-ETA concept is no longer an active
@@ -337,6 +301,10 @@ export type NotificationType =
   // Migration 0044 additionally deletes any such row server-side.
   | 'update_overdue'
   | 'incident_reopened'
+  // 'handover_pending': the shift-handover feature has been removed (no new
+  // row of this type is ever written), but hosted databases may still
+  // contain historical rows of it. Kept in the domain type and label
+  // mapping for read compatibility, exactly like 'update_overdue' above.
   | 'handover_pending'
   // Role-based operational notifications (professional_manager broadcast) --
   // added alongside the notification category split (migration 0043/0044).
@@ -347,7 +315,7 @@ export type NotificationType =
 
 /** Durable classification, independent of `type`: 'action_required' is a
  *  personal call to action for the recipient (assigned to you, reopened and
- *  assigned to you, a handover awaiting your approval); 'update' is a
+ *  assigned to you); 'update' is a
  *  role-based informational broadcast that requires no action. Some types
  *  (notably 'incident_reopened') can be EITHER, depending on which flow
  *  produced the row -- category is what disambiguates them, not the type
@@ -360,6 +328,8 @@ export interface AppNotification {
   type: NotificationType;
   category: NotificationCategory;
   incidentId: string | null;
+  /** Set only on historical 'handover_pending' rows from the now-removed
+   *  shift-handover feature; always null going forward. */
   handoverId: string | null;
   text: string;
   read: boolean;

@@ -7,8 +7,6 @@
 import { describe, expect, it } from 'vitest';
 import { incidentsExportFilename } from './table';
 import { incidentPdfFilename } from './incidentPdf';
-import { handoverPdfFilename } from './handoverPdf';
-import type { Handover } from '../domain/types';
 
 describe('export file names', () => {
   it('names a single-incident PDF תקלה-<number>.pdf', () => {
@@ -25,19 +23,5 @@ describe('export file names', () => {
   it('falls back to today\'s date when no range is given', () => {
     const name = incidentsExportFilename('xlsx');
     expect(name).toMatch(/^תקלות-\d{4}-\d{2}-\d{2}\.xlsx$/);
-  });
-
-  it('names a handover PDF with its creation date', () => {
-    const handover: Handover = {
-      id: 'h1',
-      createdBy: 'u1',
-      createdAt: '2026-07-16T10:00:00.000Z',
-      toUserId: 'u2',
-      generalNote: '',
-      status: 'pending',
-      acceptedAt: null,
-      acceptedBy: null,
-    };
-    expect(handoverPdfFilename(handover)).toMatch(/^העברת-משמרת-2026-07-16\.pdf$/);
   });
 });
