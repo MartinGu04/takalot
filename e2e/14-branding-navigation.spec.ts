@@ -19,7 +19,7 @@ test('AVARIA branding appears on the login screen with the canonical full logo',
   await expect(page.locator('meta[name="application-name"]')).toHaveAttribute('content', 'AVARIA');
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute(
     'href',
-    '/apple-touch-icon-backed.png',
+    '/icons/apple-touch-icon-180.png',
   );
   await expect(page.locator('link[rel="icon"][sizes="32x32"]')).toHaveAttribute(
     'href',

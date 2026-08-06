@@ -11,8 +11,11 @@ export const AVARIA_ICON_SRC = '/branding/avaria-symbol.png';
  *  sidebar, favicons): a self-contained white-on-purple rounded-square
  *  tile, already high-contrast and ready to use in both themes with no
  *  extra backing. Kept byte-for-byte as supplied everywhere except the
- *  favicon/apple-touch-icon files, which are plain resizes (no recolor,
- *  no recompression beyond what the target pixel size requires). */
+ *  favicon/apple-touch-icon files, which are resizes with one correction:
+ *  the source's solid-black square corners (a matte around its rounded
+ *  tile, never meant to render as-is) are replaced with the tile's own
+ *  purple background -- the symbol itself is never recolored, distorted,
+ *  or cropped. */
 export const AVARIA_ICON_COMPACT_SRC = '/branding/avaria-compact-micro-mark.png';
 
 /** No default width/height/object-fit utilities here on purpose: callers set
