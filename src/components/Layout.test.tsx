@@ -9,6 +9,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
+import { APP_VERSION_LABEL } from '../config/appVersion';
 
 beforeEach(() => {
   localStorage.clear();
@@ -164,6 +165,36 @@ describe('mobile bottom-nav overflow (עוד)', () => {
     const labels = within(sidebar).getAllByRole('link').map((l) => l.textContent);
     expect(labels).toEqual(['מצב נוכחי', 'תקלות', 'ארכיון', 'כוח אדם', 'ניהול', 'יומן ביקורת', 'ניתוחים']);
     expect(within(sidebar).queryByRole('button', { name: 'עוד' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AVARIA v1.2.0 version display', () => {
+  it('renders "AVARIA v1.2.0" in the desktop sidebar, above the user/divider section, using the shared version source', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await login(user, 'login-u-admin');
+
+    const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' }).closest('aside') as HTMLElement;
+    const versionEl = within(sidebar).getByTestId('app-version');
+    expect(versionEl).toHaveTextContent(APP_VERSION_LABEL);
+    expect(versionEl.textContent).toBe('AVARIA v1.2.0');
+
+    // "Directly above the divider/user section": the version element and the
+    // bordered user-section container are adjacent siblings, in that order.
+    const userSectionDiv = sidebar.querySelector('.border-t.border-hairline');
+    expect(versionEl.nextElementSibling).toBe(userSectionDiv);
+  });
+
+  it('renders the same "AVARIA v1.2.0" version at the bottom of the mobile עוד screen', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await login(user, 'login-u-admin');
+
+    await user.click(within(bottomNav()).getByRole('button', { name: 'עוד' }));
+    const sheet = screen.getByRole('dialog', { name: 'עוד' });
+    const versionEl = within(sheet).getByTestId('app-version');
+    expect(versionEl).toHaveTextContent(APP_VERSION_LABEL);
+    expect(versionEl.textContent).toBe('AVARIA v1.2.0');
   });
 });
 

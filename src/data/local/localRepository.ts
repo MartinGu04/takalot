@@ -355,6 +355,7 @@ export class LocalDemoRepository implements Repository {
       read: false,
       createdAt: this.now().toISOString(),
       dedupeKey: opts.dedupeKey,
+      dismissedAt: null,
     });
   }
 
@@ -2703,8 +2704,11 @@ export class LocalDemoRepository implements Repository {
       // or the unread badge (which derives its count from this same
       // result). The row itself is preserved in storage, not deleted.
       .filter((n) => n.type !== 'update_overdue')
+      // Cleared (נקה הכל) rows are preserved in storage, never deleted, but
+      // excluded from every active list/filter tab -- see clearNotifications.
+      .filter((n) => !n.dismissedAt)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map(({ dedupeKey: _dedupeKey, ...n }) => n);
+      .map(({ dedupeKey: _dedupeKey, dismissedAt: _dismissedAt, ...n }) => n);
   }
 
   async markNotificationRead(session: Session, id: string): Promise<void> {
@@ -2721,6 +2725,15 @@ export class LocalDemoRepository implements Repository {
     const actor = this.requireSession(session);
     for (const n of this.db.notifications) {
       if (n.userId === actor.id) n.read = true;
+    }
+    this.persist();
+  }
+
+  async clearNotifications(session: Session): Promise<void> {
+    const actor = this.requireSession(session);
+    const now = this.now().toISOString();
+    for (const n of this.db.notifications) {
+      if (n.userId === actor.id && !n.dismissedAt) n.dismissedAt = now;
     }
     this.persist();
   }

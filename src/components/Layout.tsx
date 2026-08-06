@@ -5,6 +5,7 @@ import { isDemoMode } from '../data';
 import { useProfiles } from '../data/hooks';
 import { hasCapability } from '../domain/permissions';
 import { APP_NAME, roleLabels } from '../domain/labels';
+import { APP_VERSION_LABEL } from '../config/appVersion';
 import { Sidebar } from './Sidebar';
 import { Avatar, Dialog } from './ui';
 import { ThemeToggle } from './ThemeToggle';
@@ -66,6 +67,9 @@ function MobileMoreSheet({
           );
         })}
       </nav>
+      <p className="mt-3 px-1 text-xs text-muted" data-testid="app-version">
+        {APP_VERSION_LABEL}
+      </p>
     </Dialog>
   );
 }

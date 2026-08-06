@@ -803,6 +803,10 @@ export class SupabaseRepository implements Repository {
       // snapshot. Excluded from the active list (and therefore the unread
       // badge, which derives its count from this same result).
       .neq('type', 'update_overdue')
+      // Cleared (נקה הכל) rows are preserved server-side, never deleted, but
+      // excluded from every active list/filter tab -- see clearNotifications
+      // and migration 0048's partial index on this exact predicate.
+      .is('dismissed_at', null)
       .order('created_at', { ascending: false })
       .limit(SupabaseRepository.NOTIFICATIONS_LIMIT);
     wrap(error);
@@ -827,6 +831,14 @@ export class SupabaseRepository implements Repository {
     wrap(
       (await this.client.from('notifications').update({ read: true }).eq('user_id', session.userId)).error,
     );
+  }
+
+  async clearNotifications(_session: Session): Promise<void> {
+    // Deliberately no user id parameter -- the RPC derives auth.uid() itself
+    // and scopes the bulk dismissal to exactly the caller's own rows, so
+    // there is no argument through which a client could dismiss another
+    // user's notifications.
+    await this.rpc('clear_my_notifications', {});
   }
 
   async listAuditLogs(

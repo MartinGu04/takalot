@@ -106,6 +106,10 @@ export function NotificationsMenu() {
   const markAll = useAppMutation(() => repo().markAllNotificationsRead(session), {
     invalidate: [['notifications']],
   });
+  const clearAll = useAppMutation(() => repo().clearNotifications(session), {
+    invalidate: [['notifications']],
+    successText: 'ההתראות נוקו',
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -191,6 +195,17 @@ export function NotificationsMenu() {
                 onClick={() => markAll.mutate(undefined)}
               >
                 סימון הכול כנקרא
+              </button>
+            )}
+            {all.length > 0 && (
+              <button
+                type="button"
+                aria-label="ניקוי כל ההתראות"
+                disabled={clearAll.isPending}
+                className="min-h-8 rounded-lg px-1.5 text-xs font-medium text-text-secondary hover:underline disabled:opacity-60"
+                onClick={() => clearAll.mutate(undefined)}
+              >
+                {clearAll.isPending ? 'מנקה…' : 'נקה הכל'}
               </button>
             )}
           </div>
