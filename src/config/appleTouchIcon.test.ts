@@ -11,31 +11,9 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readPngHeader } from './readPngHeader';
 
 const APPLE_TOUCH_ICON_HREF = '/icons/apple-touch-icon-180.png';
-
-function readPngHeader(filePath: string) {
-  const buf = fs.readFileSync(filePath);
-  const signature = buf.subarray(0, 8);
-  const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  if (!signature.equals(pngSignature)) {
-    throw new Error(`${filePath} is not a valid PNG (bad signature)`);
-  }
-  // IHDR is always the first chunk: 4-byte length, 4-byte type "IHDR", then
-  // width(4) height(4) bitDepth(1) colorType(1) compression(1) filter(1) interlace(1).
-  const ihdrType = buf.subarray(12, 16).toString('ascii');
-  if (ihdrType !== 'IHDR') {
-    throw new Error(`${filePath} has no leading IHDR chunk`);
-  }
-  return {
-    width: buf.readUInt32BE(16),
-    height: buf.readUInt32BE(20),
-    bitDepth: buf.readUInt8(24),
-    // PNG color types: 0 grayscale, 2 truecolor (RGB, no alpha), 3 indexed,
-    // 4 grayscale+alpha, 6 truecolor+alpha (RGBA).
-    colorType: buf.readUInt8(25),
-  };
-}
 
 describe('Apple touch icon (iOS Add to Home Screen)', () => {
   const repoRoot = path.resolve(__dirname, '..', '..');
