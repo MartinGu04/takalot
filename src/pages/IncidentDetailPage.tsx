@@ -343,6 +343,25 @@ export default function IncidentDetailPage() {
   const exportPdf = async () => {
     try {
       await repo().recordExport(session, { exportType: 'incident_pdf', filtersDescription: incident.number });
+      // Fetched directly here, NOT read from this page's own
+      // useIncidentCauseAssessments/useIncidentTreatmentActions/
+      // useIncidentClosures background queries: unlike events/updates
+      // (which gate the visible Timeline section, so they're always
+      // resolved by the time a user could plausibly click "ייצוא PDF"),
+      // nothing currently on screen depends on these three resolving --
+      // "תחום התקלה"/"חשד נוכחי" come straight off the `incident` row, and
+      // Timeline renders fine with them still undefined. A user can reach
+      // and click the export action before their first fetch completes;
+      // reading `causeAssessments ?? []` etc. at that moment would
+      // silently bake a permanently incomplete PDF (unlike the on-screen
+      // Timeline, which self-heals on the next re-render once the query
+      // resolves -- a downloaded file gets no such second chance). Fetching
+      // fresh here removes the race entirely.
+      const [freshCauseAssessments, freshTreatmentActions, freshClosures] = await Promise.all([
+        repo().getIncidentCauseAssessments(session, incident.id),
+        repo().getIncidentTreatmentActions(session, incident.id),
+        repo().getIncidentClosures(session, incident.id),
+      ]);
       const pdf = await buildIncidentPdf(
         incident,
         events ?? [],
@@ -352,11 +371,9 @@ export default function IncidentDetailPage() {
         locations ?? [],
         user.fullName,
         undefined,
-        // Already loaded by this page (for the on-screen Timeline) -- reused
-        // as-is, never refetched for the export.
-        causeAssessments ?? [],
-        treatmentActions ?? [],
-        closures ?? [],
+        freshCauseAssessments,
+        freshTreatmentActions,
+        freshClosures,
       );
       downloadPdf(pdf, incidentPdfFilename(incident.number));
       toast('קובץ ה-PDF הופק בהצלחה.');
