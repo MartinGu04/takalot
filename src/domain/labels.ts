@@ -90,6 +90,8 @@ export const eventTypeLabels: Record<EventType, string> = {
   deadline_change: 'שינוי צפי עדכון',
   reported_to_ops_change: 'עדכון דיווח למבצעים',
   correction: 'תיקון רישום',
+  // Historical only -- written by the now-removed shift-handover feature;
+  // kept for read compatibility with hosted databases (see EventType).
   handover_included: 'נכללה בהעברת משמרת',
   handover_accepted: 'העברת משמרת אושרה',
   closed: 'סגירת תקלה',
@@ -111,6 +113,8 @@ export const notificationTypeLabels: Record<NotificationType, string> = {
   // and the generic professional-manager broadcast -- category (below)
   // disambiguates which one a given row is.
   incident_reopened: 'תקלה נפתחה מחדש',
+  // Historical only -- written by the now-removed shift-handover feature;
+  // kept for read compatibility with hosted databases (see NotificationType).
   handover_pending: 'העברת משמרת ממתינה לאישורך',
   incident_opened: 'תקלה נפתחה',
   incident_updated: 'עדכון תקלה',
@@ -216,7 +220,9 @@ export const auditActionLabels: Record<string, string> = {
   incident_cancelled: 'ביטול תקלה',
   incident_correction: 'תיקון רישום בתקלה',
   incident_follow_up_completed: 'השלמת פעולות המשך',
-  // Handovers
+  // Handovers -- historical only, written by the now-removed shift-handover
+  // feature; kept for read compatibility with the audit log (free-text
+  // action column, never validated against a fixed enum).
   handover_created: 'יצירת העברת משמרת',
   handover_accepted: 'אישור העברת משמרת',
   handover_addendum: 'תוספת להעברת משמרת',
@@ -231,6 +237,7 @@ export const auditEntityTypeLabels: Record<string, string> = {
   system: 'מערכת / עמדה',
   location: 'מיקום',
   incident: 'תקלה',
+  // Historical only -- see auditActionLabels' Handovers comment above.
   handover: 'העברת משמרת',
   export: 'ייצוא',
 };

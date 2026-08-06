@@ -21,7 +21,7 @@ test('critical screens are usable and correctly RTL at mobile width', async ({ p
   await expect(page.getByRole('navigation', { name: 'ניווט ראשי' })).toBeHidden();
 
   // Incident list, detail, and create pages: no horizontal scroll, RTL intact.
-  for (const path of ['/incidents', '/archive', '/handovers']) {
+  for (const path of ['/incidents', '/archive']) {
     await page.goto(path);
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(391);

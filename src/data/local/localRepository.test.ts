@@ -1740,72 +1740,6 @@ describe('Chapter 2 terminal-status compatibility', () => {
   });
 });
 
-describe('handover creation and acceptance', () => {
-  let repo: LocalDemoRepository;
-  beforeEach(() => {
-    repo = newRepo({ now: FIXED_NOW });
-  });
-
-  it('includes all open incidents and closed incidents with pending follow-up', async () => {
-    const handover = await repo.createHandover(supervisor1, {
-      toUserId: DEMO_USERS.supervisor2,
-      generalNote: 'סיכום משמרת לבדיקה',
-      itemNotes: {},
-    });
-    const full = await repo.getHandover(supervisor1, handover.id);
-    const incidentIds = full!.items.map((i) => i.incidentId);
-    expect(incidentIds).toContain('inc-1'); // open
-    expect(incidentIds).toContain('inc-6'); // closed with pending follow-up
-    expect(incidentIds).not.toContain('inc-5'); // closed, full readiness
-  });
-
-  it('rejects creating a handover to oneself', async () => {
-    await expect(
-      repo.createHandover(supervisor1, { toUserId: DEMO_USERS.supervisor1, generalNote: '', itemNotes: {} }),
-    ).rejects.toThrow(AppError);
-  });
-
-  it('only the named incoming supervisor may accept, and only once', async () => {
-    const handover = await repo.createHandover(supervisor1, {
-      toUserId: DEMO_USERS.supervisor2,
-      generalNote: '',
-      itemNotes: {},
-    });
-    await expect(repo.acceptHandover(manager, handover.id)).rejects.toThrow(AppError);
-
-    const accepted = await repo.acceptHandover(supervisor2, handover.id);
-    expect(accepted.status).toBe('accepted');
-    expect(accepted.acceptedBy).toBe(DEMO_USERS.supervisor2);
-
-    await expect(repo.acceptHandover(supervisor2, handover.id)).rejects.toThrow(AppError);
-  });
-
-  it('can be submitted with no general note and no individual incident notes', async () => {
-    const handover = await repo.createHandover(supervisor1, {
-      toUserId: DEMO_USERS.supervisor2,
-      generalNote: '',
-      itemNotes: {},
-    });
-    expect(handover.status).toBe('pending');
-    const full = await repo.getHandover(supervisor1, handover.id);
-    expect(full!.items.length).toBeGreaterThan(0);
-    expect(full!.items.every((i) => i.note === '')).toBe(true);
-  });
-
-  it('preserves optional per-incident notes when supplied, leaving others blank', async () => {
-    const handover = await repo.createHandover(supervisor1, {
-      toUserId: DEMO_USERS.supervisor2,
-      generalNote: 'הערה כללית',
-      itemNotes: { 'inc-1': 'לתשומת לב מיוחדת בתחילת המשמרת' },
-    });
-    const full = await repo.getHandover(supervisor1, handover.id);
-    const inc1Item = full!.items.find((i) => i.incidentId === 'inc-1');
-    expect(inc1Item?.note).toBe('לתשומת לב מיוחדת בתחילת המשמרת');
-    const otherItem = full!.items.find((i) => i.incidentId !== 'inc-1');
-    expect(otherItem?.note).toBe('');
-  });
-});
-
 describe('filter behavior', () => {
   it('filters by severity', async () => {
     const repo = newRepo({ now: FIXED_NOW });
@@ -3078,30 +3012,6 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
     const thisCall = events.filter((e) => e.type === 'closed' || e.type === 'reported_to_ops_change');
     expect(thisCall.length).toBe(2);
     expect(new Set(thisCall.map((e) => e.operationId)).size).toBe(1);
-  });
-
-  it('createHandover: handover_included rows across multiple incidents share one operationId, distinct per call', async () => {
-    const h1 = await repo.createHandover(supervisor1, {
-      toUserId: DEMO_USERS.supervisor2,
-      generalNote: '',
-      itemNotes: {},
-    });
-    const events1 = await repo.getIncidentEvents(supervisor1, 'inc-1');
-    const included1 = events1.filter((e) => e.type === 'handover_included' && e.refId === h1.id);
-    expect(included1.length).toBe(1);
-    const op1 = included1[0].operationId;
-    expect(op1).not.toBeNull();
-
-    const h2 = await repo.createHandover(supervisor1, {
-      toUserId: DEMO_USERS.manager,
-      generalNote: '',
-      itemNotes: {},
-    });
-    const events2 = await repo.getIncidentEvents(supervisor1, 'inc-1');
-    const included2 = events2.filter((e) => e.type === 'handover_included' && e.refId === h2.id);
-    expect(included2.length).toBe(1);
-    expect(included2[0].operationId).not.toBeNull();
-    expect(included2[0].operationId).not.toBe(op1);
   });
 
   it('a historical seeded event reads back with operationId null', async () => {

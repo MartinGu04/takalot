@@ -312,8 +312,7 @@ export class HebrewPdf {
   }
 
   /** Generic document header (title + "exported by/at"), unchanged from
-   *  before this export's RTL/branding rework -- still used by the
-   *  handover PDF export, out of scope for this change. Incident PDFs use
+   *  before this export's RTL/branding rework. Incident PDFs use
    *  incidentHeader() instead. */
   header(title: string, exportedBy: string) {
     this.doc.setFont('Alef', 'bold');

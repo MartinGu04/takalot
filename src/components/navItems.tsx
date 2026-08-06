@@ -9,10 +9,7 @@ export interface NavItem {
 }
 
 /** Primary destinations, role-filtered. Shared by the desktop sidebar and the mobile
- *  bottom nav (which shows only the first 4 -- see Layout.tsx). העברת משמרת is
- *  deliberately not a primary destination here: the /handovers route, page, and all
- *  handover functionality are untouched, just not linked from primary navigation
- *  (users get there via in-context links, e.g. from an incident). Because כוח אדם is
+ *  bottom nav (which shows only the first 4 -- see Layout.tsx). Because כוח אדם is
  *  positioned right after ארכיון, an authorized role's mobile bottom nav naturally
  *  picks it up as its 4th slot; a role without personnel access simply gets 3 items,
  *  never a meaningless filler. */

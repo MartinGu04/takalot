@@ -93,20 +93,6 @@ export function useIncidentUpdates(id: string | undefined) {
   });
 }
 
-export function useHandovers() {
-  const session = useSession();
-  return useQuery({ queryKey: ['handovers'], queryFn: () => repo().listHandovers(session) });
-}
-
-export function useHandover(id: string | undefined) {
-  const session = useSession();
-  return useQuery({
-    queryKey: ['handover', id],
-    queryFn: () => repo().getHandover(session, id!),
-    enabled: !!id,
-  });
-}
-
 export function useNotifications() {
   const session = useSession();
   return useQuery({

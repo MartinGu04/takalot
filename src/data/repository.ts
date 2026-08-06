@@ -3,9 +3,6 @@
 import type {
   AppNotification,
   AuditLog,
-  Handover,
-  HandoverAddendum,
-  HandoverItem,
   Incident,
   IncidentEvent,
   IncidentStatus,
@@ -26,7 +23,6 @@ import type {
   CancelIncidentInput,
   CloseIncidentInput,
   CorrectionInput,
-  CreateHandoverInput,
   CreateIncidentInput,
   PendingPersonnelInput,
   RenamePersonnelInput,
@@ -112,7 +108,7 @@ export interface Session {
 }
 
 export interface ExportAuditInfo {
-  exportType: 'incident_pdf' | 'handover_pdf' | 'incidents_xlsx' | 'incidents_csv';
+  exportType: 'incident_pdf' | 'incidents_xlsx' | 'incidents_csv';
   filtersDescription: string;
 }
 
@@ -278,17 +274,6 @@ export interface Repository {
   reopenIncident(session: Session, incidentId: string, input: ReopenIncidentInput): Promise<Incident>;
   addCorrection(session: Session, incidentId: string, input: CorrectionInput): Promise<void>;
   completeFollowUp(session: Session, incidentId: string, note: string): Promise<Incident>;
-
-  // --- handovers ---
-  listHandovers(session: Session): Promise<Handover[]>;
-  getHandover(session: Session, id: string): Promise<{
-    handover: Handover;
-    items: HandoverItem[];
-    addenda: HandoverAddendum[];
-  } | null>;
-  createHandover(session: Session, input: CreateHandoverInput): Promise<Handover>;
-  acceptHandover(session: Session, handoverId: string): Promise<Handover>;
-  addHandoverAddendum(session: Session, handoverId: string, text: string): Promise<void>;
 
   // --- notifications ---
   listNotifications(session: Session): Promise<AppNotification[]>;

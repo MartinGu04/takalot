@@ -13,7 +13,7 @@ test('an unauthenticated visit to a protected route redirects to the login scree
 });
 
 test('deep links to protected routes redirect unauthenticated users too', async ({ page }) => {
-  await page.goto('/handovers/new');
+  await page.goto('/incidents/new');
   await expect(page).toHaveURL(/\/login$/);
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/login$/);

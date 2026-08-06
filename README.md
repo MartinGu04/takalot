@@ -74,9 +74,9 @@ shift, not just from a desk.
 Every incident renders a single chronological, grouped timeline: creation,
 acknowledgement, every update (with its own reporting answers), status/
 severity/impact/assignment changes (explicit before/after values, never
-color-only), closure, reopening, cancellation, corrections, and any
-handover it was included in. Multiple field changes from one user action are
-grouped as one entry instead of several disconnected rows.
+color-only), closure, reopening, cancellation, and corrections. Multiple
+field changes from one user action are grouped as one entry instead of
+several disconnected rows.
 
 ### Current-state dashboard
 
@@ -118,22 +118,12 @@ counts, average close time, currently-open count, average open duration,
 reopened count, an opened-vs-closed trend chart, and the top systems and
 locations by incident count.
 
-### Shift handovers
-
-A handover (`/handovers`) snapshots every currently open incident (plus any
-closed-but-incomplete-follow-up one) at the moment it's created, names an
-incoming supervisor/manager/admin, and carries an optional general note plus
-per-incident notes. The named recipient accepts it once; anyone can append a
-free-text addendum afterward.
-
 ### Exports
 
 - Incident list (Incidents or Archive, respecting active filters) — `.xlsx`
   and UTF-8 CSV-with-BOM, Hebrew headers, Asia/Jerusalem-formatted dates.
 - A single incident — full PDF (creation/closure details, owner history,
   complete timeline), Hebrew RTL via an embedded Alef font.
-- A single handover — full PDF (participants, timestamps, every included
-  incident's snapshot).
 
 Every export call records an audit entry **before** the file is produced —
 an unauthorized export never generates a file, because the backend check
@@ -146,8 +136,7 @@ runs and throws first.
   (`navigator.clipboard.writeText`) for pasting into a WhatsApp group by
   hand. The app has no way to know whether the message was actually pasted
   or sent anywhere.
-- **No incident-list PDF and no handover XLSX/CSV** — only the four export
-  combinations listed above exist.
+- **No incident-list PDF** — only the export combinations listed above exist.
 - Department logos shown in the desktop header are purely decorative unit
   branding, not an interactive feature.
 
@@ -170,7 +159,7 @@ used.)
 | View all incidents | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Create, close, or reassign an incident's owner | ✓ | ✓ | ✓ | ✓ | – |
 | Acknowledge, fully update, change severity, cancel, or complete follow-up on an incident | ✓ | ✓ | ✓ | – | – |
-| Create or accept a shift handover; manage personnel | ✓ | ✓ | ✓ | – | – |
+| Manage personnel | ✓ | ✓ | ✓ | – | – |
 | Technical update (own assigned incidents only) | – | – | – | ✓ | – |
 | Reopen a closed incident | ✓ | ✓ | only if backend policy allows it | – | – |
 | Export (PDF/XLSX/CSV) | ✓ | ✓ | ✓ | – | only with an explicit backend grant |
@@ -385,8 +374,8 @@ npm run build       # type-check + production build
   the real app shell with a real (local demo) repository behind it.
 - **Playwright** (`e2e/*.spec.ts`) exercises full user journeys end-to-end
   against a real running dev server in demo mode: incident lifecycle by
-  role, handovers, reopening, exports (verified by reading the downloaded
-  file's actual bytes, not just its filename), personnel management,
+  role, reopening, exports (verified by reading the downloaded file's
+  actual bytes, not just its filename), personnel management,
   reference-data drag-reorder, analytics, mobile/RTL layout, and
   authorization/routing.
 - **`.github/workflows/postgresql-verification.yml`** runs on any pull
@@ -403,7 +392,7 @@ There is no lint or format script in this repository (see
 ```
 src/
   pages/         Routed screens (Dashboard, Incidents, Archive, Incident
-                 detail/create, Handovers, Personnel, Admin, Reports, Login)
+                 detail/create, Personnel, Admin, Reports, Login)
   components/    Shared UI: brand/layout chrome, the incident card/badges,
                  the shared Timeline, filter bars, plus analytics/ and
                  dialogs/ subfolders for the reporting widgets and modal

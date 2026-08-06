@@ -20,9 +20,6 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const IncidentsPage = lazy(() => import('./pages/IncidentsPage'));
 const IncidentCreatePage = lazy(() => import('./pages/IncidentCreatePage'));
 const IncidentDetailPage = lazy(() => import('./pages/IncidentDetailPage'));
-const HandoversPage = lazy(() => import('./pages/HandoversPage'));
-const HandoverCreatePage = lazy(() => import('./pages/HandoverCreatePage'));
-const HandoverDetailPage = lazy(() => import('./pages/HandoverDetailPage'));
 const ArchivePage = lazy(() => import('./pages/ArchivePage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const PersonnelPage = lazy(() => import('./pages/PersonnelPage'));
@@ -82,12 +79,6 @@ function AppRoutes() {
             element={<RequireAuth cap="create_incident"><IncidentCreatePage /></RequireAuth>}
           />
           <Route path="/incidents/:id" element={<RequireAuth><IncidentDetailPage /></RequireAuth>} />
-          <Route path="/handovers" element={<RequireAuth><HandoversPage /></RequireAuth>} />
-          <Route
-            path="/handovers/new"
-            element={<RequireAuth cap="create_handover"><HandoverCreatePage /></RequireAuth>}
-          />
-          <Route path="/handovers/:id" element={<RequireAuth><HandoverDetailPage /></RequireAuth>} />
           <Route path="/archive" element={<RequireAuth><ArchivePage /></RequireAuth>} />
           <Route path="/personnel" element={<RequireAuth cap="manage_personnel"><PersonnelPage /></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth cap="manage_users"><AdminPage /></RequireAuth>} />

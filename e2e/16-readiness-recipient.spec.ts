@@ -1,5 +1,5 @@
-// Incomplete-readiness closure lifecycle, the reporting-recipient field, the
-// removed reported-to-operations filter, and the simplified handover flow.
+// Incomplete-readiness closure lifecycle, the reporting-recipient field, and
+// the removed reported-to-operations filter.
 import { test, expect } from '@playwright/test';
 import { loginAs, DEMO_USERS } from './helpers';
 
@@ -84,24 +84,4 @@ test('the reported-to-operations filter is no longer offered on the active incid
   await loginAs(page, DEMO_USERS.supervisor1);
   await page.goto('/incidents');
   await expect(page.getByLabel('סינון לפי דיווח למבצעים')).toHaveCount(0);
-});
-
-test('handover creation shows a concise snapshot with no open per-incident textareas by default', async ({ page }) => {
-  await loginAs(page, DEMO_USERS.supervisor1);
-  await page.goto('/handovers/new');
-
-  await expect(page.getByLabel('הערת מסירה לתקלה זו (לא חובה)')).toHaveCount(0);
-  const addNoteButtons = page.getByRole('button', { name: '+ הוסף הערה' });
-  await expect(addNoteButtons.first()).toBeVisible();
-
-  await addNoteButtons.first().click();
-  await expect(page.getByLabel('הערת מסירה לתקלה זו (לא חובה)')).toHaveCount(1);
-});
-
-test('handover can be submitted with no individual incident notes', async ({ page }) => {
-  await loginAs(page, DEMO_USERS.supervisor1);
-  await page.goto('/handovers/new');
-  await page.getByLabel('אחמ״ש נכנס').selectOption({ label: 'מאיה רוזן (דמו)' });
-  await page.getByRole('button', { name: 'שליחת העברת משמרת' }).click();
-  await expect(page.getByRole('heading', { name: 'העברת משמרת' })).toBeVisible();
 });
