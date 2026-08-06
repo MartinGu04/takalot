@@ -8,7 +8,10 @@
 // production code, and never a real incident.
 import type {
   Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
   IncidentEvent,
+  IncidentTreatmentAction,
   IncidentUpdate,
   LocationRecord,
   Profile,
@@ -41,7 +44,7 @@ export const fixtureIncident: Incident = {
   severity: 'high',
   status: 'closed',
   operationalImpact: 'פגיעה בזמינות תקשורת בין עמדות המטה למשך כשעתיים.',
-  reportedDomain: null,
+  reportedDomain: 'equipment',
   currentSuspectedCause: null,
   currentSuspectedCauseOtherDetail: null,
   ownerUserId: 'user-roei',
@@ -339,10 +342,82 @@ export const fixtureEvents: IncidentEvent[] = [
     newValue: 'full',
     note: 'סיבת התקלה: כשל בכרטיס רשת בציוד הליבה של NET2000.\nהפתרון שבוצע: הוחלף כרטיס הרשת והמערכת נבדקה מול כלל עמדות המטה.',
     userNote: null,
-    refId: null,
+    refId: 'closure-1',
     createdAt: '2026-08-01T09:05:00.000Z',
     operationId: op(14),
   },
 ];
 
 export const fixtureExportedByName = 'Martin Gusin';
+
+// Structured lifecycle classification (AVARIA incident classification
+// feature): an initial suspected cause + structured action recorded at
+// creation (op(1), no known effective time -- eventTime null), a
+// structured action recorded during the treatment update (op(8)), and the
+// closure's own classification (tied to evt-14's refId, exactly like the
+// real RPC sets incident_closures.id as the 'closed' event's ref_id).
+export const fixtureInitialCauseAssessment: IncidentCauseAssessment = {
+  id: 'cause-1',
+  incidentId: INCIDENT_ID,
+  cause: 'equipment',
+  otherDetail: null,
+  cycleNumber: 0,
+  recordedBy: 'user-roei',
+  eventTime: null,
+  recordedAt: '2026-08-01T06:15:00.000Z',
+  operationId: op(1),
+  createdAt: '2026-08-01T06:15:00.000Z',
+};
+
+export const fixtureCauseAssessments: IncidentCauseAssessment[] = [fixtureInitialCauseAssessment];
+
+export const fixtureInitialTreatmentAction: IncidentTreatmentAction = {
+  id: 'action-1',
+  incidentId: INCIDENT_ID,
+  actionType: 'diagnosis',
+  otherDetail: null,
+  cycleNumber: 0,
+  eventTime: null,
+  recordedBy: 'user-roei',
+  recordedAt: '2026-08-01T06:15:00.000Z',
+  operationId: op(1),
+  createdAt: '2026-08-01T06:15:00.000Z',
+};
+
+export const fixtureUpdateTreatmentAction: IncidentTreatmentAction = {
+  id: 'action-2',
+  incidentId: INCIDENT_ID,
+  actionType: 'equipment_replacement',
+  otherDetail: null,
+  cycleNumber: 0,
+  eventTime: '2026-08-01T07:30:00.000Z',
+  recordedBy: 'user-eilon',
+  recordedAt: '2026-08-01T07:30:05.000Z',
+  operationId: op(8),
+  createdAt: '2026-08-01T07:30:05.000Z',
+};
+
+export const fixtureTreatmentActions: IncidentTreatmentAction[] = [
+  fixtureInitialTreatmentAction,
+  fixtureUpdateTreatmentAction,
+];
+
+export const fixtureClosure: IncidentClosureClassification = {
+  id: 'closure-1',
+  incidentId: INCIDENT_ID,
+  cycleNumber: 0,
+  operationId: op(14),
+  confirmedCause: 'equipment',
+  confirmedCauseOtherDetail: null,
+  treatmentOutcome: 'permanent_resolution',
+  treatmentOutcomeOtherDetail: null,
+  resolutionAttribution: 'specific_action',
+  resolutionAttributionOtherDetail: null,
+  resolutionActionIds: ['action-2'],
+  recordedBy: 'user-martin',
+  eventTime: '2026-08-01T09:05:00.000Z',
+  recordedAt: '2026-08-01T09:05:00.000Z',
+  createdAt: '2026-08-01T09:05:00.000Z',
+};
+
+export const fixtureClosures: IncidentClosureClassification[] = [fixtureClosure];

@@ -6,15 +6,31 @@
 // metadata. Reuses the same event grouping the on-screen Timeline component
 // uses (domain/timelineGrouping.ts) so one operation still renders as one
 // block here, consistent with the UI.
-import type { EventType, IncidentEvent, IncidentUpdate, Profile, Readiness } from '../domain/types';
+import type {
+  EventType,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
+  IncidentEvent,
+  IncidentTreatmentAction,
+  IncidentUpdate,
+  Profile,
+  Readiness,
+  SuspectedCause,
+} from '../domain/types';
 import { groupTimelineEvents } from '../domain/timelineGrouping';
 import {
+  confirmedCauseLabels,
   eventTypeLabels,
   fieldLabels,
   readinessLabels,
   reportedToOpsLabels,
+  resolutionAttributionLabels,
   severityLabels,
   statusLabels,
+  suspectedCauseLabels,
+  treatmentActionTypeLabels,
+  treatmentOutcomeLabels,
+  UNASSESSED_CAUSE_LABEL,
 } from '../domain/labels';
 import { formatDateTime } from '../lib/time';
 import { isolate } from './bidi';
@@ -45,6 +61,67 @@ function statusValue(value: string | null): string {
   if (value in statusLabels) return statusLabels[value as keyof typeof statusLabels];
   if (value in reportedToOpsLabels) return reportedToOpsLabels[value as keyof typeof reportedToOpsLabels];
   return value;
+}
+
+/** A free-text detail suffix (" — <detail>"), isolated since the detail is
+ *  user-authored text of unknown script/direction -- never rendered for a
+ *  non-'other' value. Shared by every classification value formatter below,
+ *  and reused as-is by incidentPdf.ts's main-summary fields so the exact
+ *  same detail-suffix rule applies everywhere a classification value is
+ *  shown. */
+function otherDetailSuffix(detail: string | null): string {
+  return detail ? ` — ${isolate(detail)}` : '';
+}
+
+/** The suspected-cause value to display -- `null` ("never assessed") and
+ *  the explicit `'unknown'` enum member ("assessed as not yet known") are
+ *  never conflated; each keeps its own distinct approved label. Shared by
+ *  the initial-cause / cause-change timeline lines and by incidentPdf.ts's
+ *  main-summary "חשד נוכחי" field. */
+export function suspectedCauseValue(cause: SuspectedCause | null, otherDetail: string | null = null): string {
+  if (!cause) return UNASSESSED_CAUSE_LABEL;
+  return `${suspectedCauseLabels[cause]}${cause === 'other' ? otherDetailSuffix(otherDetail) : ''}`;
+}
+
+/** One structured treatment action's display label, 'other' included. */
+export function treatmentActionValue(action: IncidentTreatmentAction): string {
+  return `${treatmentActionTypeLabels[action.actionType]}${action.actionType === 'other' ? otherDetailSuffix(action.otherDetail) : ''}`;
+}
+
+/** A comma-joined list of treatment-action labels -- used for both the
+ *  creation-time and update-time compact "actions" lines. */
+export function treatmentActionListValue(actions: IncidentTreatmentAction[]): string {
+  return actions.map(treatmentActionValue).join(', ');
+}
+
+/** One closure's confirmed-cause value -- shared by the closure timeline
+ *  block and incidentPdf.ts's main closure-summary field. */
+export function confirmedCauseValue(closure: IncidentClosureClassification): string {
+  return `${confirmedCauseLabels[closure.confirmedCause]}${closure.confirmedCause === 'other' ? otherDetailSuffix(closure.confirmedCauseOtherDetail) : ''}`;
+}
+
+/** One closure's treatment-outcome value. */
+export function treatmentOutcomeValue(closure: IncidentClosureClassification): string {
+  return `${treatmentOutcomeLabels[closure.treatmentOutcome]}${closure.treatmentOutcome === 'other' ? otherDetailSuffix(closure.treatmentOutcomeOtherDetail) : ''}`;
+}
+
+/** One closure's resolution-attribution value, with its linked resolving
+ *  action(s) appended (e.g. "פעולה מסוימת שתועדה: החלפת ציוד") only when
+ *  the attribution is one that ever links actions at all
+ *  (specific_action/combination_of_actions) and at least one of the linked
+ *  ids actually resolves against the incident's own treatment-action rows. */
+export function resolutionAttributionValue(
+  closure: IncidentClosureClassification,
+  treatmentActions: IncidentTreatmentAction[],
+): string {
+  const base = `${resolutionAttributionLabels[closure.resolutionAttribution]}${closure.resolutionAttribution === 'other' ? otherDetailSuffix(closure.resolutionAttributionOtherDetail) : ''}`;
+  if (closure.resolutionAttribution !== 'specific_action' && closure.resolutionAttribution !== 'combination_of_actions') {
+    return base;
+  }
+  const linked = closure.resolutionActionIds
+    .map((id) => treatmentActions.find((a) => a.id === id))
+    .filter((a): a is IncidentTreatmentAction => !!a);
+  return linked.length > 0 ? `${base}: ${treatmentActionListValue(linked)}` : base;
 }
 
 /** One field-change event ("X שונה: לפני ← אחרי"), translated through the
@@ -78,6 +155,14 @@ function fieldChangeTitle(event: IncidentEvent): string | null {
       return event.newValue
         ? `צפי לעדכון הבא עודכן ל${isolate(formatDateTime(event.newValue))}`
         : 'צפי לעדכון הבא הוסר';
+    case 'current_suspected_cause': {
+      // The RPC/demo repo write '' (coalesced), not null, for "no prior
+      // cause" -- both fold to the same UNASSESSED_CAUSE_LABEL fallback
+      // here, matching the on-screen Timeline's own valueLabel() handling.
+      const oldValue = (event.oldValue as SuspectedCause | '' | null) || null;
+      const newValue = (event.newValue as SuspectedCause | '' | null) || null;
+      return `חשד נוכחי שונה: ${isolate(suspectedCauseValue(oldValue))} ← ${isolate(suspectedCauseValue(newValue))}`;
+    }
     default:
       return `${fieldLabels[event.field] ?? 'פרט'} עודכן`;
   }
@@ -131,6 +216,7 @@ export function narrativeTitle(event: IncidentEvent): string {
     case 'impact_change':
     case 'assignment_change':
     case 'deadline_change':
+    case 'cause_assessment_changed':
       return fieldChangeTitle(event) ?? 'אירוע מערכת';
     case 'reported_to_ops_change':
       return reportedToOpsChangeTitle(event);
@@ -201,13 +287,46 @@ function updateDetails(update: IncidentUpdate): string[] {
 
 /** Every additional detail line for one primary event: its own note (a
  *  human-authored free-text fact), the linked update's structured fields
- *  when this is an 'update' event, and a closure-readiness line for
- *  'closed'. Never a raw field/oldValue/newValue dump. */
-function primaryDetails(event: IncidentEvent, update: IncidentUpdate | undefined): string[] {
+ *  when this is an 'update' event, a closure-readiness line for 'closed',
+ *  plus (when supplied) the structured lifecycle-classification lines that
+ *  belong to THIS exact event -- the initial suspected cause/treatment
+ *  actions on 'created' (never a fabricated action time -- see the wording
+ *  below), the treatment actions recorded during an 'update', and the
+ *  confirmed-cause/treatment-outcome/resolution-attribution belonging to
+ *  this specific closure cycle on 'closed'. Never a raw field/oldValue/
+ *  newValue dump, and never the SAME classification value repeated twice
+ *  within these lines (the closure block below is the only place a
+ *  closure's structured fields appear in this function's output). */
+function primaryDetails(
+  event: IncidentEvent,
+  update: IncidentUpdate | undefined,
+  initialCause: IncidentCauseAssessment | undefined,
+  groupTreatmentActions: IncidentTreatmentAction[],
+  closure: IncidentClosureClassification | undefined,
+  allTreatmentActions: IncidentTreatmentAction[],
+): string[] {
   const details = [...noteDetails(event)];
   if (update) details.push(...updateDetails(update));
   if (event.type === 'closed' && event.newValue && event.newValue in readinessLabels) {
     details.push(`כשירות בסגירה: ${readinessLabels[event.newValue as Readiness]}`);
+  }
+  if (event.type === 'created') {
+    if (initialCause) {
+      details.push(
+        `חשד ראשוני: ${suspectedCauseValue(initialCause.cause, initialCause.otherDetail)} — תועד בעת פתיחת התקלה`,
+      );
+    }
+    if (groupTreatmentActions.length > 0) {
+      details.push(`פעולות שסווגו בעת הפתיחה: ${treatmentActionListValue(groupTreatmentActions)}`);
+    }
+  }
+  if (event.type === 'update' && groupTreatmentActions.length > 0) {
+    details.push(`פעולות טיפול: ${treatmentActionListValue(groupTreatmentActions)}`);
+  }
+  if (event.type === 'closed' && closure) {
+    details.push(`הגורם שאומת: ${confirmedCauseValue(closure)}`);
+    details.push(`תוצאת הטיפול: ${treatmentOutcomeValue(closure)}`);
+    details.push(`מה ידוע על מה שהוביל לפתרון: ${resolutionAttributionValue(closure, allTreatmentActions)}`);
   }
   return details;
 }
@@ -221,17 +340,48 @@ function subordinateDetail(event: IncidentEvent): string {
   return note ? `${title} (${note})` : title;
 }
 
+/**
+ * Structured lifecycle-classification data is entirely optional (defaults
+ * to empty) so every existing caller/test that only ever passed
+ * events/updates/profiles keeps working, unchanged, for an incident that
+ * has none of it -- a legacy incident's PDF timeline must render exactly
+ * as it always has. Joined onto the relevant primary event by operationId
+ * (causeAssessments/treatmentActions) or by refId (closures), mirroring
+ * exactly how the on-screen Timeline component joins the same data --
+ * never rendered as separate timeline blocks of their own.
+ */
 export function buildTimelineBlocks(
   events: IncidentEvent[],
   updates: IncidentUpdate[],
   profiles: Profile[],
+  causeAssessments: IncidentCauseAssessment[] = [],
+  treatmentActions: IncidentTreatmentAction[] = [],
+  closures: IncidentClosureClassification[] = [],
 ): TimelineBlock[] {
   const updatesById = new Map(updates.map((u) => [u.id, u]));
+  const closuresById = new Map(closures.map((c) => [c.id, c]));
+  const treatmentActionsByOperation = new Map<string, IncidentTreatmentAction[]>();
+  for (const a of treatmentActions) {
+    if (!a.operationId) continue;
+    const list = treatmentActionsByOperation.get(a.operationId) ?? [];
+    list.push(a);
+    treatmentActionsByOperation.set(a.operationId, list);
+  }
+  const initialCauseByOperation = new Map<string, IncidentCauseAssessment>();
+  for (const c of causeAssessments) {
+    // Only the initial, creation-time assessment (no known effective time)
+    // is rendered inline this way -- every later change already gets its
+    // own explicit cause_assessment_changed subordinate line above.
+    if (c.operationId && c.eventTime === null) initialCauseByOperation.set(c.operationId, c);
+  }
   const groups = groupTimelineEvents(events);
 
-  return groups.map(({ primary, subordinates }) => {
+  return groups.map(({ primary, subordinates, operationId }) => {
     const update = primary.refId ? updatesById.get(primary.refId) : undefined;
-    const details = primaryDetails(primary, update);
+    const groupTreatmentActions = operationId ? treatmentActionsByOperation.get(operationId) ?? [] : [];
+    const initialCause = operationId ? initialCauseByOperation.get(operationId) : undefined;
+    const closure = primary.type === 'closed' && primary.refId ? closuresById.get(primary.refId) : undefined;
+    const details = primaryDetails(primary, update, initialCause, groupTreatmentActions, closure, treatmentActions);
     for (const subordinate of subordinates) {
       details.push(subordinateDetail(subordinate));
     }

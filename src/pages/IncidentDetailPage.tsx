@@ -351,6 +351,12 @@ export default function IncidentDetailPage() {
         systems ?? [],
         locations ?? [],
         user.fullName,
+        undefined,
+        // Already loaded by this page (for the on-screen Timeline) -- reused
+        // as-is, never refetched for the export.
+        causeAssessments ?? [],
+        treatmentActions ?? [],
+        closures ?? [],
       );
       downloadPdf(pdf, incidentPdfFilename(incident.number));
       toast('קובץ ה-PDF הופק בהצלחה.');
