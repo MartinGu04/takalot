@@ -747,6 +747,9 @@ describe('incident details: internal owner and external handler render as two se
 async function fillCloseDialogMinimalFields(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
   await user.type(within(dialog).getByLabelText(/^סיבת התקלה/), 'תקלת חומרה');
   await user.type(within(dialog).getByLabelText(/^הפתרון שבוצע/), 'הוחלף רכיב');
+  await user.selectOptions(within(dialog).getByLabelText(/הגורם שאומת/), 'equipment');
+  await user.selectOptions(within(dialog).getByLabelText(/תוצאת הטיפול/), 'permanent_resolution');
+  await user.selectOptions(within(dialog).getByLabelText(/מה ידוע על מה שהוביל לפתרון/), 'no_action_taken');
 }
 
 describe('IncidentDetailPage: WhatsApp notification-copy modal (post-closure)', () => {

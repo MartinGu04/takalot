@@ -297,6 +297,9 @@ describe('closed-incidents counter beside "נסגרו לאחרונה"', () => {
     const closeDialog = await screen.findByRole('dialog', { name: 'סגירת תקלה' });
     await user.type(within(closeDialog).getByLabelText(/^סיבת התקלה/), 'תקלת חומרה');
     await user.type(within(closeDialog).getByLabelText(/^הפתרון שבוצע/), 'הוחלף רכיב');
+    await user.selectOptions(within(closeDialog).getByLabelText(/הגורם שאומת/), 'equipment');
+    await user.selectOptions(within(closeDialog).getByLabelText(/תוצאת הטיפול/), 'permanent_resolution');
+    await user.selectOptions(within(closeDialog).getByLabelText(/מה ידוע על מה שהוביל לפתרון/), 'no_action_taken');
     await user.click(within(closeDialog).getByRole('button', { name: 'המשך לאישור סגירה' }));
     await user.click(await within(closeDialog).findByRole('button', { name: 'אישור סגירת תקלה' }));
     expect(await screen.findByText('התקלה נסגרה.')).toBeInTheDocument();

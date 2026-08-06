@@ -530,6 +530,53 @@ export function Dialog({
   );
 }
 
+// ---------- Disclosure ----------
+/**
+ * Collapsed-by-default optional section (e.g. "הוספת חשד ראשוני ופרטי
+ * טיפול" / "הוספת פרטי טיפול"). Controlled, not self-managing state: the
+ * caller owns `open` so a validation error inside the section can force it
+ * open (and move focus to the offending field) instead of leaving it
+ * silently hidden -- see IncidentCreatePage/UpdateDialog/CloseDialog.
+ * Leaving it collapsed and untouched costs the user nothing: no extra
+ * click, no layout shift beyond the trigger itself.
+ */
+export function Disclosure({
+  label,
+  open,
+  onOpenChange,
+  children,
+  className,
+}: {
+  label: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+  className?: string;
+}) {
+  const id = useId();
+  return (
+    <div className={cx('rounded-xl border border-hairline', className)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => onOpenChange(!open)}
+        className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-hover"
+      >
+        <span>{label}</span>
+        <span aria-hidden className={cx('text-xs transition-transform', open && 'rotate-180')}>
+          ⌄
+        </span>
+      </button>
+      {open && (
+        <div id={id} className="flex flex-col gap-3 border-t border-hairline p-3">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Spinner / loading ----------
 export function Spinner({ label = 'טוען…', className }: { label?: string; className?: string }) {
   return (

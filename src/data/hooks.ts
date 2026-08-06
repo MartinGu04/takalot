@@ -93,6 +93,33 @@ export function useIncidentUpdates(id: string | undefined) {
   });
 }
 
+export function useIncidentCauseAssessments(id: string | undefined) {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['incident-cause-assessments', id],
+    queryFn: () => repo().getIncidentCauseAssessments(session, id!),
+    enabled: !!id,
+  });
+}
+
+export function useIncidentTreatmentActions(id: string | undefined) {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['incident-treatment-actions', id],
+    queryFn: () => repo().getIncidentTreatmentActions(session, id!),
+    enabled: !!id,
+  });
+}
+
+export function useIncidentClosures(id: string | undefined) {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['incident-closures', id],
+    queryFn: () => repo().getIncidentClosures(session, id!),
+    enabled: !!id,
+  });
+}
+
 export function useNotifications() {
   const session = useSession();
   return useQuery({
@@ -136,7 +163,17 @@ export function useAppMutation<TInput, TResult>(
   return useMutation({
     mutationFn: fn,
     onSuccess: (result) => {
-      for (const key of options.invalidate ?? [['incidents'], ['incident'], ['incident-events'], ['incident-updates'], ['notifications'], ['audit']]) {
+      for (const key of options.invalidate ?? [
+        ['incidents'],
+        ['incident'],
+        ['incident-events'],
+        ['incident-updates'],
+        ['incident-cause-assessments'],
+        ['incident-treatment-actions'],
+        ['incident-closures'],
+        ['notifications'],
+        ['audit'],
+      ]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
       if (options.successText) toast(options.successText, 'success');

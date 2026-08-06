@@ -1,22 +1,35 @@
 // Update dialog: full operational update (protected fields) or restricted
 // technician update, depending on the current user's role and capability.
 import { useState } from 'react';
-import type { Incident, ReportedToOps } from '../../domain/types';
-import { severityLabels, statusLabels, reportedToOpsLabels } from '../../domain/labels';
+import type { Incident, ReportedToOps, SuspectedCause } from '../../domain/types';
+import {
+  severityLabels,
+  statusLabels,
+  reportedToOpsLabels,
+  suspectedCauseLabels,
+  SUSPECTED_CAUSE_ORDER,
+  UNASSESSED_CAUSE_LABEL,
+} from '../../domain/labels';
 import {
   updateIncidentSchema,
   technicianUpdateSchema,
   type UpdateIncidentInput,
   type TechnicianUpdateInput,
+  type TreatmentActionInput,
 } from '../../domain/schemas';
 import { canTransition, transitionError } from '../../domain/transitions';
 import { useProfiles } from '../../data/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { hasCapability, canTechnicianUpdate } from '../../domain/permissions';
-import { Dialog, Field, Input, Select, Textarea, Button, DateTimeLocalInput } from '../ui';
+import { Dialog, Disclosure, Field, Input, Select, Textarea, Button, DateTimeLocalInput } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { ExternalPartyFields } from '../ExternalPartyFields';
+import { TreatmentActionPicker } from '../TreatmentActionPicker';
 import { isoToLocalInput, localInputToIso } from '../../lib/time';
+
+// Distinct sentinel from every real SuspectedCause enum member -- "not
+// touched," never sent to the RPC (never reconfirmed on every update).
+const CAUSE_UNCHANGED = '' as const;
 
 /** מצב הטיפול -- the simplified three-state treatment model this dialog
  *  offers for a full update. "בהמתנה" is a single UI category covering
@@ -85,6 +98,15 @@ export function UpdateDialog({
   const [ownerError, setOwnerError] = useState<string | undefined>();
   const [extError, setExtError] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+  // Behind the "הוספת פרטי טיפול" disclosure -- both entirely optional,
+  // available in full and technician mode alike. CAUSE_UNCHANGED means the
+  // user never touched the cause control this session; only an actively
+  // chosen value is ever sent.
+  const [suspectedCause, setSuspectedCause] = useState<SuspectedCause | typeof CAUSE_UNCHANGED>(CAUSE_UNCHANGED);
+  const [suspectedCauseOtherDetail, setSuspectedCauseOtherDetail] = useState('');
+  const [treatmentActions, setTreatmentActions] = useState<TreatmentActionInput[]>([]);
+  const [causeOtherError, setCauseOtherError] = useState<string | undefined>();
+  const [classificationOpen, setClassificationOpen] = useState(false);
 
   const reset = () => {
     setEventTime(isoToLocalInput(new Date().toISOString()));
@@ -108,6 +130,11 @@ export function UpdateDialog({
     setUpdateWisdomReported('');
     setChangeReason('');
     setError(undefined);
+    setSuspectedCause(CAUSE_UNCHANGED);
+    setSuspectedCauseOtherDetail('');
+    setTreatmentActions([]);
+    setCauseOtherError(undefined);
+    setClassificationOpen(false);
   };
 
   function buildFullInput() {
@@ -131,6 +158,13 @@ export function UpdateDialog({
       updateReportedToCommsRecipient: updateReportedToComms === 'yes' ? updateReportedToCommsRecipient : null,
       updateWisdomReported,
       note,
+      // Omitted entirely (not merely nullable) when the user never touched
+      // the disclosure -- "leaving it untouched behaves exactly as it does
+      // today," never a reconfirmation prompt.
+      ...(suspectedCause !== CAUSE_UNCHANGED
+        ? { suspectedCause, suspectedCauseOtherDetail: suspectedCauseOtherDetail || undefined }
+        : {}),
+      treatmentActions,
     };
   }
   function buildTechInput() {
@@ -142,6 +176,10 @@ export function UpdateDialog({
       nextSteps,
       currentStatusText,
       note,
+      ...(suspectedCause !== CAUSE_UNCHANGED
+        ? { suspectedCause, suspectedCauseOtherDetail: suspectedCauseOtherDetail || undefined }
+        : {}),
+      treatmentActions,
     };
   }
 
@@ -167,6 +205,7 @@ export function UpdateDialog({
     setError(undefined);
     setOwnerError(undefined);
     setExtError(undefined);
+    setCauseOtherError(undefined);
     const boundsError = eventTimeBoundsError(localInputToIso(eventTime));
     if (boundsError) {
       setError(boundsError);
@@ -181,9 +220,22 @@ export function UpdateDialog({
       if (!parsed.success) {
         const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
         const extIssue = parsed.error.issues.find((i) => i.path[0] === 'externalHandlerName');
-        const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName');
+        const causeIssue = parsed.error.issues.find(
+          (i) => i.path[0] === 'suspectedCauseOtherDetail' || i.path[0] === 'treatmentActions',
+        );
+        const otherIssue = parsed.error.issues.find(
+          (i) =>
+            i.path[0] !== 'ownerUserId' &&
+            i.path[0] !== 'externalHandlerName' &&
+            i.path[0] !== 'suspectedCauseOtherDetail' &&
+            i.path[0] !== 'treatmentActions',
+        );
         setOwnerError(ownerIssue?.message);
         setExtError(extIssue?.message);
+        if (causeIssue) {
+          setCauseOtherError(causeIssue.message);
+          setClassificationOpen(true);
+        }
         setError(otherIssue?.message);
         return;
       }
@@ -191,7 +243,14 @@ export function UpdateDialog({
     } else {
       const parsed = technicianUpdateSchema.safeParse(buildTechInput());
       if (!parsed.success) {
-        setError(parsed.error.issues[0]?.message);
+        const causeIssue = parsed.error.issues.find(
+          (i) => i.path[0] === 'suspectedCauseOtherDetail' || i.path[0] === 'treatmentActions',
+        );
+        if (causeIssue) {
+          setCauseOtherError(causeIssue.message);
+          setClassificationOpen(true);
+        }
+        setError(parsed.error.issues.find((i) => i.path[0] !== 'suspectedCauseOtherDetail' && i.path[0] !== 'treatmentActions')?.message);
         return;
       }
       onSubmitTechnician(parsed.data);
@@ -278,6 +337,45 @@ export function UpdateDialog({
             </>
           )}
         </Field>
+
+        <Disclosure label="הוספת פרטי טיפול" open={classificationOpen} onOpenChange={setClassificationOpen}>
+          <Field
+            label="חשד נוכחי"
+            hint={`המצב הנוכחי: ${incident.currentSuspectedCause ? suspectedCauseLabels[incident.currentSuspectedCause] : UNASSESSED_CAUSE_LABEL}. שינוי כאן ייצור רישום היסטורי חדש; השארה ללא שינוי אינה דורשת אישור מחדש.`}
+          >
+            {(a) => (
+              <Select
+                {...a}
+                value={suspectedCause}
+                onChange={(e) => setSuspectedCause(e.target.value as SuspectedCause | typeof CAUSE_UNCHANGED)}
+              >
+                <option value={CAUSE_UNCHANGED}>ללא שינוי</option>
+                {SUSPECTED_CAUSE_ORDER.map((c) => (
+                  <option key={c} value={c}>
+                    {suspectedCauseLabels[c]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {suspectedCause === 'other' && (
+            <Field label="פירוט החשד" required error={causeOtherError}>
+              {(a) => (
+                <Input
+                  {...a}
+                  value={suspectedCauseOtherDetail}
+                  onChange={(e) => setSuspectedCauseOtherDetail(e.target.value)}
+                  maxLength={500}
+                />
+              )}
+            </Field>
+          )}
+          <TreatmentActionPicker
+            label="פעולות טיפול שבוצעו בעדכון זה"
+            actions={treatmentActions}
+            onChange={setTreatmentActions}
+          />
+        </Disclosure>
 
         {isFull && (
           <>

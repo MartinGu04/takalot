@@ -6,7 +6,10 @@ import type {
   AppNotification,
   AuditLog,
   Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
   IncidentEvent,
+  IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
@@ -168,6 +171,62 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   cancelledAt: r.cancelled_at as string | null,
   cancelledBy: r.cancelled_by as string | null,
   cancellationReason: r.cancellation_reason as string | null,
+  reportedDomain: r.reported_domain as Incident['reportedDomain'],
+  currentSuspectedCause: r.current_suspected_cause as Incident['currentSuspectedCause'],
+  currentSuspectedCauseOtherDetail: r.current_suspected_cause_other_detail as string | null,
+});
+
+const mapCauseAssessment = (r: Record<string, unknown>): IncidentCauseAssessment => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  cause: r.cause as IncidentCauseAssessment['cause'],
+  otherDetail: r.other_detail as string | null,
+  cycleNumber: r.cycle_number as number,
+  recordedBy: r.recorded_by as string,
+  eventTime: r.event_time as string | null,
+  recordedAt: r.recorded_at as string,
+  operationId: r.operation_id as string | null,
+  createdAt: r.created_at as string,
+});
+
+const mapTreatmentAction = (r: Record<string, unknown>): IncidentTreatmentAction => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  actionType: r.action_type as IncidentTreatmentAction['actionType'],
+  otherDetail: r.other_detail as string | null,
+  cycleNumber: r.cycle_number as number,
+  eventTime: r.event_time as string | null,
+  recordedBy: r.recorded_by as string,
+  recordedAt: r.recorded_at as string,
+  operationId: r.operation_id as string | null,
+  createdAt: r.created_at as string,
+});
+
+// incident_closures rows are joined with their linked action ids via a
+// nested select on the incident_closure_resolution_actions junction table
+// (see getIncidentClosures) -- the raw row therefore carries an extra
+// `incident_closure_resolution_actions: { treatment_action_id: string }[]`
+// array that this mapper flattens into resolutionActionIds.
+const mapClosure = (r: Record<string, unknown>): IncidentClosureClassification => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  cycleNumber: r.cycle_number as number,
+  operationId: r.operation_id as string | null,
+  confirmedCause: r.confirmed_cause as IncidentClosureClassification['confirmedCause'],
+  confirmedCauseOtherDetail: r.confirmed_cause_other_detail as string | null,
+  treatmentOutcome: r.treatment_outcome as IncidentClosureClassification['treatmentOutcome'],
+  treatmentOutcomeOtherDetail: r.treatment_outcome_other_detail as string | null,
+  resolutionAttribution: r.resolution_attribution as IncidentClosureClassification['resolutionAttribution'],
+  resolutionAttributionOtherDetail: r.resolution_attribution_other_detail as string | null,
+  resolutionActionIds: Array.isArray(r.incident_closure_resolution_actions)
+    ? (r.incident_closure_resolution_actions as Array<{ treatment_action_id: string }>).map(
+        (link) => link.treatment_action_id,
+      )
+    : [],
+  recordedBy: r.recorded_by as string,
+  eventTime: r.event_time as string,
+  recordedAt: r.recorded_at as string,
+  createdAt: r.created_at as string,
 });
 
 const mapProfile = (r: Record<string, unknown>): Profile => ({
@@ -607,8 +666,43 @@ export class SupabaseRepository implements Repository {
     }));
   }
 
+  async getIncidentCauseAssessments(_s: Session, incidentId: string): Promise<IncidentCauseAssessment[]> {
+    const { data, error } = await this.client
+      .from('incident_cause_assessments')
+      .select('*')
+      .eq('incident_id', incidentId)
+      .order('recorded_at');
+    wrap(error);
+    return (data ?? []).map(mapCauseAssessment);
+  }
+
+  async getIncidentTreatmentActions(_s: Session, incidentId: string): Promise<IncidentTreatmentAction[]> {
+    const { data, error } = await this.client
+      .from('incident_treatment_actions')
+      .select('*')
+      .eq('incident_id', incidentId)
+      .order('recorded_at');
+    wrap(error);
+    return (data ?? []).map(mapTreatmentAction);
+  }
+
+  async getIncidentClosures(_s: Session, incidentId: string): Promise<IncidentClosureClassification[]> {
+    const { data, error } = await this.client
+      .from('incident_closures')
+      .select('*, incident_closure_resolution_actions(treatment_action_id)')
+      .eq('incident_id', incidentId)
+      .order('event_time');
+    wrap(error);
+    return (data ?? []).map(mapClosure);
+  }
+
+  // Calls create_incident_v2 (never the legacy, still-permissive
+  // create_incident): the new frontend always requires reportedDomain, so
+  // it exclusively uses the always-enforcing entry point. The legacy RPC
+  // remains in the database solely for any still-cached old frontend build
+  // to keep working against -- see migration 0047.
   async createIncident(_s: Session, input: CreateIncidentInput): Promise<Incident> {
-    const data = await this.rpc<Record<string, unknown>>('create_incident', { p_input: input });
+    const data = await this.rpc<Record<string, unknown>>('create_incident_v2', { p_input: input });
     return mapIncident(data);
   }
 
@@ -644,8 +738,12 @@ export class SupabaseRepository implements Repository {
     return mapIncident(data);
   }
 
+  // Calls close_incident_v2, for the same reason createIncident above
+  // calls create_incident_v2 -- the new frontend always collects the full
+  // closure classification on a genuine close, so it exclusively uses the
+  // always-enforcing entry point.
   async closeIncident(_s: Session, incidentId: string, input: CloseIncidentInput): Promise<Incident> {
-    const data = await this.rpc<Record<string, unknown>>('close_incident', {
+    const data = await this.rpc<Record<string, unknown>>('close_incident_v2', {
       p_incident_id: incidentId,
       p_input: input,
     });

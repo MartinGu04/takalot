@@ -1,7 +1,18 @@
 // Fictional demo data only. No real systems, locations, incidents, or people.
 import type { DemoDatabase } from './storage';
 import { emptyDatabase } from './storage';
-import type { Incident, IncidentEvent, IncidentUpdate, Severity, IncidentStatus } from '../../domain/types';
+import type {
+  Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
+  IncidentEvent,
+  IncidentTreatmentAction,
+  IncidentUpdate,
+  Severity,
+  IncidentStatus,
+  IncidentDomain,
+  SuspectedCause,
+} from '../../domain/types';
 import { jerusalemYear } from '../../lib/time';
 
 const minutes = (n: number) => n * 60000;
@@ -68,6 +79,14 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdBy: string;
     nextUpdateOffset?: number | null;
     noDeadlineReason?: string;
+    // Both default to null (never classified/assessed) -- a deliberate mix
+    // across the fixtures below exercises the unclassified/unassessed
+    // fallback rendering alongside the populated-label paths, and every
+    // incident predating this feature is honestly represented this way,
+    // never backfilled to a fabricated value.
+    reportedDomain?: IncidentDomain | null;
+    currentSuspectedCause?: SuspectedCause | null;
+    currentSuspectedCauseOtherDetail?: string | null;
   }
 
   const mk = (s: SeedIncident): Incident => ({
@@ -116,6 +135,9 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     cancelledAt: null,
     cancelledBy: null,
     cancellationReason: null,
+    reportedDomain: s.reportedDomain ?? null,
+    currentSuspectedCause: s.currentSuspectedCause ?? null,
+    currentSuspectedCauseOtherDetail: s.currentSuspectedCauseOtherDetail ?? null,
   });
 
   const ev = (
@@ -161,6 +183,8 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdOffset: -hours(6),
     createdBy: DEMO_USERS.supervisor1,
     nextUpdateOffset: -minutes(45),
+    reportedDomain: 'equipment',
+    currentSuspectedCause: 'equipment',
   });
   inc1.version = 3;
   inc1.lastUpdateAt = at(-hours(2));
@@ -180,6 +204,9 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdOffset: -hours(9),
     createdBy: DEMO_USERS.supervisor2,
     nextUpdateOffset: hours(2),
+    reportedDomain: 'communications',
+    // Deliberately left unassessed -- demonstrates the "לא הוזנה הערכת
+    // גורם" fallback, distinct from the explicit 'unknown' value (inc4).
   });
   inc2.version = 2;
   inc2.lastUpdateAt = at(-hours(3));
@@ -205,6 +232,9 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdOffset: -hours(30),
     createdBy: DEMO_USERS.supervisor1,
     nextUpdateOffset: hours(20),
+    // reportedDomain intentionally left null -- demonstrates the "לא סווג
+    // בעת פתיחת התקלה" fallback for an incident opened before this
+    // feature (or via the still-permissive legacy create_incident RPC).
   });
   inc3.version = 2;
   inc3.lastUpdateAt = at(-hours(5));
@@ -224,6 +254,11 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdOffset: -hours(20),
     createdBy: DEMO_USERS.supervisor1,
     nextUpdateOffset: hours(12),
+    reportedDomain: 'infrastructure',
+    // Explicit 'unknown' -- an active assessment concluding "not yet
+    // known", rendered "הגורם טרם ידוע"; distinct from inc2's unassessed
+    // (null) fallback above.
+    currentSuspectedCause: 'unknown',
   });
   inc4.version = 2;
   inc4.lastUpdateAt = at(-hours(8));
@@ -246,6 +281,8 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdBy: DEMO_USERS.supervisor2,
     nextUpdateOffset: null,
     noDeadlineReason: 'התקלה נסגרה',
+    reportedDomain: 'software',
+    currentSuspectedCause: 'software',
   });
   inc5.version = 3;
   inc5.closedAt = at(-hours(44));
@@ -303,6 +340,11 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdOffset: -hours(96),
     createdBy: DEMO_USERS.supervisor2,
     nextUpdateOffset: hours(6),
+    reportedDomain: 'software',
+    // currentSuspectedCause stays null: reopening resets the denormalized
+    // mirror, so the reopened cycle begins with no current assessment --
+    // never carrying the pre-reopen cause (or the closure's own confirmed
+    // cause, see the incidentClosures fixture below) forward.
   });
   inc7.version = 5;
   inc7.reopenCount = 1;
@@ -325,6 +367,8 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     createdOffset: -hours(40),
     createdBy: DEMO_USERS.supervisor2,
     nextUpdateOffset: null,
+    reportedDomain: 'equipment',
+    currentSuspectedCause: 'equipment',
   });
   inc8.version = 2;
   inc8.rootCause = 'רכיב בלאי בעמדה א׳ לא הוחלף במלואו.';
@@ -456,13 +500,18 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     ev('ev-1-created', 'inc-1', 'created', DEMO_USERS.supervisor1, -hours(6), {
       note: 'פתיחת תקלה',
       userNote: 'התקלה דווחה טלפונית על ידי מפעיל המשמרת.',
+      // Deliberately null (unlike ev-1-upd-a/b below): this exact row is
+      // also the fixture for "a historical seeded event reads back with
+      // operationId null" -- kept representing genuinely pre-operation-
+      // grouping legacy data, so the initial cause assessment below (ca-1-1)
+      // is deliberately not joined to it via operationId either.
     }),
     ev('ev-1-ack', 'inc-1', 'acknowledged', DEMO_USERS.supervisor1, -hours(6) + minutes(5)),
     ev('ev-1-assign', 'inc-1', 'assignment_change', DEMO_USERS.supervisor1, -hours(6) + minutes(10), {
       field: 'owner', oldValue: 'יואב כהן (דמו)', newValue: 'עומר פרץ (דמו)',
     }),
-    ev('ev-1-upd-a', 'inc-1', 'update', DEMO_USERS.tech1, -hours(4), { refId: 'upd-1a' }),
-    ev('ev-1-upd-b', 'inc-1', 'update', DEMO_USERS.tech1, -hours(2), { refId: 'upd-1b' }),
+    ev('ev-1-upd-a', 'inc-1', 'update', DEMO_USERS.tech1, -hours(4), { refId: 'upd-1a', operationId: 'op-1-upd-a' }),
+    ev('ev-1-upd-b', 'inc-1', 'update', DEMO_USERS.tech1, -hours(2), { refId: 'upd-1b', operationId: 'op-1-upd-b' }),
     ev('ev-2-created', 'inc-2', 'created', DEMO_USERS.supervisor2, -hours(9)),
     ev('ev-2-upd-a', 'inc-2', 'update', DEMO_USERS.tech2, -hours(3), { refId: 'upd-2a' }),
     ev('ev-3-created', 'inc-3', 'created', DEMO_USERS.supervisor1, -hours(30)),
@@ -479,16 +528,23 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
     ev('ev-5-closed', 'inc-5', 'closed', DEMO_USERS.supervisor2, -hours(44), {
       note: 'שוחזר קובץ תצורה קודם והמערכת חזרה לכשירות מלאה.',
       newValue: 'full',
+      refId: 'clo-5-1',
+      operationId: 'op-5-closed',
     }),
     ev('ev-6-created', 'inc-6', 'created', DEMO_USERS.manager, -hours(72)),
     ev('ev-6-closed', 'inc-6', 'closed', DEMO_USERS.manager, -hours(60), {
       note: 'הותקן פתרון זמני. נדרשות פעולות המשך להתקנת רכיב קבוע.',
       newValue: 'partial',
+      // No refId: this record predates structured closure classification
+      // (see inc6's own comment above) -- exercises the "closed, no
+      // classification" fallback, same rendering as a true legacy row.
     }),
     ev('ev-7-created', 'inc-7', 'created', DEMO_USERS.supervisor2, -hours(96)),
     ev('ev-7-closed', 'inc-7', 'closed', DEMO_USERS.supervisor2, -hours(48), {
       note: 'בוצע עדכון תוכנה לתצוגה והתופעה לא חזרה במשך יומיים.',
       newValue: 'full',
+      refId: 'clo-7-1',
+      operationId: 'op-7-closed',
     }),
     ev('ev-7-reopened', 'inc-7', 'reopened', DEMO_USERS.manager, -hours(3), {
       note: 'התופעה חזרה: התצוגה קפאה פעמיים במשמרת האחרונה.',
@@ -502,6 +558,127 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
       note: 'סיבת התקלה: רכיב בלאי בעמדה א׳ לא הוחלף במלואו.\nהפתרון החלקי שבוצע: הותקן רכיב חלופי זמני בעל ביצועים מופחתים.\nפעולות המשך: להזמין רכיב מקורי ולהתקינו לצורך חזרה לכשירות מלאה.\nגורם מטפל אחראי המשך: ליאור אדרי (דמו)',
     }),
   ];
+
+  // --- structured lifecycle classification fixtures ---
+  // A deliberate mix: inc1 shows the full create->update classification
+  // trail; inc5/inc7 show a genuine closure's classification (inc7's
+  // belongs to the CYCLE BEFORE its reopen, demonstrating that reopening
+  // preserves it untouched); inc2/inc3/inc4/inc6/inc8/inc9 are left
+  // without some or all of this data to exercise the unclassified/
+  // unassessed/no-classification fallbacks.
+  const causeAssessments: IncidentCauseAssessment[] = [
+    {
+      id: 'ca-1-1',
+      incidentId: 'inc-1',
+      cause: 'equipment',
+      otherDetail: null,
+      cycleNumber: 0,
+      recordedBy: DEMO_USERS.supervisor1,
+      eventTime: null,
+      recordedAt: at(-hours(6)),
+      // Deliberately null, matching ev-1-created's own null operationId
+      // above (kept representing genuinely legacy, pre-operation-grouping
+      // data) -- inc-5's closure classification below demonstrates the
+      // operationId join instead.
+      operationId: null,
+      createdAt: at(-hours(6)),
+    },
+  ];
+  db.incidentCauseAssessments = causeAssessments;
+
+  const treatmentActions: IncidentTreatmentAction[] = [
+    {
+      id: 'ta-1-1',
+      incidentId: 'inc-1',
+      actionType: 'reset_restart',
+      otherDetail: null,
+      cycleNumber: 0,
+      eventTime: at(-hours(4)),
+      recordedBy: DEMO_USERS.tech1,
+      recordedAt: at(-hours(4)),
+      operationId: 'op-1-upd-a',
+      createdAt: at(-hours(4)),
+    },
+    {
+      id: 'ta-1-2',
+      incidentId: 'inc-1',
+      actionType: 'equipment_replacement',
+      otherDetail: null,
+      cycleNumber: 0,
+      eventTime: at(-hours(2)),
+      recordedBy: DEMO_USERS.tech1,
+      recordedAt: at(-hours(2)),
+      operationId: 'op-1-upd-b',
+      createdAt: at(-hours(2)),
+    },
+    {
+      id: 'ta-5-1',
+      incidentId: 'inc-5',
+      actionType: 'config_change',
+      otherDetail: null,
+      cycleNumber: 0,
+      eventTime: at(-hours(44)),
+      recordedBy: DEMO_USERS.supervisor2,
+      recordedAt: at(-hours(44)),
+      operationId: 'op-5-closed',
+      createdAt: at(-hours(44)),
+    },
+    {
+      id: 'ta-7-1',
+      incidentId: 'inc-7',
+      actionType: 'software_fix',
+      otherDetail: null,
+      cycleNumber: 0,
+      eventTime: at(-hours(48)),
+      recordedBy: DEMO_USERS.supervisor2,
+      recordedAt: at(-hours(48)),
+      operationId: 'op-7-closed',
+      createdAt: at(-hours(48)),
+    },
+  ];
+  db.incidentTreatmentActions = treatmentActions;
+
+  const closures: IncidentClosureClassification[] = [
+    {
+      id: 'clo-5-1',
+      incidentId: 'inc-5',
+      cycleNumber: 0,
+      operationId: 'op-5-closed',
+      confirmedCause: 'software',
+      confirmedCauseOtherDetail: null,
+      treatmentOutcome: 'permanent_resolution',
+      treatmentOutcomeOtherDetail: null,
+      resolutionAttribution: 'specific_action',
+      resolutionAttributionOtherDetail: null,
+      resolutionActionIds: ['ta-5-1'],
+      recordedBy: DEMO_USERS.supervisor2,
+      eventTime: at(-hours(44)),
+      recordedAt: at(-hours(44)),
+      createdAt: at(-hours(44)),
+    },
+    {
+      // Belongs to inc-7's CYCLE 0 -- the closure that preceded its later
+      // reopen. Preserved untouched: still visible here even though the
+      // incident is now on cycle 1 (reopenCount === 1) with no current
+      // classification of its own yet.
+      id: 'clo-7-1',
+      incidentId: 'inc-7',
+      cycleNumber: 0,
+      operationId: 'op-7-closed',
+      confirmedCause: 'software',
+      confirmedCauseOtherDetail: null,
+      treatmentOutcome: 'temporary_workaround',
+      treatmentOutcomeOtherDetail: null,
+      resolutionAttribution: 'specific_action',
+      resolutionAttributionOtherDetail: null,
+      resolutionActionIds: ['ta-7-1'],
+      recordedBy: DEMO_USERS.supervisor2,
+      eventTime: at(-hours(48)),
+      recordedAt: at(-hours(48)),
+      createdAt: at(-hours(48)),
+    },
+  ];
+  db.incidentClosures = closures;
 
   db.notifications = [
     {

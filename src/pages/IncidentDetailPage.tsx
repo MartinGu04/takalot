@@ -4,6 +4,9 @@ import {
   useIncident,
   useIncidentEvents,
   useIncidentUpdates,
+  useIncidentCauseAssessments,
+  useIncidentTreatmentActions,
+  useIncidentClosures,
   useLocations,
   useProfiles,
   useSystems,
@@ -18,7 +21,15 @@ import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, externalHandl
 import { Timeline } from '../components/Timeline';
 import { Button, EmptyState, ErrorState, Spinner, useToast } from '../components/ui';
 import { formatDateTime, formatDuration } from '../lib/time';
-import { reportedToOpsLabels } from '../domain/labels';
+import {
+  reportedToOpsLabels,
+  incidentDomainLabels,
+  UNCLASSIFIED_DOMAIN_LABEL,
+  suspectedCauseLabels,
+  UNASSESSED_CAUSE_LABEL,
+  confirmedCauseLabels,
+  treatmentOutcomeLabels,
+} from '../domain/labels';
 import { UpdateDialog } from '../components/dialogs/UpdateDialog';
 import { AssignDialog } from '../components/dialogs/AssignDialog';
 import { CloseDialog } from '../components/dialogs/CloseDialog';
@@ -209,6 +220,9 @@ export default function IncidentDetailPage() {
   const { data: incident, isLoading, isError, refetch } = useIncident(id);
   const { data: events, refetch: refetchEvents } = useIncidentEvents(id);
   const { data: updates, refetch: refetchUpdates } = useIncidentUpdates(id);
+  const { data: causeAssessments } = useIncidentCauseAssessments(id);
+  const { data: treatmentActions } = useIncidentTreatmentActions(id);
+  const { data: closures } = useIncidentClosures(id);
   const { data: profiles } = useProfiles();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
@@ -295,6 +309,7 @@ export default function IncidentDetailPage() {
   const systemName = systems?.find((s) => s.id === incident.systemId)?.name ?? '—';
   const locationName = locations?.find((l) => l.id === incident.locationId)?.name ?? '—';
   const isClosed = incident.status === 'closed';
+  const currentClosure = closures?.find((c) => c.cycleNumber === incident.reopenCount);
   // Terminal covers both closed and cancelled: a cancelled incident is not
   // updatable/assignable/closeable either, matching the backend's terminal
   // guards on update_incident/assign_incident/close_incident. Reopening and
@@ -392,6 +407,16 @@ export default function IncidentDetailPage() {
             <dd>{incident.operationalImpact}</dd>
           </div>
           <div>
+            <dt className="text-xs text-muted">תחום התקלה</dt>
+            <dd>{incident.reportedDomain ? incidentDomainLabels[incident.reportedDomain] : UNCLASSIFIED_DOMAIN_LABEL}</dd>
+          </div>
+          {isOpen(incident.status) && (
+            <div>
+              <dt className="text-xs text-muted">חשד נוכחי</dt>
+              <dd>{incident.currentSuspectedCause ? suspectedCauseLabels[incident.currentSuspectedCause] : UNASSESSED_CAUSE_LABEL}</dd>
+            </div>
+          )}
+          <div>
             <dt className="text-xs text-muted">שעת גילוי</dt>
             <dd>{formatDateTime(incident.discoveredAt)}</dd>
           </div>
@@ -450,6 +475,41 @@ export default function IncidentDetailPage() {
             </div>
             {incident.followUpCompletedAt && (
               <div><dt className="text-xs text-muted">פעולות המשך</dt><dd>הושלמו ב-{formatDateTime(incident.followUpCompletedAt)}</dd></div>
+            )}
+            {/* The closure that produced the CURRENT closed state -- the row
+                whose cycleNumber matches the incident's own reopenCount.
+                Absent for a legacy incident, or one closed through the
+                still-permissive legacy close_incident RPC without
+                classification -- rendered identically either way (simply
+                omitted), never a fabricated "unclassified" value. */}
+            {currentClosure && (
+              <>
+                <div>
+                  <dt className="text-xs text-muted">הגורם שאומת</dt>
+                  <dd>
+                    {confirmedCauseLabels[currentClosure.confirmedCause]}
+                    {currentClosure.confirmedCause === 'other' && currentClosure.confirmedCauseOtherDetail
+                      ? ` — ${currentClosure.confirmedCauseOtherDetail}`
+                      : ''}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">תוצאת הטיפול</dt>
+                  <dd className="flex items-center gap-1.5">
+                    <span>
+                      {treatmentOutcomeLabels[currentClosure.treatmentOutcome]}
+                      {currentClosure.treatmentOutcome === 'other' && currentClosure.treatmentOutcomeOtherDetail
+                        ? ` — ${currentClosure.treatmentOutcomeOtherDetail}`
+                        : ''}
+                    </span>
+                    {currentClosure.treatmentOutcome === 'temporary_workaround' && (
+                      <span className="inline-flex items-center rounded-md border border-orange-300 bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">
+                        פתרון זמני
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              </>
             )}
           </dl>
         </div>
@@ -521,6 +581,9 @@ export default function IncidentDetailPage() {
           onCorrect={(refId, label) => setDialog({ correction: { refId, label } })}
           discoveredAt={incident.discoveredAt}
           closedAt={incident.closedAt}
+          causeAssessments={causeAssessments}
+          treatmentActions={treatmentActions}
+          closures={closures}
         />
       </section>
 

@@ -27,6 +27,81 @@ export type IncidentStatus =
 
 export type Readiness = 'full' | 'partial' | 'none';
 
+/** Where the problem is currently observed/manifested -- set once at
+ *  incident creation, never a confirmed root cause. `null` means the
+ *  incident was never classified (a legacy incident, or one created
+ *  through the still-permissive legacy create_incident RPC) -- distinct
+ *  from the explicit `'unknown'` member, which means a user actively
+ *  looked and concluded "not yet known at this stage." The two are never
+ *  conflated: a `null` incident renders "לא סווג בעת פתיחת התקלה". */
+export type IncidentDomain =
+  | 'communications'
+  | 'equipment'
+  | 'software'
+  | 'infrastructure'
+  | 'operational'
+  | 'unknown'
+  | 'other';
+
+/** The CURRENT suspected cause -- mutable over the incident's life, every
+ *  change preserved via IncidentCauseAssessment history. `null` on
+ *  Incident.currentSuspectedCause means "never assessed" (renders "לא
+ *  הוזנה הערכת גורם"); the explicit `'unknown'` member means "assessed,
+ *  and the conclusion was not yet known" (renders "הגורם טרם ידוע") --
+ *  a deliberately different state from `null`, never conflated. */
+export type SuspectedCause =
+  | 'equipment'
+  | 'software'
+  | 'communications'
+  | 'infrastructure'
+  | 'operational'
+  | 'external'
+  | 'unknown'
+  | 'other';
+
+/** Structured, cumulative treatment actions -- supplement, never replace,
+ *  the existing free-text actionsTaken/currentStatusText fields. */
+export type TreatmentActionType =
+  | 'diagnosis'
+  | 'reset_restart'
+  | 'equipment_replacement'
+  | 'config_change'
+  | 'software_fix'
+  | 'communications_handling'
+  | 'infrastructure_handling'
+  | 'external_party_handling'
+  | 'other';
+
+/** The cause CONFIRMED at closure -- a separate concept from the mutable,
+ *  pre-closure SuspectedCause, recorded per-closure-cycle. */
+export type ConfirmedCause =
+  | 'equipment'
+  | 'software'
+  | 'communications'
+  | 'infrastructure'
+  | 'operational'
+  | 'external'
+  | 'undetermined'
+  | 'other';
+
+export type TreatmentOutcome =
+  | 'permanent_resolution'
+  | 'temporary_workaround'
+  | 'not_reproduced'
+  | 'resolved_without_action'
+  | 'closed_without_technical_resolution'
+  | 'other';
+
+/** What is known about what resolved the incident -- deliberately not
+ *  "the action that resolved it": that framing is not always knowable. */
+export type ResolutionAttribution =
+  | 'specific_action'
+  | 'combination_of_actions'
+  | 'undetermined'
+  | 'no_action_taken'
+  | 'external_party_no_details'
+  | 'other';
+
 export type ReportedToOps = 'yes' | 'no' | 'not_required';
 
 export type EventType =
@@ -52,7 +127,13 @@ export type EventType =
   | 'severity_assessed'
   | 'status_check_changed'
   | 'reported_to_ops_room'
-  | 'reported_to_ops_communications';
+  | 'reported_to_ops_communications'
+  // Written only when a genuine current-suspected-cause CHANGE is made
+  // through an update (has a real effective event_time). The initial
+  // cause entered at creation has no known effective time and is never
+  // represented by this event type -- it renders inline on the creation
+  // timeline card instead (see Timeline.tsx).
+  | 'cause_assessment_changed';
 
 export interface Profile {
   id: string;
@@ -171,6 +252,20 @@ export interface Incident {
   severity: Severity;
   status: IncidentStatus;
   operationalImpact: string;
+  /** תחום התקלה -- where the problem is currently observed, set once at
+   *  creation. `null` means never classified (legacy incident, or one
+   *  created through the still-permissive legacy create_incident RPC),
+   *  never conflated with the explicit 'unknown' enum member. */
+  reportedDomain: IncidentDomain | null;
+  /** The current suspected cause -- denormalized mirror of the latest
+   *  IncidentCauseAssessment. `null` means never assessed; the explicit
+   *  'unknown' value means assessed and concluded not-yet-known. Reset to
+   *  `null` on reopen -- never carries the previous cycle's assessment,
+   *  or the just-superseded confirmed cause, forward as a freshly
+   *  reconfirmed fact. */
+  currentSuspectedCause: SuspectedCause | null;
+  /** Required and meaningful only when currentSuspectedCause is 'other'. */
+  currentSuspectedCauseOtherDetail: string | null;
   ownerUserId: string | null;
   /** Legacy, frozen historical column: "external instead of an internal
    *  owner" for incidents opened before the additive external handling
@@ -289,6 +384,86 @@ export interface IncidentEvent {
    *  incident_events is append-only, so a historical row can never be
    *  backfilled. Null is a normal, expected value, not missing data. */
   operationId: string | null;
+}
+
+/** One historical row of the incident's current-suspected-cause value.
+ *  Append-only -- every change is preserved, never overwritten. */
+export interface IncidentCauseAssessment {
+  id: string;
+  incidentId: string;
+  cause: SuspectedCause;
+  /** Required and meaningful only when cause is 'other'. */
+  otherDetail: string | null;
+  /** incidents.reopenCount at write time -- 0 for the original incident,
+   *  1 after the first reopen, etc. Partitions history by open/closed
+   *  cycle. */
+  cycleNumber: number;
+  recordedBy: string;
+  /** The real effective time this assessment became true, when known.
+   *  `null` for the initial assessment recorded at incident creation --
+   *  no time is ever collected for it, and this field is never
+   *  fabricated to imply one (see recordedAt below, and Timeline.tsx's
+   *  "תועד בעת פתיחת התקלה" rendering for these rows). Every assessment
+   *  recorded through an update carries a real effective eventTime. */
+  eventTime: string | null;
+  /** Authoritative write time -- always populated. */
+  recordedAt: string;
+  operationId: string | null;
+  createdAt: string;
+}
+
+/** One structured, cumulative treatment action. Supplements, never
+ *  replaces, the free-text actionsTaken/currentStatusText fields. */
+export interface IncidentTreatmentAction {
+  id: string;
+  incidentId: string;
+  actionType: TreatmentActionType;
+  /** Required and meaningful only when actionType is 'other'. */
+  otherDetail: string | null;
+  cycleNumber: number;
+  /** `null` for actions entered during incident creation ("already
+   *  performed before the incident was opened") -- no real effective
+   *  time is ever collected for those, and this field is never
+   *  fabricated to imply one. Actions recorded through an update or
+   *  closure carry that operation's own real effective eventTime. */
+  eventTime: string | null;
+  recordedBy: string;
+  recordedAt: string;
+  operationId: string | null;
+  createdAt: string;
+}
+
+/** One closure's structured classification -- tied to a specific closure
+ *  cycle, never overwriteable incident-level fields. A second closure
+ *  after reopening creates a SEPARATE record; the previous one is never
+ *  mutated. Only ever present for a genuine (full-readiness) close --
+ *  absent for a legacy close made without classification, exactly like a
+ *  true legacy incident (no row = no classification recorded, same
+ *  rendering for both cases). */
+export interface IncidentClosureClassification {
+  id: string;
+  incidentId: string;
+  cycleNumber: number;
+  /** Shared with the 'closed' IncidentEvent row (via its refId) and any
+   *  treatment action recorded inline during this same closure call. */
+  operationId: string | null;
+  confirmedCause: ConfirmedCause;
+  /** Required and meaningful only when confirmedCause is 'other'. */
+  confirmedCauseOtherDetail: string | null;
+  treatmentOutcome: TreatmentOutcome;
+  /** Required and meaningful only when treatmentOutcome is 'other'. */
+  treatmentOutcomeOtherDetail: string | null;
+  resolutionAttribution: ResolutionAttribution;
+  /** Required and meaningful only when resolutionAttribution is 'other'. */
+  resolutionAttributionOtherDetail: string | null;
+  /** IncidentTreatmentAction ids this closure's resolutionAttribution is
+   *  based on -- exactly one for 'specific_action', at least two distinct
+   *  for 'combination_of_actions', always empty otherwise. */
+  resolutionActionIds: string[];
+  recordedBy: string;
+  eventTime: string;
+  recordedAt: string;
+  createdAt: string;
 }
 
 export type NotificationType =

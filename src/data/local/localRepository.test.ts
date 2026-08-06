@@ -47,7 +47,14 @@ function baseCreateInput(overrides: Partial<CreateIncidentInput> = {}): CreateIn
     wisdomReported: false,
     wisdomIncidentNumber: null,
     note: '',
+    reportedDomain: 'unknown',
     ...overrides,
+    // Spreading Partial<CreateIncidentInput> re-widens this array-typed,
+    // defaulted field's type to `[...] | undefined` (a known TS structural-
+    // typing quirk for optional-with-default array properties) -- pinned
+    // back to a concrete array explicitly, after the spread, same as the
+    // schema's own runtime default.
+    initialTreatmentActions: overrides.initialTreatmentActions ?? [],
   };
 }
 
@@ -279,9 +286,14 @@ describe('closure requirements', () => {
         rootCause: '',
         resolution: '',
         readiness: 'full',
+        confirmedCause: 'equipment',
+        treatmentOutcome: 'permanent_resolution',
+        resolutionAttribution: 'no_action_taken',
         followUpNotes: '',
         reportedToOps: 'no',
-      } as CloseIncidentInput),
+        resolutionActionIds: [],
+        newTreatmentActions: [],
+      } as unknown as CloseIncidentInput),
     ).rejects.toThrow(AppError);
   });
 
@@ -296,7 +308,9 @@ describe('closure requirements', () => {
         readiness: 'partial',
         followUpNotes: '',
         reportedToOps: 'no',
-      } as CloseIncidentInput),
+        resolutionActionIds: [],
+        newTreatmentActions: [],
+      } as unknown as CloseIncidentInput),
     ).rejects.toThrow(AppError);
   });
 
@@ -308,10 +322,15 @@ describe('closure requirements', () => {
       rootCause: 'תקלת חומרה בכרטיס התקשורת',
       resolution: 'הוחלף הכרטיס ואומתה תקינות',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'yes',
       reportedToOpsRecipient: 'אחמ״ש מוקד מבצעים',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(closed.status).toBe('closed');
     expect(closed.followUpRequired).toBe(false);
@@ -331,6 +350,8 @@ describe('closure requirements', () => {
       ownerUserId: DEMO_USERS.tech1,
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(closed.followUpRequired).toBe(true);
   });
@@ -347,9 +368,14 @@ describe('closure requirements', () => {
       rootCause: 'x',
       resolution: 'y',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(closed.status).toBe('closed');
     expect(closed.closedBy).toBe(DEMO_USERS.tech1);
@@ -367,6 +393,8 @@ describe('closure requirements', () => {
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(closed.status).toBe('partial_readiness');
     expect(closed.followUpRequired).toBe(true);
@@ -381,9 +409,14 @@ describe('closure requirements', () => {
         rootCause: 'x',
         resolution: 'y',
         readiness: 'full',
+        confirmedCause: 'equipment',
+        treatmentOutcome: 'permanent_resolution',
+        resolutionAttribution: 'no_action_taken',
         followUpNotes: '',
         reportedToOps: 'no',
         note: '',
+        resolutionActionIds: [],
+        newTreatmentActions: [],
       }),
     ).rejects.toThrow(AppError);
   });
@@ -409,9 +442,14 @@ describe('retroactive closure time (migration 0033)', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(closed.closedAt).toBe(backdated);
     expect(closed.closedAt).not.toBe(FIXED_NOW.toISOString());
   });
@@ -425,9 +463,14 @@ describe('retroactive closure time (migration 0033)', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
     const closedEvent = events.find((e) => e.type === 'closed');
     expect(closedEvent).toBeDefined();
@@ -444,9 +487,14 @@ describe('retroactive closure time (migration 0033)', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(closed.closedAt).toBe(incident!.discoveredAt);
   });
 
@@ -459,9 +507,14 @@ describe('retroactive closure time (migration 0033)', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(closed.closedAt).toBe(boundary);
   });
 
@@ -479,9 +532,14 @@ describe('retroactive closure time (migration 0033)', () => {
         rootCause: 'תקלת חומרה',
         resolution: 'הוחלף רכיב',
         readiness: 'full',
+        confirmedCause: 'equipment',
+        treatmentOutcome: 'permanent_resolution',
+        resolutionAttribution: 'no_action_taken',
         followUpNotes: '',
         reportedToOps: 'no',
-      } as CloseIncidentInput),
+        resolutionActionIds: [],
+        newTreatmentActions: [],
+      } as unknown as CloseIncidentInput),
     ).rejects.toThrow(AppError);
 
     const after = await repo.getIncident(supervisor1, 'inc-2');
@@ -507,9 +565,14 @@ describe('retroactive closure time (migration 0033)', () => {
         rootCause: 'תקלת חומרה',
         resolution: 'הוחלף רכיב',
         readiness: 'full',
+        confirmedCause: 'equipment',
+        treatmentOutcome: 'permanent_resolution',
+        resolutionAttribution: 'no_action_taken',
         followUpNotes: '',
         reportedToOps: 'no',
-      } as CloseIncidentInput),
+        resolutionActionIds: [],
+        newTreatmentActions: [],
+      } as unknown as CloseIncidentInput),
     ).rejects.toThrow(AppError);
 
     const after = await repo.getIncident(supervisor1, 'inc-2');
@@ -534,9 +597,14 @@ describe('retroactive closure time (migration 0033)', () => {
         rootCause: 'תקלת חומרה',
         resolution: 'הוחלף רכיב',
         readiness: 'full',
+        confirmedCause: 'equipment',
+        treatmentOutcome: 'permanent_resolution',
+        resolutionAttribution: 'no_action_taken',
         followUpNotes: '',
         reportedToOps: 'no',
-      } as CloseIncidentInput),
+        resolutionActionIds: [],
+        newTreatmentActions: [],
+      } as unknown as CloseIncidentInput),
     ).rejects.toThrow(AppError);
 
     const after = await repo.getIncident(supervisor1, 'inc-2');
@@ -557,7 +625,9 @@ describe('retroactive closure time (migration 0033)', () => {
       followUpNotes: 'להזמין רכיב קבוע',
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(partial.status).toBe('partial_readiness');
     expect(partial.closedAt).toBeNull();
 
@@ -586,6 +656,8 @@ describe('incomplete-readiness lifecycle', () => {
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(result.status).toBe('partial_readiness');
     expect(result.status).not.toBe('closed');
@@ -611,6 +683,8 @@ describe('incomplete-readiness lifecycle', () => {
       ownerUserId: DEMO_USERS.tech1,
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(result.status).toBe('partial_readiness');
     expect(result.closedAt).toBeNull();
@@ -627,7 +701,9 @@ describe('incomplete-readiness lifecycle', () => {
         readiness: 'partial',
         followUpNotes: 'להזמין רכיב קבוע',
         reportedToOps: 'no',
-      } as CloseIncidentInput),
+        resolutionActionIds: [],
+        newTreatmentActions: [],
+      } as unknown as CloseIncidentInput),
     ).rejects.toThrow(AppError);
   });
 
@@ -639,9 +715,14 @@ describe('incomplete-readiness lifecycle', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'תוקנה במלואה',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(result.status).toBe('closed');
     expect(result.closedAt).not.toBeNull();
@@ -660,6 +741,8 @@ describe('incomplete-readiness lifecycle', () => {
       ownerUserId: DEMO_USERS.tech2,
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(partial.status).toBe('partial_readiness');
 
@@ -669,9 +752,14 @@ describe('incomplete-readiness lifecycle', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'הותקן רכיב קבוע ואומתה תקינות מלאה',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
       note: '',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(closed.status).toBe('closed');
     expect(closed.closedAt).not.toBeNull();
@@ -712,7 +800,7 @@ describe('update-specific reporting (migration 0031)', () => {
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
       ...overrides,
-    } as Parameters<LocalDemoRepository['updateIncident']>[2];
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2];
   }
 
   it('rejects an unanswered updateReportedToOps/updateReportedToComms/updateWisdomReported question', async () => {
@@ -832,7 +920,7 @@ describe('update-specific reporting (migration 0031)', () => {
       ...baseUpdateInput(incident!),
       reportedToOps: 'yes',
       reportedToOpsRecipient: 'ערך מלקוח ישן',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2];
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2];
     await repo.updateIncident(supervisor1, 'inc-2', legacyPayload);
 
     const after = await repo.getIncident(supervisor1, 'inc-2');
@@ -865,7 +953,7 @@ describe('external handling party (migration 0032)', () => {
         externalHandlerName: 'ארגון שותף',
         externalHandlerContactPerson: 'דנה',
         externalHandlerContactDetails: '03-1234567',
-      } as CreateIncidentInput),
+      } as unknown as CreateIncidentInput),
     );
     expect(incident.externalHandlerName).toBe('ארגון שותף');
     expect(incident.externalHandlerContactPerson).toBe('דנה');
@@ -887,7 +975,8 @@ describe('external handling party (migration 0032)', () => {
       updateReportedToOps: 'not_required',
       updateReportedToComms: 'no',
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+      treatmentActions: [],
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]);
     // inc-4 was seeded with no external handler at all -- omitting the keys
     // must leave it at null, not clear-by-omission.
     expect(incident.externalHandlerName).toBeNull();
@@ -913,7 +1002,8 @@ describe('external handling party (migration 0032)', () => {
       updateReportedToOps: 'not_required',
       updateReportedToComms: 'no',
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+      treatmentActions: [],
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]);
     expect(set.externalHandlerName).toBe('ארגון חדש');
     expect(set.externalHandlerContactPerson).toBe('משה');
 
@@ -933,7 +1023,8 @@ describe('external handling party (migration 0032)', () => {
       updateReportedToOps: 'not_required',
       updateReportedToComms: 'no',
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+      treatmentActions: [],
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]);
     expect(cleared.externalHandlerName).toBeNull();
     expect(cleared.externalHandlerContactPerson).toBeNull();
   });
@@ -956,7 +1047,8 @@ describe('external handling party (migration 0032)', () => {
       updateReportedToOps: 'not_required',
       updateReportedToComms: 'no',
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+      treatmentActions: [],
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]);
     const afterFirst = await repo.getIncident(supervisor1, 'inc-1');
     await repo.updateIncident(supervisor1, 'inc-1', {
       expectedVersion: afterFirst!.version,
@@ -973,7 +1065,8 @@ describe('external handling party (migration 0032)', () => {
       updateReportedToOps: 'not_required',
       updateReportedToComms: 'no',
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+      treatmentActions: [],
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]);
 
     const events = await repo.getIncidentEvents(supervisor1, 'inc-1');
     const extEvents = events.filter((e) => e.field === 'external_handler');
@@ -1006,7 +1099,8 @@ describe('external handling party (migration 0032)', () => {
       updateReportedToOps: 'not_required',
       updateReportedToComms: 'no',
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2]);
+      treatmentActions: [],
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]);
     expect(updated.ownerUserId).toBe(DEMO_USERS.tech1);
     // Frozen historical column -- untouched by this write, even though an
     // internal owner has now been assigned.
@@ -1030,7 +1124,8 @@ describe('external handling party (migration 0032)', () => {
         updateReportedToOps: 'not_required',
         updateReportedToComms: 'no',
         updateWisdomReported: 'no',
-      } as Parameters<LocalDemoRepository['updateIncident']>[2]),
+        treatmentActions: [],
+      } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]),
     ).rejects.toThrow(AppError);
   });
 
@@ -1058,7 +1153,8 @@ describe('external handling party (migration 0032)', () => {
         updateReportedToOps: 'not_required',
         updateReportedToComms: 'no',
         updateWisdomReported: 'no',
-      } as Parameters<LocalDemoRepository['updateIncident']>[2]),
+        treatmentActions: [],
+      } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2]),
     ).rejects.toThrow(AppError);
 
     const after = await repo.getIncident(supervisor1, 'inc-1');
@@ -1078,7 +1174,7 @@ describe('external handling party (migration 0032)', () => {
         note: '',
         ownerUserId: DEMO_USERS.tech2,
         externalHandlerContactPerson: 'דנה', // name key omitted -> preserved as null
-      } as Parameters<LocalDemoRepository['assignIncident']>[2]),
+      } as unknown as Parameters<LocalDemoRepository['assignIncident']>[2]),
     ).rejects.toThrow(AppError);
   });
 
@@ -1095,7 +1191,7 @@ describe('external handling party (migration 0032)', () => {
         note: '',
         ownerUserId: DEMO_USERS.tech2, // genuine owner change, proposed alongside the invalid payload
         externalHandlerContactPerson: 'דנה', // name omitted -> preserved as null -> invalid
-      } as Parameters<LocalDemoRepository['assignIncident']>[2]),
+      } as unknown as Parameters<LocalDemoRepository['assignIncident']>[2]),
     ).rejects.toThrow(AppError);
 
     const after = await repo.getIncident(supervisor1, 'inc-4');
@@ -1112,7 +1208,7 @@ describe('external handling party (migration 0032)', () => {
       note: '',
       ownerUserId: DEMO_USERS.tech2,
       externalHandlerName: 'ארגון הקצאה',
-    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    } as unknown as Parameters<LocalDemoRepository['assignIncident']>[2]);
     expect(assigned.externalHandlerName).toBe('ארגון הקצאה');
 
     const events = await repo.getIncidentEvents(supervisor1, 'inc-4');
@@ -1123,7 +1219,7 @@ describe('external handling party (migration 0032)', () => {
       expectedVersion: assigned.version,
       note: '',
       ownerUserId: DEMO_USERS.tech1,
-    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    } as unknown as Parameters<LocalDemoRepository['assignIncident']>[2]);
     expect(preserved.externalHandlerName).toBe('ארגון הקצאה');
   });
 
@@ -1139,7 +1235,7 @@ describe('external handling party (migration 0032)', () => {
       note: '',
       ownerUserId: sameOwner,
       externalHandlerName: 'ארגון ללא שינוי בעלים',
-    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    } as unknown as Parameters<LocalDemoRepository['assignIncident']>[2]);
     expect(assigned.ownerUserId).toBe(sameOwner);
     expect(assigned.externalHandlerName).toBe('ארגון ללא שינוי בעלים');
 
@@ -1163,7 +1259,7 @@ describe('external handling party (migration 0032)', () => {
       expectedVersion: before!.version,
       note: '',
       ownerUserId: DEMO_USERS.tech2,
-    } as Parameters<LocalDemoRepository['assignIncident']>[2]);
+    } as unknown as Parameters<LocalDemoRepository['assignIncident']>[2]);
     expect(assigned.ownerUserId).toBe(DEMO_USERS.tech2);
   });
 
@@ -1175,10 +1271,15 @@ describe('external handling party (migration 0032)', () => {
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       externalHandlerName: 'ארגון סגירה',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(closed.status).toBe('closed');
     expect(closed.externalHandlerName).toBe('ארגון סגירה');
   });
@@ -1195,7 +1296,9 @@ describe('external handling party (migration 0032)', () => {
       ownerUserId: DEMO_USERS.tech1,
       externalHandlerName: 'ארגון בסגירה חלקית',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(partial.status).toBe('partial_readiness');
     expect(partial.ownerUserId).toBe(DEMO_USERS.tech1);
     expect(partial.externalHandlerName).toBe('ארגון בסגירה חלקית');
@@ -1218,7 +1321,7 @@ describe('external handling party (migration 0032)', () => {
       expectedVersion: before!.version,
       reason: 'התברר שהתקלה חוזרת',
       ownerUserId: DEMO_USERS.tech2,
-    } as ReopenIncidentInput);
+    } as unknown as ReopenIncidentInput);
     expect(reopened.status).toBe('reopened');
     expect(reopened.ownerUserId).toBe(DEMO_USERS.tech2);
     expect(reopened.ownerExternalName).toBe(legacyExternalName);
@@ -1233,7 +1336,7 @@ describe('external handling party (migration 0032)', () => {
         expectedVersion: before!.version,
         reason: 'סיבה',
         ownerUserId: null,
-      } as ReopenIncidentInput),
+      } as unknown as ReopenIncidentInput),
     ).rejects.toThrow(AppError);
   });
 
@@ -1251,7 +1354,7 @@ describe('external handling party (migration 0032)', () => {
         reason: 'התברר שהתקלה חוזרת',
         ownerUserId: DEMO_USERS.tech2, // genuine owner change, proposed alongside the invalid payload
         externalHandlerContactPerson: 'דנה', // name omitted -> preserved as null -> invalid
-      } as Parameters<LocalDemoRepository['reopenIncident']>[2]),
+      } as unknown as Parameters<LocalDemoRepository['reopenIncident']>[2]),
     ).rejects.toThrow(AppError);
 
     const after = await repo.getIncident(supervisor1, 'inc-5');
@@ -1329,7 +1432,7 @@ describe('reopening requirements', () => {
         expectedVersion: incident!.version,
         reason: '',
         ownerUserId: DEMO_USERS.tech1,
-      } as ReopenIncidentInput),
+      } as unknown as ReopenIncidentInput),
     ).rejects.toThrow(AppError);
   });
 });
@@ -1503,6 +1606,7 @@ describe('technician update restrictions (backend enforced)', () => {
       nextSteps: 'המשך מעקב',
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       note: '',
+      treatmentActions: [],
     });
     expect(updated.version).toBe(incident!.version + 1);
   });
@@ -1518,6 +1622,7 @@ describe('technician update restrictions (backend enforced)', () => {
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         note: '',
+        treatmentActions: [],
       }),
     ).rejects.toThrow(AppError);
   });
@@ -1542,6 +1647,7 @@ describe('technician update restrictions (backend enforced)', () => {
         updateReportedToComms: 'no',
         updateReportedToCommsRecipient: null,
         updateWisdomReported: 'no',
+        treatmentActions: [],
       }),
     ).rejects.toThrow(AppError);
   });
@@ -1577,6 +1683,7 @@ describe('optimistic concurrency', () => {
       updateReportedToComms: 'no',
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
+      treatmentActions: [],
     });
 
     // Second writer, still holding the stale version from before the first write, must be rejected.
@@ -1598,6 +1705,7 @@ describe('optimistic concurrency', () => {
         updateReportedToComms: 'no',
         updateReportedToCommsRecipient: null,
         updateWisdomReported: 'no',
+        treatmentActions: [],
       }),
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
@@ -1631,7 +1739,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
       updateReportedToComms: 'no',
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
-    } as Parameters<LocalDemoRepository['updateIncident']>[2];
+    } as unknown as Parameters<LocalDemoRepository['updateIncident']>[2];
   }
 
   it('rejects an unparseable eventTime on a full update', async () => {
@@ -1689,6 +1797,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         note: '',
+        treatmentActions: [],
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(
@@ -1700,6 +1809,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         note: '',
+        treatmentActions: [],
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
     await expect(
@@ -1711,6 +1821,7 @@ describe('update event-time integrity (mirrors migration 0020)', () => {
         nextSteps: '',
         currentStatusText: 'המצב הנוכחי לצורך בדיקה',
         note: '',
+        treatmentActions: [],
       }),
     ).rejects.toMatchObject({ code: 'VALIDATION' });
   });
@@ -2880,9 +2991,14 @@ describe('closed-incident count (countClosedIncidents)', () => {
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     expect(await repo.countClosedIncidents(admin)).toBe(before + 1);
 
     await repo.reopenIncident(manager, 'inc-1', {
@@ -2890,7 +3006,7 @@ describe('closed-incident count (countClosedIncidents)', () => {
       reason: 'התקלה חזרה',
       nextUpdateDue: new Date(FIXED_NOW.getTime() + 3600_000).toISOString(),
       ownerUserId: DEMO_USERS.tech1,
-    } as ReopenIncidentInput);
+    } as unknown as ReopenIncidentInput);
     expect(await repo.countClosedIncidents(admin)).toBe(before);
   });
 
@@ -2932,6 +3048,7 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
       updateReportedToComms: 'no',
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
+      treatmentActions: [],
       ...overrides,
     };
   }
@@ -3004,10 +3121,15 @@ describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', 
       rootCause: 'תקלת חומרה',
       resolution: 'הוחלף רכיב',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'yes',
       reportedToOpsRecipient: 'יוסי מהמוקד',
-    } as CloseIncidentInput);
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
     const events = await repo.getIncidentEvents(supervisor1, 'inc-2');
     const thisCall = events.filter((e) => e.type === 'closed' || e.type === 'reported_to_ops_change');
     expect(thisCall.length).toBe(2);
@@ -3073,6 +3195,7 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       updateReportedToComms: 'no',
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
+      treatmentActions: [],
     });
     const afterFirst = await repo.getIncident(supervisor1, 'inc-2');
     await repo.updateIncident(supervisor1, 'inc-2', {
@@ -3092,6 +3215,7 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       updateReportedToComms: 'no',
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
+      treatmentActions: [],
     });
 
     const updates = await repo.getIncidentUpdates(supervisor1, 'inc-2');
@@ -3120,6 +3244,7 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       updateReportedToComms: 'no',
       updateReportedToCommsRecipient: null,
       updateWisdomReported: 'no',
+      treatmentActions: [],
     });
     const updates = await repo.getIncidentUpdates(supervisor1, 'inc-4');
     expect(updates[updates.length - 1].userNote).toBeNull();
@@ -3138,6 +3263,7 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       nextSteps: '',
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       note: '  הערה של הטכנאי  ',
+      treatmentActions: [],
     });
     // No protected field moved -- severity/status/owner are all unchanged.
     expect(updated.severity).toBe(before!.severity);
@@ -3158,6 +3284,7 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       nextSteps: '',
       currentStatusText: 'המצב הנוכחי לצורך בדיקה',
       note: '   ',
+      treatmentActions: [],
     });
     const updates = await repo.getIncidentUpdates(tech1, 'inc-1');
     expect(updates[updates.length - 1].userNote).toBeNull();
@@ -3171,9 +3298,14 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
       note: '  הערה בעת סגירה מלאה  ',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     const events = await repo.getIncidentEvents(supervisor1, closed.id);
     const closedEvent = events.find((e) => e.type === 'closed');
@@ -3193,6 +3325,8 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       ownerUserId: DEMO_USERS.tech1,
       reportedToOps: 'no',
       note: 'הערה בעת סגירה חלקית',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     expect(partial.status).toBe('partial_readiness');
     const events = await repo.getIncidentEvents(supervisor1, partial.id);
@@ -3209,9 +3343,14 @@ describe('note ("הערה נוספת", migration 0038)', () => {
       rootCause: 'סיבה',
       resolution: 'פתרון',
       readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
       followUpNotes: '',
       reportedToOps: 'no',
       note: '   ',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
     });
     const events = await repo.getIncidentEvents(supervisor1, closed.id);
     expect(events.find((e) => e.type === 'closed')!.userNote).toBeNull();

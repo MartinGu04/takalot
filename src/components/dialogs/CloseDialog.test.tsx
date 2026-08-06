@@ -14,6 +14,7 @@ import { CloseDialog } from './CloseDialog';
 
 vi.mock('../../data/hooks', () => ({
   useProfiles: () => ({ data: [] }),
+  useIncidentTreatmentActions: () => ({ data: [] }),
 }));
 
 function makeIncident(overrides: Partial<Incident> = {}): Incident {
@@ -27,6 +28,9 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     severity: 'medium',
     status: 'in_progress',
     operationalImpact: 'impact',
+    reportedDomain: null,
+    currentSuspectedCause: null,
+    currentSuspectedCauseOtherDetail: null,
     ownerUserId: 'u-admin',
     ownerExternalName: null,
     externalHandlerName: null,
@@ -77,6 +81,13 @@ async function fillRequiredFieldsAndSetEventTime(user: ReturnType<typeof userEve
   fireEvent.change(timeField, { target: { value: EFFECTIVE_CLOSURE_LOCAL } });
   await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
   await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+  // Structured closure classification -- required on a full-readiness
+  // close (the default readiness this dialog opens with). No-action-taken
+  // is the simplest valid resolution-attribution choice for tests that
+  // don't otherwise care about it.
+  await user.selectOptions(screen.getByLabelText(/הגורם שאומת/), 'equipment');
+  await user.selectOptions(screen.getByLabelText(/תוצאת הטיפול/), 'permanent_resolution');
+  await user.selectOptions(screen.getByLabelText(/מה ידוע על מה שהוביל לפתרון/), 'no_action_taken');
 }
 
 describe('CloseDialog: duration reflects the selected effective closure time, not the current clock', () => {
@@ -152,6 +163,9 @@ describe('CloseDialog: manual numeric editing of the closure time field is relia
 
     await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
     await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+    await user.selectOptions(screen.getByLabelText(/הגורם שאומת/), 'equipment');
+    await user.selectOptions(screen.getByLabelText(/תוצאת הטיפול/), 'permanent_resolution');
+    await user.selectOptions(screen.getByLabelText(/מה ידוע על מה שהוביל לפתרון/), 'no_action_taken');
     await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
     await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
 
@@ -177,6 +191,9 @@ describe('CloseDialog: manual numeric editing of the closure time field is relia
 
     await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
     await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+    await user.selectOptions(screen.getByLabelText(/הגורם שאומת/), 'equipment');
+    await user.selectOptions(screen.getByLabelText(/תוצאת הטיפול/), 'permanent_resolution');
+    await user.selectOptions(screen.getByLabelText(/מה ידוע על מה שהוביל לפתרון/), 'no_action_taken');
     await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
     await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));
 
@@ -219,6 +236,9 @@ describe('CloseDialog: manual numeric editing of the closure time field is relia
 
     await user.type(screen.getByLabelText(/סיבת התקלה/), 'סיבה לבדיקה');
     await user.type(screen.getByLabelText(/הפתרון שבוצע/), 'פתרון לבדיקה');
+    await user.selectOptions(screen.getByLabelText(/הגורם שאומת/), 'equipment');
+    await user.selectOptions(screen.getByLabelText(/תוצאת הטיפול/), 'permanent_resolution');
+    await user.selectOptions(screen.getByLabelText(/מה ידוע על מה שהוביל לפתרון/), 'no_action_taken');
     await user.click(screen.getByRole('button', { name: 'המשך לאישור סגירה' }));
     expect(screen.getByText('משך התקלה:').parentElement).toHaveTextContent('משך התקלה: דקה אחת');
     await user.click(screen.getByRole('button', { name: 'אישור סגירת תקלה' }));

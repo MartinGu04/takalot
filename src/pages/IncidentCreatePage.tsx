@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { createIncidentSchema, type CreateIncidentInput } from '../domain/schemas';
+import { createIncidentSchema, type CreateIncidentInput, type TreatmentActionInput } from '../domain/schemas';
 import { useLocations, useProfiles, useSystems, useAppMutation, repo } from '../data/hooks';
 import { useAuth, useSession } from '../auth/AuthContext';
-import { Button, Field, Input, Select, Textarea } from '../components/ui';
+import { Button, Disclosure, Field, Input, Select, Textarea } from '../components/ui';
 import { ExternalPartyFields } from '../components/ExternalPartyFields';
 import { OwnerField } from '../components/OwnerField';
+import { TreatmentActionPicker } from '../components/TreatmentActionPicker';
 import { SystemOptions, LocationOptions } from '../components/ReferenceDataOptions';
 import { NotificationCopyDialog } from '../components/dialogs/NotificationCopyDialog';
-import { severityLabels, reportedToOpsLabels } from '../domain/labels';
+import {
+  severityLabels,
+  reportedToOpsLabels,
+  incidentDomainLabels,
+  INCIDENT_DOMAIN_ORDER,
+  suspectedCauseLabels,
+  SUSPECTED_CAUSE_ORDER,
+} from '../domain/labels';
 import { buildIncidentOpenedMessage } from '../domain/notificationMessage';
-import type { Incident } from '../domain/types';
+import type { Incident, IncidentDomain, SuspectedCause } from '../domain/types';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
 import { loadDraft, clearDraft, useDraft, useClearDraftOnRouteLeave, useWarnOnUnload } from '../lib/useDraft';
 
@@ -37,6 +45,14 @@ type FormValues = {
   wisdomReported: 'no' | 'yes';
   wisdomIncidentNumber: string;
   note: string;
+  // תחום התקלה -- the one new required field. '' is the unselected
+  // sentinel (never a real incidentDomainSchema member).
+  reportedDomain: IncidentDomain | '';
+  // Behind the "הוספת חשד ראשוני ופרטי טיפול" disclosure -- both entirely
+  // optional; leaving them at their defaults sends no extra keys.
+  initialSuspectedCause: SuspectedCause | '';
+  initialSuspectedCauseOtherDetail: string;
+  initialTreatmentActions: TreatmentActionInput[];
 };
 
 function defaultValues(): FormValues {
@@ -59,6 +75,10 @@ function defaultValues(): FormValues {
     wisdomReported: 'no',
     wisdomIncidentNumber: '',
     note: '',
+    reportedDomain: '',
+    initialSuspectedCause: '',
+    initialSuspectedCauseOtherDetail: '',
+    initialTreatmentActions: [],
   };
 }
 
@@ -107,7 +127,13 @@ export default function IncidentCreatePage() {
   const [commsRecipientError, setCommsRecipientError] = useState<string | undefined>();
   const [wisdomNumberError, setWisdomNumberError] = useState<string | undefined>();
   const [noteError, setNoteError] = useState<string | undefined>();
+  const [domainError, setDomainError] = useState<string | undefined>();
+  const [initialCauseOtherError, setInitialCauseOtherError] = useState<string | undefined>();
   const [validationError, setValidationError] = useState<string | undefined>();
+  // Collapsed by default -- forced open (never re-collapsed automatically)
+  // the moment a validation error touches a field inside it, so an error
+  // is never left hidden below a closed disclosure.
+  const [classificationOpen, setClassificationOpen] = useState(false);
 
   const createMutation = useAppMutation(
     async (input: CreateIncidentInput) => repo().createIncident(session, input),
@@ -131,6 +157,8 @@ export default function IncidentCreatePage() {
     setCommsRecipientError(undefined);
     setWisdomNumberError(undefined);
     setNoteError(undefined);
+    setDomainError(undefined);
+    setInitialCauseOtherError(undefined);
     setValidationError(undefined);
     const input: CreateIncidentInput = {
       systemId: form.systemId,
@@ -157,6 +185,13 @@ export default function IncidentCreatePage() {
       wisdomReported: form.wisdomReported === 'yes',
       wisdomIncidentNumber: form.wisdomReported === 'yes' ? form.wisdomIncidentNumber : null,
       note: form.note,
+      reportedDomain: (form.reportedDomain || undefined) as CreateIncidentInput['reportedDomain'],
+      // Omitted entirely (not merely nullable) when the disclosure was left
+      // untouched -- both `undefined` here, matching "leaving the optional
+      // section untouched sends no extra keys."
+      initialSuspectedCause: form.initialSuspectedCause || undefined,
+      initialSuspectedCauseOtherDetail: form.initialSuspectedCauseOtherDetail || undefined,
+      initialTreatmentActions: form.initialTreatmentActions,
     };
     const parsed = createIncidentSchema.safeParse(input);
     if (!parsed.success) {
@@ -167,7 +202,11 @@ export default function IncidentCreatePage() {
         else if (issue.path[0] === 'reportedToCommsRecipient') setCommsRecipientError(issue.message);
         else if (issue.path[0] === 'wisdomIncidentNumber') setWisdomNumberError(issue.message);
         else if (issue.path[0] === 'note') setNoteError(issue.message);
-        else setValidationError(issue.message);
+        else if (issue.path[0] === 'reportedDomain') setDomainError(issue.message);
+        else if (issue.path[0] === 'initialSuspectedCauseOtherDetail' || issue.path[0] === 'initialTreatmentActions') {
+          setInitialCauseOtherError(issue.message);
+          setClassificationOpen(true);
+        } else setValidationError(issue.message);
       }
       return;
     }
@@ -206,6 +245,19 @@ export default function IncidentCreatePage() {
             )}
           </Field>
         </div>
+
+        <Field label="תחום התקלה" required error={domainError}>
+          {(a) => (
+            <Select {...a} {...register('reportedDomain', { required: 'יש לבחור תחום תקלה' })}>
+              <option value="">— בחירה —</option>
+              {INCIDENT_DOMAIN_ORDER.map((d) => (
+                <option key={d} value={d}>
+                  {incidentDomainLabels[d]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
 
         <Field
           label="מועד גילוי התקלה בפועל"
@@ -269,6 +321,46 @@ export default function IncidentCreatePage() {
             </>
           )}
         </Field>
+
+        <Disclosure
+          label="הוספת חשד ראשוני ופרטי טיפול"
+          open={classificationOpen}
+          onOpenChange={setClassificationOpen}
+        >
+          <Field label="חשד ראשוני (אופציונלי)">
+            {(a) => (
+              <Select
+                {...a}
+                value={values.initialSuspectedCause}
+                onChange={(e) => setValue('initialSuspectedCause', e.target.value as SuspectedCause | '')}
+              >
+                <option value="">— לא צוין —</option>
+                {SUSPECTED_CAUSE_ORDER.map((c) => (
+                  <option key={c} value={c}>
+                    {suspectedCauseLabels[c]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {values.initialSuspectedCause === 'other' && (
+            <Field label="פירוט החשד" required error={initialCauseOtherError}>
+              {(a) => (
+                <Input
+                  {...a}
+                  value={values.initialSuspectedCauseOtherDetail}
+                  onChange={(e) => setValue('initialSuspectedCauseOtherDetail', e.target.value)}
+                  maxLength={500}
+                />
+              )}
+            </Field>
+          )}
+          <TreatmentActionPicker
+            label="פעולות שבוצעו לפני פתיחת התקלה"
+            actions={values.initialTreatmentActions}
+            onChange={(actions) => setValue('initialTreatmentActions', actions)}
+          />
+        </Disclosure>
 
         <OwnerField
           profiles={profiles}
@@ -406,6 +498,7 @@ export default function IncidentCreatePage() {
             variant="secondary"
             onClick={() => {
               ownerManuallySetRef.current = false;
+              setClassificationOpen(false);
               reset(defaultValues());
             }}
           >

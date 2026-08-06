@@ -3,7 +3,10 @@ import type {
   AppNotification,
   AuditLog,
   Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
   IncidentEvent,
+  IncidentTreatmentAction,
   IncidentUpdate,
   LocationRecord,
   PendingPersonnel,
@@ -29,6 +32,12 @@ export interface DemoDatabase {
   incidents: Incident[];
   incidentUpdates: IncidentUpdate[];
   incidentEvents: IncidentEvent[];
+  /** Optional for databases persisted before this feature existed --
+   *  LocalDemoRepository treats a missing array as empty, exactly like
+   *  pendingPersonnel below. */
+  incidentCauseAssessments?: IncidentCauseAssessment[];
+  incidentTreatmentActions?: IncidentTreatmentAction[];
+  incidentClosures?: IncidentClosureClassification[];
   notifications: StoredNotification[];
   auditLogs: AuditLog[];
   /** Optional for databases persisted before 0008's model existed. */
@@ -47,6 +56,9 @@ export function emptyDatabase(): DemoDatabase {
     incidents: [],
     incidentUpdates: [],
     incidentEvents: [],
+    incidentCauseAssessments: [],
+    incidentTreatmentActions: [],
+    incidentClosures: [],
     notifications: [],
     auditLogs: [],
     pendingPersonnel: [],

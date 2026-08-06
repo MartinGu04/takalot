@@ -11,6 +11,7 @@ test.describe('creation: the external-handler trio is optional alongside the man
     await page.getByLabel('מערכת / עמדה').selectOption({ label: 'מערכת בטא' });
     await page.getByLabel('מיקום').selectOption({ label: 'אתר 1' });
     await page.getByLabel('תיאור התקלה').fill('תקלה עם גורם מטפל חיצוני לבדיקה אוטומטית');
+    await page.getByLabel('תחום התקלה').selectOption({ label: 'ציוד או חומרה' });
     await page.getByLabel('השפעה מבצעית').fill('השפעה מבצעית לבדיקה אוטומטית');
     await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית');
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
@@ -31,6 +32,7 @@ test.describe('creation: the external-handler trio is optional alongside the man
     await page.getByLabel('מערכת / עמדה').selectOption({ label: 'מערכת בטא' });
     await page.getByLabel('מיקום').selectOption({ label: 'אתר 1' });
     await page.getByLabel('תיאור התקלה').fill('בדיקת דחיית איש קשר ללא שם גורם');
+    await page.getByLabel('תחום התקלה').selectOption({ label: 'ציוד או חומרה' });
     await page.getByLabel('השפעה מבצעית').fill('השפעה');
     await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק');
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
@@ -99,6 +101,9 @@ test.describe('closure: ExternalPartyFields appears at every readiness level', (
     await dialog.getByLabel('סיבת התקלה').fill('סיבה לבדיקה אוטומטית');
     await dialog.getByLabel('הפתרון שבוצע').fill('פתרון לבדיקה אוטומטית');
     await dialog.getByLabel('גורם מטפל חיצוני').fill('ארגון בסגירה מלאה');
+    await dialog.getByLabel('הגורם שאומת').selectOption({ label: 'ציוד או חומרה' });
+    await dialog.getByLabel('תוצאת הטיפול').selectOption({ label: 'פתרון קבוע' });
+    await dialog.getByLabel('מה ידוע על מה שהוביל לפתרון?').selectOption({ label: 'לא בוצעה פעולה' });
     await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
     await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
     await page.getByRole('dialog', { name: 'התקלה נסגרה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();

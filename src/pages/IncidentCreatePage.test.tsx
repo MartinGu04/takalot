@@ -37,6 +37,7 @@ async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(screen.getByLabelText(/^מערכת \/ עמדה/), 'sys-alpha');
   await user.selectOptions(screen.getByLabelText(/^מיקום/), 'loc-1');
   await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה לצורך בדיקה אוטומטית');
+  await user.selectOptions(screen.getByLabelText(/^תחום התקלה/), 'equipment');
   await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה אוטומטית');
   await user.type(screen.getByLabelText(/^פעולות שבוצעו עד כה/), 'נבדק ראשונית לצורך הבדיקה');
   await user.selectOptions(screen.getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
@@ -174,6 +175,7 @@ describe('IncidentCreatePage: form behavior', () => {
     await user.selectOptions(screen.getByLabelText(/^מערכת \/ עמדה/), 'sys-alpha');
     await user.selectOptions(screen.getByLabelText(/^מיקום/), 'loc-1');
     await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה לצורך בדיקה');
+    await user.selectOptions(screen.getByLabelText(/^תחום התקלה/), 'equipment');
     await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה');
     await user.type(screen.getByLabelText(/^פעולות שבוצעו עד כה/), 'נבדק ראשונית');
     // The owner now defaults to the signed-in user, so "leaving it

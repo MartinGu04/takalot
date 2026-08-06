@@ -6,7 +6,10 @@ import type {
   AppNotification,
   AuditLog,
   Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
   IncidentEvent,
+  IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
@@ -14,10 +17,12 @@ import type {
   PersonnelEntry,
   Profile,
   Role,
+  SuspectedCause,
   SystemCategory,
   SystemRecord,
   EventType,
 } from '../../domain/types';
+import type { TreatmentActionInput } from '../../domain/schemas';
 import { isOpen } from '../../domain/types';
 import { computeIncidentAnalytics, type AnalyticsFilters, type IncidentAnalytics } from '../../domain/analyticsSummary';
 import { LOCATION_CATEGORY_ORDER, SYSTEM_CATEGORY_ORDER, reportedToOpsLabels } from '../../domain/labels';
@@ -151,6 +156,14 @@ export class LocalDemoRepository implements Repository {
     const loaded = storage.load();
     if (loaded && loaded.seededAt) {
       this.db = loaded;
+      // Demo databases persisted before this feature existed have no
+      // classification arrays at all -- backfill to empty, exactly like
+      // pendingPersonnel's own optional-field handling elsewhere in this
+      // class. No incident is touched; this only ensures the arrays this
+      // class pushes onto actually exist.
+      this.db.incidentCauseAssessments ??= [];
+      this.db.incidentTreatmentActions ??= [];
+      this.db.incidentClosures ??= [];
       this.backfillReferenceDataOrder();
       this.backfillReferenceDataCategory();
     } else if (options.autoSeed !== false) {
@@ -1000,6 +1013,91 @@ export class LocalDemoRepository implements Repository {
     return this.db.pendingPersonnel;
   }
 
+  private causeAssessmentRows(): IncidentCauseAssessment[] {
+    if (!this.db.incidentCauseAssessments) this.db.incidentCauseAssessments = [];
+    return this.db.incidentCauseAssessments;
+  }
+
+  private treatmentActionRows(): IncidentTreatmentAction[] {
+    if (!this.db.incidentTreatmentActions) this.db.incidentTreatmentActions = [];
+    return this.db.incidentTreatmentActions;
+  }
+
+  private closureRows(): IncidentClosureClassification[] {
+    if (!this.db.incidentClosures) this.db.incidentClosures = [];
+    return this.db.incidentClosures;
+  }
+
+  /** Records one current-suspected-cause history row -- mirrors
+   *  update_incident/technician_update_incident/create_incident_impl's own
+   *  insert into incident_cause_assessments (migration 0047) exactly. */
+  private recordCauseAssessment(
+    incidentId: string,
+    cause: SuspectedCause,
+    otherDetail: string | null,
+    cycleNumber: number,
+    recordedBy: string,
+    eventTime: string | null,
+    operationId: string | null,
+  ): void {
+    const ts = this.now().toISOString();
+    this.causeAssessmentRows().push({
+      id: newId(),
+      incidentId,
+      cause,
+      otherDetail: cause === 'other' ? otherDetail : null,
+      cycleNumber,
+      recordedBy,
+      eventTime,
+      recordedAt: ts,
+      operationId,
+      createdAt: ts,
+    });
+  }
+
+  /** Inserts one row per DISTINCT (actionType, otherDetail) entry in
+   *  `actions` -- mirrors every RPC's own within-one-array de-duplication
+   *  exactly (migration 0047): an accidental duplicate chip within the
+   *  SAME submitted array is silently collapsed to one row; the same
+   *  action type recorded again in a later, separate operation remains a
+   *  normal, distinct row. Returns the ids of the rows actually inserted,
+   *  in submission order (deduped), for closure's inline-quick-add
+   *  linking. */
+  private insertTreatmentActions(
+    incidentId: string,
+    actions: TreatmentActionInput[],
+    cycleNumber: number,
+    eventTime: string | null,
+    recordedBy: string,
+    operationId: string | null,
+  ): string[] {
+    const rows = this.treatmentActionRows();
+    const ts = this.now().toISOString();
+    const seen = new Set<string>();
+    const insertedIds: string[] = [];
+    for (const action of actions) {
+      const otherDetail = action.actionType === 'other' ? (action.otherDetail ?? '').trim() || null : null;
+      const key = `${action.actionType}|${otherDetail ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const id = newId();
+      rows.push({
+        id,
+        incidentId,
+        actionType: action.actionType,
+        otherDetail,
+        cycleNumber,
+        eventTime,
+        recordedBy,
+        recordedAt: ts,
+        operationId,
+        createdAt: ts,
+      });
+      insertedIds.push(id);
+    }
+    return insertedIds;
+  }
+
   private requirePersonnelManager(session: Session): Profile {
     const actor = this.requireSession(session);
     if (!['shift_supervisor', 'professional_manager', 'system_admin'].includes(actor.role)) {
@@ -1433,6 +1531,32 @@ export class LocalDemoRepository implements Repository {
       .map((u) => ({ ...u }));
   }
 
+  async getIncidentCauseAssessments(session: Session, incidentId: string): Promise<IncidentCauseAssessment[]> {
+    this.requireCap(session, 'view_all_incidents');
+    // Sorted by recordedAt (always populated), not eventTime (nullable for
+    // the initial creation-time assessment) -- see the type's own comment.
+    return this.causeAssessmentRows()
+      .filter((a) => a.incidentId === incidentId)
+      .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt))
+      .map((a) => ({ ...a }));
+  }
+
+  async getIncidentTreatmentActions(session: Session, incidentId: string): Promise<IncidentTreatmentAction[]> {
+    this.requireCap(session, 'view_all_incidents');
+    return this.treatmentActionRows()
+      .filter((a) => a.incidentId === incidentId)
+      .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt))
+      .map((a) => ({ ...a }));
+  }
+
+  async getIncidentClosures(session: Session, incidentId: string): Promise<IncidentClosureClassification[]> {
+    this.requireCap(session, 'view_all_incidents');
+    return this.closureRows()
+      .filter((c) => c.incidentId === incidentId)
+      .sort((a, b) => a.eventTime.localeCompare(b.eventTime))
+      .map((c) => ({ ...c, resolutionActionIds: [...c.resolutionActionIds] }));
+  }
+
   // --- incidents: mutations ---
 
   async createIncident(session: Session, rawInput: CreateIncidentInput): Promise<Incident> {
@@ -1506,6 +1630,15 @@ export class LocalDemoRepository implements Repository {
       cancelledAt: null,
       cancelledBy: null,
       cancellationReason: null,
+      // תחום התקלה -- required by createIncidentSchema, so always present
+      // here. Optional initial suspected cause becomes the incident's
+      // first current assessment when supplied; stays NULL ("never
+      // assessed") when omitted, never defaulted to the explicit
+      // 'unknown' enum value.
+      reportedDomain: input.reportedDomain,
+      currentSuspectedCause: input.initialSuspectedCause ?? null,
+      currentSuspectedCauseOtherDetail:
+        input.initialSuspectedCause === 'other' ? (input.initialSuspectedCauseOtherDetail ?? '').trim() || null : null,
     };
     this.db.incidents.push(incident);
 
@@ -1549,6 +1682,28 @@ export class LocalDemoRepository implements Repository {
         operationId,
       });
     }
+
+    // Initial suspected-cause history row -- no dedicated
+    // 'cause_assessment_changed' event is written for this one: that
+    // event type carries a real effective event_time, and the initial
+    // assessment has none. The Timeline instead renders it inline on this
+    // 'created' card by joining on operationId.
+    if (incident.currentSuspectedCause) {
+      this.recordCauseAssessment(
+        incident.id,
+        incident.currentSuspectedCause,
+        incident.currentSuspectedCauseOtherDetail,
+        0,
+        actor.id,
+        null,
+        operationId,
+      );
+    }
+    // Optional initial treatment actions -- same NULL-event_time
+    // reasoning: no real time is ever collected for these ("already
+    // performed before the incident was opened").
+    this.insertTreatmentActions(incident.id, input.initialTreatmentActions, 0, null, actor.id, operationId);
+
     this.audit(actor.id, 'incident_created', 'incident', incident.id, {
       incidentNumber: incident.number,
       after: JSON.stringify({ number: incident.number, severity: incident.severity, status: incident.status }),
@@ -1777,6 +1932,44 @@ export class LocalDemoRepository implements Repository {
         entityLabel: incident.number,
       });
     }
+
+    // Optional current-suspected-cause change -- omitted key means
+    // "untouched" (no reconfirmation demanded on every update); a
+    // resubmission of the SAME value writes no history row and no event,
+    // mirroring update_incident's own v_cause_changed check exactly.
+    const suspectedCauseProvided = input.suspectedCause !== undefined;
+    const newSuspectedCauseOtherDetail =
+      input.suspectedCause === 'other' ? (input.suspectedCauseOtherDetail ?? '').trim() || null : null;
+    const causeChanged =
+      suspectedCauseProvided &&
+      (input.suspectedCause !== incident.currentSuspectedCause ||
+        newSuspectedCauseOtherDetail !== incident.currentSuspectedCauseOtherDetail);
+    if (causeChanged && input.suspectedCause) {
+      this.recordCauseAssessment(
+        incidentId,
+        input.suspectedCause,
+        newSuspectedCauseOtherDetail,
+        incident.reopenCount,
+        actor.id,
+        input.eventTime,
+        operationId,
+      );
+      this.addEvent(incidentId, 'cause_assessment_changed', actor.id, {
+        field: 'current_suspected_cause',
+        oldValue: incident.currentSuspectedCause ?? '',
+        newValue: input.suspectedCause,
+        eventTime: input.eventTime,
+        operationId,
+      });
+    }
+    // Cumulative structured treatment actions performed in this update --
+    // never replaces the required free-text actionsTaken above.
+    this.insertTreatmentActions(incidentId, input.treatmentActions, incident.reopenCount, input.eventTime, actor.id, operationId);
+    if (suspectedCauseProvided) {
+      incident.currentSuspectedCause = input.suspectedCause ?? null;
+      incident.currentSuspectedCauseOtherDetail = newSuspectedCauseOtherDetail;
+    }
+
     incident.status = input.status;
     incident.severity = input.severity;
     // operational_impact is a creation-time opening fact only -- update_incident
@@ -1867,6 +2060,41 @@ export class LocalDemoRepository implements Repository {
       refId: update.id,
       operationId,
     });
+
+    // Optional cause/action classification -- permitted here: this is
+    // operational technical detail, not one of the protected owner/
+    // status/severity/reporting fields, and the spec explicitly grants it
+    // to "anyone currently allowed to post the relevant incident update."
+    const suspectedCauseProvided = input.suspectedCause !== undefined;
+    const newSuspectedCauseOtherDetail =
+      input.suspectedCause === 'other' ? (input.suspectedCauseOtherDetail ?? '').trim() || null : null;
+    const causeChanged =
+      suspectedCauseProvided &&
+      (input.suspectedCause !== incident.currentSuspectedCause ||
+        newSuspectedCauseOtherDetail !== incident.currentSuspectedCauseOtherDetail);
+    if (causeChanged && input.suspectedCause) {
+      this.recordCauseAssessment(
+        incidentId,
+        input.suspectedCause,
+        newSuspectedCauseOtherDetail,
+        incident.reopenCount,
+        actor.id,
+        input.eventTime,
+        operationId,
+      );
+      this.addEvent(incidentId, 'cause_assessment_changed', actor.id, {
+        field: 'current_suspected_cause',
+        oldValue: incident.currentSuspectedCause ?? '',
+        newValue: input.suspectedCause,
+        eventTime: input.eventTime,
+        operationId,
+      });
+    }
+    this.insertTreatmentActions(incidentId, input.treatmentActions, incident.reopenCount, input.eventTime, actor.id, operationId);
+    if (suspectedCauseProvided) {
+      incident.currentSuspectedCause = input.suspectedCause ?? null;
+      incident.currentSuspectedCauseOtherDetail = newSuspectedCauseOtherDetail;
+    }
 
     incident.version += 1;
     incident.updatedAt = ts;
@@ -2065,12 +2293,61 @@ export class LocalDemoRepository implements Repository {
       incident.nextUpdateDue = null;
       incident.noDeadlineReason = 'התקלה נסגרה';
 
+      // Structured closure classification -- confirmedCause/treatmentOutcome/
+      // resolutionAttribution are guaranteed present by closeIncidentSchema's
+      // own superRefine whenever readiness === 'full', so the non-null
+      // assertions below only narrow an already-validated shape for TS.
+      const confirmedCause = input.confirmedCause!;
+      const treatmentOutcome = input.treatmentOutcome!;
+      const resolutionAttribution = input.resolutionAttribution!;
+      // New actions recorded inline during closure, then previously-
+      // recorded actions selected for this closure -- re-validated against
+      // this incident and its CURRENT cycle (rejects a stale/foreign id),
+      // combined and de-duplicated, mirroring close_incident_impl exactly
+      // (migration 0047).
+      const newActionIds = this.insertTreatmentActions(
+        incidentId,
+        input.newTreatmentActions,
+        incident.reopenCount,
+        input.eventTime,
+        actor.id,
+        operationId,
+      );
+      const validSelectedIds = input.resolutionActionIds.filter((id) =>
+        this.treatmentActionRows().some(
+          (a) => a.id === id && a.incidentId === incidentId && a.cycleNumber === incident.reopenCount,
+        ),
+      );
+      const linkedActionIds = Array.from(new Set([...newActionIds, ...validSelectedIds]));
+      const closureId = newId();
+      this.closureRows().push({
+        id: closureId,
+        incidentId,
+        cycleNumber: incident.reopenCount,
+        operationId,
+        confirmedCause,
+        confirmedCauseOtherDetail:
+          confirmedCause === 'other' ? (input.confirmedCauseOtherDetail ?? '').trim() || null : null,
+        treatmentOutcome,
+        treatmentOutcomeOtherDetail:
+          treatmentOutcome === 'other' ? (input.treatmentOutcomeOtherDetail ?? '').trim() || null : null,
+        resolutionAttribution,
+        resolutionAttributionOtherDetail:
+          resolutionAttribution === 'other' ? (input.resolutionAttributionOtherDetail ?? '').trim() || null : null,
+        resolutionActionIds: linkedActionIds,
+        recordedBy: actor.id,
+        eventTime: input.eventTime,
+        recordedAt: ts,
+        createdAt: ts,
+      });
+
       this.addEvent(incidentId, 'closed', actor.id, {
         newValue: input.readiness,
         note: `סיבת התקלה: ${input.rootCause.trim()}\nהפתרון שבוצע: ${input.resolution.trim()}`,
         // "הערה נוספת": a separate, optional, raw user note -- never folded
         // into the generated note above. Blank/whitespace-only -> null.
         userNote: (input.note ?? '').trim() || null,
+        refId: closureId,
         eventTime: input.eventTime,
         operationId,
       });
@@ -2333,6 +2610,14 @@ export class LocalDemoRepository implements Repository {
     incident.followUpRequired = false;
     incident.followUpCompletedAt = null;
     incident.followUpCompletedBy = null;
+    // Never carry the previous cycle's suspected cause -- let alone the
+    // just-superseded confirmed cause from the prior closure classification
+    // -- forward as if freshly reconfirmed. Every prior IncidentCauseAssessment
+    // row and the prior IncidentClosureClassification row are untouched
+    // (append-only) and remain fully visible as history; the reopened cycle
+    // simply begins with no current assessment.
+    incident.currentSuspectedCause = null;
+    incident.currentSuspectedCauseOtherDetail = null;
     incident.version += 1;
     incident.updatedAt = ts;
     incident.updatedBy = actor.id;

@@ -31,6 +31,7 @@ function baseInput(overrides: Partial<CreateIncidentInput> = {}) {
     reportedToCommsRecipient: null,
     wisdomReported: false,
     wisdomIncidentNumber: null,
+    reportedDomain: 'unknown' as const,
     ...overrides,
   };
 }
@@ -333,9 +334,12 @@ describe('note ("הערה נוספת"): optional, 600-character limit, on every 
       expect(overLimit.error.issues.some((i) => i.path[0] === 'note' && i.message === 'הערה נוספת: עד 600 תווים')).toBe(true);
     }
     // technicianUpdateSchema has no protected fields to begin with -- adding
-    // `note` introduces no new key besides itself.
-    expect(Object.keys(technicianUpdateSchema.shape)).not.toContain('severity');
-    expect(Object.keys(technicianUpdateSchema.shape)).not.toContain('status');
+    // `note`/suspectedCause/treatmentActions introduces no protected key.
+    // .superRefine() wraps the object in a ZodEffects, so the underlying
+    // shape is reached via ._def.schema (the inner ZodObject).
+    const shapeKeys = Object.keys(technicianUpdateSchema._def.schema.shape);
+    expect(shapeKeys).not.toContain('severity');
+    expect(shapeKeys).not.toContain('status');
   });
 
   it('closeIncidentSchema: note is optional at every readiness level and shares the same 600-character limit', () => {
@@ -346,6 +350,9 @@ describe('note ("הערה נוספת"): optional, 600-character limit, on every 
       resolution: 'פתרון',
       readiness: 'full' as const,
       reportedToOps: 'not_required' as const,
+      confirmedCause: 'equipment' as const,
+      treatmentOutcome: 'permanent_resolution' as const,
+      resolutionAttribution: 'no_action_taken' as const,
     };
     expect(closeIncidentSchema.safeParse(base).success).toBe(true);
     expect(closeIncidentSchema.safeParse({ ...base, note: 'הערה בעת סגירה' }).success).toBe(true);
@@ -416,6 +423,9 @@ describe('external handling party: internal owner is now mandatory on every life
       resolution: 'פתרון',
       readiness: 'full',
       reportedToOps: 'not_required',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
     });
     expect(fullReadyNoOwner.success).toBe(true);
 
@@ -476,6 +486,9 @@ describe('external handling party: internal owner is now mandatory on every life
       resolution: 'פתרון',
       readiness: 'full',
       reportedToOps: 'not_required',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
     });
     expect(withEventTime.success).toBe(true);
   });
