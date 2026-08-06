@@ -307,7 +307,7 @@ export default function IncidentCreatePage() {
           )}
         </Field>
 
-        <Field label="פעולות שבוצעו עד כה" required error={formState.errors.actionsTaken?.message}>
+        <Field label="פירוט הפעולות שבוצעו עד כה" required error={formState.errors.actionsTaken?.message}>
           {(a) => (
             <>
               <Textarea
@@ -356,7 +356,8 @@ export default function IncidentCreatePage() {
             </Field>
           )}
           <TreatmentActionPicker
-            label="פעולות שבוצעו לפני פתיחת התקלה"
+            label="סיווג הפעולות שתוארו למעלה"
+            hint="אין צורך לכתוב שוב — בחר רק את סוגי הפעולות לצורך מעקב וניתוח."
             actions={values.initialTreatmentActions}
             onChange={(actions) => setValue('initialTreatmentActions', actions)}
           />

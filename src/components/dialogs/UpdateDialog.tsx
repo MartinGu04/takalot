@@ -341,7 +341,7 @@ export function UpdateDialog({
         <Disclosure label="הוספת פרטי טיפול" open={classificationOpen} onOpenChange={setClassificationOpen}>
           <Field
             label="חשד נוכחי"
-            hint={`המצב הנוכחי: ${incident.currentSuspectedCause ? suspectedCauseLabels[incident.currentSuspectedCause] : UNASSESSED_CAUSE_LABEL}. שינוי כאן ייצור רישום היסטורי חדש; השארה ללא שינוי אינה דורשת אישור מחדש.`}
+            hint={`חשד נוכחי: ${incident.currentSuspectedCause ? suspectedCauseLabels[incident.currentSuspectedCause] : UNASSESSED_CAUSE_LABEL}. שינוי כאן ייצור רישום היסטורי חדש; השארה ללא שינוי אינה דורשת אישור מחדש.`}
           >
             {(a) => (
               <Select

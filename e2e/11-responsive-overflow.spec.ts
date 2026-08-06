@@ -84,3 +84,29 @@ test('selecting an archive system filter at 390px causes no horizontal overflow'
   }));
   expect(scrollWidth, `document scrollWidth (${scrollWidth}) must not exceed clientWidth (${clientWidth}) with a system filter selected`).toBeLessThanOrEqual(clientWidth);
 });
+
+test('opening the create-incident optional classification disclosure and adding a treatment action at 390px causes no horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginAs(page, DEMO_USERS.supervisor1);
+  await page.goto('/incidents/new');
+
+  // Collapsed by default, matching the low-friction mobile layout.
+  await expect(page.getByText('סיווג הפעולות שתוארו למעלה')).not.toBeVisible();
+  await page.getByRole('button', { name: 'הוספת חשד ראשוני ופרטי טיפול' }).click();
+  await expect(page.getByText('סיווג הפעולות שתוארו למעלה')).toBeVisible();
+
+  // The compact "+ הוספת פעולה" add-then-remove control, not a large
+  // always-visible chip grid.
+  await page.getByRole('button', { name: '+ הוספת פעולה' }).click();
+  await page.getByLabel('סוג הפעולה').selectOption({ label: 'בדיקה או אבחון' });
+  await page.getByRole('button', { name: 'הוספה' }).click();
+
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(
+    scrollWidth,
+    `document scrollWidth (${scrollWidth}) must not exceed clientWidth (${clientWidth}) with the classification disclosure open and a treatment action added`,
+  ).toBeLessThanOrEqual(clientWidth);
+});

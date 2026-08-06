@@ -13,7 +13,7 @@ test.describe('creation: the external-handler trio is optional alongside the man
     await page.getByLabel('תיאור התקלה').fill('תקלה עם גורם מטפל חיצוני לבדיקה אוטומטית');
     await page.getByLabel('תחום התקלה').selectOption({ label: 'ציוד או חומרה' });
     await page.getByLabel('השפעה מבצעית').fill('השפעה מבצעית לבדיקה אוטומטית');
-    await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית');
+    await page.getByLabel('פירוט הפעולות שבוצעו עד כה').fill('נבדק ראשונית');
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
     await page.getByLabel('גורם מטפל חיצוני').fill('ספק תחזוקה בע״מ');
     await page.getByLabel('איש קשר').fill('דנה כהן');
@@ -34,7 +34,7 @@ test.describe('creation: the external-handler trio is optional alongside the man
     await page.getByLabel('תיאור התקלה').fill('בדיקת דחיית איש קשר ללא שם גורם');
     await page.getByLabel('תחום התקלה').selectOption({ label: 'ציוד או חומרה' });
     await page.getByLabel('השפעה מבצעית').fill('השפעה');
-    await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק');
+    await page.getByLabel('פירוט הפעולות שבוצעו עד כה').fill('נבדק');
     await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'יואב כהן (דמו)' });
     await page.getByLabel('איש קשר').fill('דנה כהן');
     await page.getByRole('button', { name: 'פתיחת תקלה' }).click();

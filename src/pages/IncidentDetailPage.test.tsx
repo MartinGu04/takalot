@@ -739,6 +739,92 @@ describe('incident details: internal owner and external handler render as two se
   });
 });
 
+// inc-3 (seed.ts): a true legacy incident -- reportedDomain, currentSuspectedCause
+// and currentSuspectedCauseOtherDetail are all null, and it has no treatment-action
+// or closure-classification rows at all. The "הוספת פרטי טיפול" disclosure inside
+// UpdateDialog must not depend on any of that structured data already existing --
+// rendering it is unconditional, and a legacy incident must be able to receive its
+// FIRST suspected-cause assessment and first structured treatment action through a
+// normal update.
+describe('UpdateDialog: "הוספת פרטי טיפול" works for a legacy incident with no prior structured classification at all', () => {
+  it('renders the disclosure and the correct "לא הוזנה הערכת גורם" fallback -- never depends on reportedDomain, currentSuspectedCause, or any prior classification row existing', async () => {
+    const { user } = await openIncidentDetailByTextAsAdmin(INC3_TEXT);
+    await user.click(await within(main()).findByRole('button', { name: 'עדכון תקלה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'עדכון תקלה' });
+
+    const disclosureButton = within(dialog).getByRole('button', { name: 'הוספת פרטי טיפול' });
+    expect(disclosureButton).toBeInTheDocument();
+    await user.click(disclosureButton);
+    expect(within(dialog).getByText(/^חשד נוכחי: לא הוזנה הערכת גורם\./)).toBeInTheDocument();
+  });
+
+  it('a standard update on this legacy incident still submits with zero interaction with the disclosure', async () => {
+    const { user } = await openIncidentDetailByTextAsAdmin(INC3_TEXT);
+    await user.click(await within(main()).findByRole('button', { name: 'עדכון תקלה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'עדכון תקלה' });
+
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'עדכון רגיל ללא סיווג');
+    await fillCurrentStatusText(user, dialog);
+    await fillUpdateReporting(user, dialog);
+    await user.selectOptions(within(dialog).getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+    expect(await screen.findByText('העדכון נשמר.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'עדכון תקלה' })).not.toBeInTheDocument());
+  });
+
+  it("lets a full update add the incident's first suspected cause and first structured treatment action, persisted and rendered on the detail page and Timeline", async () => {
+    const { user } = await openIncidentDetailByTextAsAdmin(INC3_TEXT);
+    await user.click(await within(main()).findByRole('button', { name: 'עדכון תקלה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'עדכון תקלה' });
+
+    await user.type(within(dialog).getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'הערכה ראשונית של הגורם עבור תקלה היסטורית');
+    await fillCurrentStatusText(user, dialog);
+    await fillUpdateReporting(user, dialog);
+    await user.selectOptions(within(dialog).getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
+
+    await user.click(within(dialog).getByRole('button', { name: 'הוספת פרטי טיפול' }));
+    await user.selectOptions(within(dialog).getByLabelText('חשד נוכחי'), 'equipment');
+    await user.click(within(dialog).getByRole('button', { name: '+ הוספת פעולה' }));
+    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'סוג הפעולה' }), 'diagnosis');
+    await user.click(within(dialog).getByRole('button', { name: 'הוספה' }));
+
+    await user.click(within(dialog).getByRole('button', { name: 'שמירת עדכון' }));
+    expect(await screen.findByText('העדכון נשמר.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'עדכון תקלה' })).not.toBeInTheDocument());
+
+    // Detail page: reportedDomain stays untouched (never required/fabricated),
+    // and the new current suspected cause now shows the real label.
+    const domainRow = within(main()).getByText('תחום התקלה').closest('div') as HTMLElement;
+    expect(within(domainRow).getByText('לא סווג בעת פתיחת התקלה')).toBeInTheDocument();
+    const causeRow = within(main()).getByText('חשד נוכחי').closest('div') as HTMLElement;
+    expect(within(causeRow).getByText('ציוד או חומרה')).toBeInTheDocument();
+
+    // Timeline: the update carries a cause_assessment_changed event (shown
+    // as a field-change row, "חשד נוכחי:" -> the new label) and the
+    // structured treatment-action chip.
+    const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    await waitFor(() => expect(within(timeline).getByText('חשד נוכחי:')).toBeInTheDocument());
+    expect(within(timeline).getByText('ציוד או חומרה')).toBeInTheDocument();
+    expect(within(timeline).getByText('בדיקה או אבחון')).toBeInTheDocument();
+  });
+
+  it('technician-update mode also exposes the disclosure, unconditionally', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTestId('login-u-tech-1'));
+    // inc-3 has no internal owner, so a technician cannot open it via the
+    // owner-scoped technician-update permission -- use inc-1 (owned by
+    // tech1) instead, whose reportedDomain/currentSuspectedCause are
+    // non-null, to isolate "does technician mode render the disclosure at
+    // all" from the legacy-data question already covered above.
+    const card = await within(main()).findByText(INC1_TEXT);
+    await user.click(card.closest('a.incident-card') as HTMLElement);
+    await user.click(await within(main()).findByRole('button', { name: 'עדכון תקלה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'עדכון תקלה' });
+    expect(within(dialog).getByRole('button', { name: 'הוספת פרטי טיפול' })).toBeInTheDocument();
+  });
+});
+
 // Temporary operational workaround (no real WhatsApp integration yet):
 // NotificationCopyDialog, shown after a confirmed successful CLOSURE.
 // inc-1 is owned by tech1 ("עומר פרץ (דמו)"); every test here signs in as

@@ -15,12 +15,16 @@ export function TreatmentActionPicker({
   actions,
   onChange,
   label,
+  hint,
 }: {
   actions: TreatmentActionInput[];
   onChange: (actions: TreatmentActionInput[]) => void;
   /** Omit to render without a heading (e.g. inside an already-labeled
    *  disclosure section). */
   label?: string;
+  /** Optional helper text shown under the label, e.g. clarifying that this
+   *  supplements rather than replaces a nearby free-text field. */
+  hint?: string;
 }) {
   const [adding, setAdding] = useState(false);
   const [draftType, setDraftType] = useState<TreatmentActionType | ''>('');
@@ -55,6 +59,7 @@ export function TreatmentActionPicker({
   return (
     <div className="flex flex-col gap-2">
       {label && <p className="text-sm font-semibold text-text-primary">{label}</p>}
+      {hint && <p className="text-xs text-muted">{hint}</p>}
       {actions.length > 0 && (
         <ul id={listId} className="flex flex-col gap-1.5">
           {actions.map((a, i) => (
