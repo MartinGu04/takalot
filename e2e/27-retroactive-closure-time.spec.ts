@@ -35,6 +35,9 @@ test.describe('CloseDialog: actual closure time', () => {
 
     await dialog.getByLabel('סיבת התקלה').fill('תקלת חומרה לבדיקת סגירה למפרע');
     await dialog.getByLabel('הפתרון שבוצע').fill('הוחלף הרכיב ואומתה תקינות');
+    await dialog.getByLabel('הגורם שאומת').selectOption({ label: 'ציוד או חומרה' });
+    await dialog.getByLabel('תוצאת הטיפול').selectOption({ label: 'פתרון קבוע' });
+    await dialog.getByLabel('מה ידוע על מה שהוביל לפתרון?').selectOption({ label: 'לא בוצעה פעולה' });
     await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
 
     // The confirmation dialog's duration must reflect the just-selected
@@ -131,6 +134,9 @@ test.describe('CloseDialog: actual closure time', () => {
     const dialog = page.getByRole('dialog', { name: 'סגירת תקלה' });
     await dialog.getByLabel('סיבת התקלה').fill('סיבה לבדיקת ברירת המחדל');
     await dialog.getByLabel('הפתרון שבוצע').fill('פתרון לבדיקת ברירת המחדל');
+    await dialog.getByLabel('הגורם שאומת').selectOption({ label: 'ציוד או חומרה' });
+    await dialog.getByLabel('תוצאת הטיפול').selectOption({ label: 'פתרון קבוע' });
+    await dialog.getByLabel('מה ידוע על מה שהוביל לפתרון?').selectOption({ label: 'לא בוצעה פעולה' });
     await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
     await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
     await expect(dialog).toBeHidden();

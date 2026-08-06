@@ -31,6 +31,98 @@ export const statusSchema = z.enum([
 export const reportedToOpsSchema = z.enum(['yes', 'no', 'not_required']);
 export const readinessSchema = z.enum(['full', 'partial', 'none']);
 
+// ===== Structured incident lifecycle classification =====
+// Mirrors the six Postgres enums added in migration 0045 exactly (stable
+// English values; Hebrew labels live only in src/domain/labels.ts).
+export const incidentDomainSchema = z.enum([
+  'communications',
+  'equipment',
+  'software',
+  'infrastructure',
+  'operational',
+  'unknown',
+  'other',
+]);
+export const suspectedCauseSchema = z.enum([
+  'equipment',
+  'software',
+  'communications',
+  'infrastructure',
+  'operational',
+  'external',
+  'unknown',
+  'other',
+]);
+export const treatmentActionTypeSchema = z.enum([
+  'diagnosis',
+  'reset_restart',
+  'equipment_replacement',
+  'config_change',
+  'software_fix',
+  'communications_handling',
+  'infrastructure_handling',
+  'external_party_handling',
+  'other',
+]);
+export const confirmedCauseSchema = z.enum([
+  'equipment',
+  'software',
+  'communications',
+  'infrastructure',
+  'operational',
+  'external',
+  'undetermined',
+  'other',
+]);
+export const treatmentOutcomeSchema = z.enum([
+  'permanent_resolution',
+  'temporary_workaround',
+  'not_reproduced',
+  'resolved_without_action',
+  'closed_without_technical_resolution',
+  'other',
+]);
+export const resolutionAttributionSchema = z.enum([
+  'specific_action',
+  'combination_of_actions',
+  'undetermined',
+  'no_action_taken',
+  'external_party_no_details',
+  'other',
+]);
+
+/** One structured treatment-action entry -- shared by creation's optional
+ *  initial actions, an update's treatmentActions, and closure's
+ *  newTreatmentActions. 'other' requires a short explanation, mirroring
+ *  every RPC that accepts this shape. */
+export const treatmentActionInputSchema = z
+  .object({
+    actionType: treatmentActionTypeSchema,
+    otherDetail: z.string().max(500, 'פירוט הפעולה: עד 500 תווים').nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.actionType === 'other' && !(data.otherDetail ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['otherDetail'],
+        message: 'יש לפרט את הפעולה',
+      });
+    }
+  });
+
+export type TreatmentActionInput = z.infer<typeof treatmentActionInputSchema>;
+
+/** Number of DISTINCT (actionType, otherDetail) entries in a treatment-
+ *  action array -- mirrors the RPC's own within-one-array de-duplication
+ *  exactly (see create_incident_impl/update_incident/close_incident_impl,
+ *  migration 0047), so client-side "how many actions is this" counts
+ *  (e.g. combination_of_actions' at-least-two-distinct rule) never
+ *  disagree with what the server will actually persist. */
+function distinctActionCount(actions: TreatmentActionInput[]): number {
+  const keys = new Set(actions.map((a) => `${a.actionType}|${(a.otherDetail ?? '').trim()}`));
+  return keys.size;
+}
+
 /** Exact allowlist of statuses create_incident may open with, mirroring the
  *  backend's own allowlist (migration 0017) exactly -- not a growing
  *  blocklist. Excludes closed/reopened (dedicated flows) and cancelled/
@@ -174,8 +266,31 @@ export const createIncidentSchema = z
      *  any other generated/required field; stored on its own dedicated
      *  column, see migration 0038. */
     note: optionalText(600, 'הערה נוספת'),
+    /** תחום התקלה -- the one new required field the product spec permits
+     *  at creation. Required here in the client regardless of which RPC
+     *  ultimately enforces it server-side (create_incident_v2 always
+     *  does; the legacy create_incident stays permissive for any still-
+     *  cached old client -- see migration 0047). */
+    reportedDomain: incidentDomainSchema,
+    /** Optional, behind the "הוספת חשד ראשוני ופרטי טיפול" disclosure --
+     *  becomes the incident's first current assessment when supplied.
+     *  Omitted entirely (not merely nullable) when the disclosure is left
+     *  untouched, so create_incident/create_incident_v2 never receive the
+     *  key at all in that case. */
+    initialSuspectedCause: suspectedCauseSchema.optional(),
+    initialSuspectedCauseOtherDetail: z.string().max(500, 'פירוט החשד הראשוני: עד 500 תווים').nullable().optional(),
+    /** Optional structured actions already performed before the incident
+     *  was opened -- supplements, never replaces, actionsTaken above. */
+    initialTreatmentActions: z.array(treatmentActionInputSchema).max(10, 'ניתן להוסיף עד 10 פעולות').optional().default([]),
   })
   .superRefine((data, ctx) => {
+    if (data.initialSuspectedCause === 'other' && !(data.initialSuspectedCauseOtherDetail ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['initialSuspectedCauseOtherDetail'],
+        message: 'יש לפרט את החשד הראשוני',
+      });
+    }
     // Unlike every other flow that shares ownerFields (update/close/assign/
     // reopen, which all accept an internal OR a named external handler),
     // opening a NEW incident requires an internal בעל אחריות פנימי
@@ -259,6 +374,16 @@ export const updateIncidentSchema = z
     updateReportedToComms: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
     updateReportedToCommsRecipient: z.string().max(200, 'למי דווח: עד 200 תווים').nullable().optional(),
     updateWisdomReported: z.union([z.literal('yes'), z.literal('no'), z.literal('')]),
+    /** Optional, behind the "הוספת פרטי טיפול" disclosure. Genuinely
+     *  `.optional()` (not defaulted) -- an omitted key means "untouched,"
+     *  never reconfirmed on every update; only an actively chosen value
+     *  is sent, and only when it differs from the incident's current one
+     *  does the RPC record a change. */
+    suspectedCause: suspectedCauseSchema.optional(),
+    suspectedCauseOtherDetail: z.string().max(500, 'פירוט החשד: עד 500 תווים').nullable().optional(),
+    /** Cumulative structured actions performed in this update --
+     *  supplements, never replaces, actionsTaken above. */
+    treatmentActions: z.array(treatmentActionInputSchema).max(10, 'ניתן להוסיף עד 10 פעולות').optional().default([]),
   })
   .superRefine((data, ctx) => {
     if (!data.ownerUserId) {
@@ -269,6 +394,13 @@ export const updateIncidentSchema = z
       });
     }
     checkExternalHandlerNameRequiredOnSupply(data, ctx);
+    if (data.suspectedCause === 'other' && !(data.suspectedCauseOtherDetail ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['suspectedCauseOtherDetail'],
+        message: 'יש לפרט את החשד',
+      });
+    }
     if (data.updateReportedToOps === '') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -306,19 +438,36 @@ export const updateIncidentSchema = z
 
 export type UpdateIncidentInput = z.infer<typeof updateIncidentSchema>;
 
-/** Technician updates: content only, no protected fields. */
-export const technicianUpdateSchema = z.object({
-  expectedVersion: z.number(),
-  eventTime: z.string().min(1, 'יש להזין שעת עדכון'),
-  actionsTaken: nonBlank(4000, 'פעולות שבוצעו'),
-  findings: optionalText(4000, 'ממצאים'),
-  nextSteps: optionalText(2000, 'הצעות להמשך'),
-  currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
-  /** Optional free-text "הערה נוספת" -- content-only, exactly like every
-   *  other field on this schema; grants no protected-field capability. See
-   *  migration 0038. */
-  note: optionalText(600, 'הערה נוספת'),
-});
+/** Technician updates: content only, no protected fields. Optional cause/
+ *  action classification IS permitted here -- it's operational technical
+ *  detail, not one of the protected owner/status/severity/reporting
+ *  fields, and the spec explicitly grants it to "anyone currently allowed
+ *  to post the relevant incident update." */
+export const technicianUpdateSchema = z
+  .object({
+    expectedVersion: z.number(),
+    eventTime: z.string().min(1, 'יש להזין שעת עדכון'),
+    actionsTaken: nonBlank(4000, 'פעולות שבוצעו'),
+    findings: optionalText(4000, 'ממצאים'),
+    nextSteps: optionalText(2000, 'הצעות להמשך'),
+    currentStatusText: nonBlank(1000, 'סטטוס נוכחי'),
+    /** Optional free-text "הערה נוספת" -- content-only, exactly like every
+     *  other field on this schema; grants no protected-field capability. See
+     *  migration 0038. */
+    note: optionalText(600, 'הערה נוספת'),
+    suspectedCause: suspectedCauseSchema.optional(),
+    suspectedCauseOtherDetail: z.string().max(500, 'פירוט החשד: עד 500 תווים').nullable().optional(),
+    treatmentActions: z.array(treatmentActionInputSchema).max(10, 'ניתן להוסיף עד 10 פעולות').optional().default([]),
+  })
+  .superRefine((data, ctx) => {
+    if (data.suspectedCause === 'other' && !(data.suspectedCauseOtherDetail ?? '').trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['suspectedCauseOtherDetail'],
+        message: 'יש לפרט את החשד',
+      });
+    }
+  });
 
 export type TechnicianUpdateInput = z.infer<typeof technicianUpdateSchema>;
 
@@ -337,6 +486,33 @@ export const closeIncidentSchema = z
     ...optionalInternalOwnerField,
     ...externalHandlerFields,
     ...reportedToOpsFields,
+    // Structured closure classification -- required in the client
+    // regardless of which RPC ultimately enforces it server-side
+    // (close_incident_v2 always does on a full-readiness close; the
+    // legacy close_incident stays permissive for any still-cached old
+    // client -- see migration 0047). Only meaningful/sent when
+    // readiness === 'full': CloseDialog shows this whole block only then,
+    // mirroring how followUpNotes/ownerUserId above are shown only when
+    // readiness !== 'full'.
+    // `.optional()`, not required at the base-type level: these three are
+    // only ever collected (and only ever sent) when readiness === 'full' --
+    // a partial-readiness close never asks for them at all. Required-ness
+    // is enforced in the superRefine below, exactly like followUpNotes/
+    // ownerUserId's own "required only when readiness !== 'full'" check
+    // just above it.
+    confirmedCause: confirmedCauseSchema.optional(),
+    confirmedCauseOtherDetail: z.string().max(500, 'פירוט הגורם שאומת: עד 500 תווים').nullable().optional(),
+    treatmentOutcome: treatmentOutcomeSchema.optional(),
+    treatmentOutcomeOtherDetail: z.string().max(500, 'פירוט תוצאת הטיפול: עד 500 תווים').nullable().optional(),
+    resolutionAttribution: resolutionAttributionSchema.optional(),
+    resolutionAttributionOtherDetail: z.string().max(500, 'פירוט: עד 500 תווים').nullable().optional(),
+    /** Previously-recorded IncidentTreatmentAction ids selected for this
+     *  closure's resolution attribution. */
+    resolutionActionIds: z.array(z.string()).max(20, 'ניתן לבחור עד 20 פעולות').optional().default([]),
+    /** New treatment actions recorded inline during closure -- an ARRAY,
+     *  since combination_of_actions may need two brand-new actions even
+     *  when none were recorded earlier. */
+    newTreatmentActions: z.array(treatmentActionInputSchema).max(10, 'ניתן להוסיף עד 10 פעולות').optional().default([]),
   })
   .superRefine((data, ctx) => {
     if (data.readiness !== 'full') {
@@ -352,6 +528,83 @@ export const closeIncidentSchema = z
           code: z.ZodIssueCode.custom,
           path: ['ownerUserId'],
           message: 'כאשר הכשירות אינה מלאה יש לקבוע גורם מטפל אחראי המשך',
+        });
+      }
+    } else {
+      if (!data.confirmedCause) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['confirmedCause'],
+          message: 'יש לבחור את הגורם שאומת',
+        });
+      }
+      if (!data.treatmentOutcome) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['treatmentOutcome'],
+          message: 'יש לבחור את תוצאת הטיפול',
+        });
+      }
+      if (!data.resolutionAttribution) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['resolutionAttribution'],
+          message: 'יש לבחור מה ידוע על מה שהוביל לפתרון',
+        });
+      }
+      if (data.confirmedCause === 'other' && !(data.confirmedCauseOtherDetail ?? '').trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['confirmedCauseOtherDetail'],
+          message: 'יש לפרט את הגורם שאומת',
+        });
+      }
+      if (data.treatmentOutcome === 'other' && !(data.treatmentOutcomeOtherDetail ?? '').trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['treatmentOutcomeOtherDetail'],
+          message: 'יש לפרט את תוצאת הטיפול',
+        });
+      }
+      if (data.resolutionAttribution === 'other' && !(data.resolutionAttributionOtherDetail ?? '').trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['resolutionAttributionOtherDetail'],
+          message: 'יש לפרט מה ידוע על מה שהוביל לפתרון',
+        });
+      }
+      if (data.treatmentOutcome === 'resolved_without_action' && data.resolutionAttribution !== 'no_action_taken') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['resolutionAttribution'],
+          message: "כאשר התקלה נעלמה ללא פעולה, מה שהוביל לפתרון חייב להיות 'לא בוצעה פעולה'",
+        });
+      }
+      const linkedCount = data.resolutionActionIds.length + distinctActionCount(data.newTreatmentActions);
+      if (data.resolutionAttribution === 'specific_action' && linkedCount !== 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['resolutionActionIds'],
+          message: 'יש לבחור פעולה מסוימת אחת בדיוק',
+        });
+      }
+      if (data.resolutionAttribution === 'combination_of_actions' && linkedCount < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['resolutionActionIds'],
+          message: 'יש לבחור לפחות שתי פעולות שונות',
+        });
+      }
+      if (
+        (data.resolutionAttribution === 'undetermined' ||
+          data.resolutionAttribution === 'no_action_taken' ||
+          data.resolutionAttribution === 'external_party_no_details') &&
+        linkedCount !== 0
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['resolutionActionIds'],
+          message: 'לא ניתן לקשר פעולות עבור בחירה זו',
         });
       }
     }

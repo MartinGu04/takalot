@@ -30,6 +30,9 @@ function makeIncident(overrides: Partial<Incident> = {}): Incident {
     severity: 'medium',
     status: 'in_progress',
     operationalImpact: 'impact',
+    reportedDomain: null,
+    currentSuspectedCause: null,
+    currentSuspectedCauseOtherDetail: null,
     ownerUserId: 'u-admin',
     ownerExternalName: null,
     externalHandlerName: null,
@@ -135,6 +138,71 @@ describe('UpdateDialog: a legacy/internal current status is read-only context, n
   it('does not show the read-only context when the incident already sits in one of the three recognized categories', () => {
     renderDialog('monitoring');
     expect(screen.queryByText(/סטטוס נוכחי:/)).not.toBeInTheDocument();
+  });
+});
+
+// makeIncident()'s defaults are already a legacy-shaped incident:
+// reportedDomain/currentSuspectedCause/currentSuspectedCauseOtherDetail all
+// null, no treatment-action or closure-classification rows. The "הוספת פרטי
+// טיפול" disclosure must render unconditionally regardless of that -- its
+// rendering has no dependency on reportedDomain, currentSuspectedCause, or
+// any prior classification data existing at all.
+describe('UpdateDialog: "הוספת פרטי טיפול" section -- unconditional, and the null-vs-explicit-unknown distinction', () => {
+  it('renders the disclosure for a legacy incident (reportedDomain/currentSuspectedCause both null)', () => {
+    renderDialog('in_progress');
+    expect(screen.getByRole('button', { name: 'הוספת פרטי טיפול' })).toBeInTheDocument();
+  });
+
+  it('shows "לא הוזנה הערכת גורם" when currentSuspectedCause is null (never assessed)', async () => {
+    renderDialog('in_progress');
+    await (await import('@testing-library/user-event')).default.setup().click(
+      screen.getByRole('button', { name: 'הוספת פרטי טיפול' }),
+    );
+    expect(screen.getByText(/^חשד נוכחי: לא הוזנה הערכת גורם\./)).toBeInTheDocument();
+  });
+
+  it('shows the distinct "הגורם טרם ידוע" label when currentSuspectedCause is the explicit \'unknown\' value -- never conflated with null', async () => {
+    const incident = makeIncident({ status: 'in_progress', currentSuspectedCause: 'unknown' });
+    render(
+      <UpdateDialog
+        open
+        onClose={() => {}}
+        incident={incident}
+        onSubmitFull={() => {}}
+        onSubmitTechnician={() => {}}
+        submitting={false}
+      />,
+    );
+    await (await import('@testing-library/user-event')).default.setup().click(
+      screen.getByRole('button', { name: 'הוספת פרטי טיפול' }),
+    );
+    expect(screen.getByText(/^חשד נוכחי: הגורם טרם ידוע\./)).toBeInTheDocument();
+  });
+
+  it('a standard submission requires zero interaction with the disclosure', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const onSubmitFull = vi.fn();
+    const incident = makeIncident({ status: 'in_progress' });
+    render(
+      <UpdateDialog
+        open
+        onClose={() => {}}
+        incident={incident}
+        onSubmitFull={onSubmitFull}
+        onSubmitTechnician={() => {}}
+        submitting={false}
+      />,
+    );
+    await user.type(screen.getByLabelText(/^פעולות שבוצעו מאז העדכון הקודם/), 'פעולות שבוצעו');
+    await user.type(screen.getByLabelText(/^סטטוס נוכחי/), 'המצב הנוכחי');
+    await user.selectOptions(screen.getByLabelText(/^דווח למבצעים\?/), 'not_required');
+    await user.selectOptions(screen.getByLabelText(/^האם דווח לתקשוב למבצעים\?/), 'no');
+    await user.selectOptions(screen.getByLabelText(/^האם עודכן ב-WISDOM\?/), 'no');
+    await user.click(screen.getByRole('button', { name: 'שמירת עדכון' }));
+    expect(onSubmitFull).toHaveBeenCalledTimes(1);
+    // Never sends suspectedCause/suspectedCauseOtherDetail when untouched.
+    expect(onSubmitFull.mock.calls[0][0]).not.toHaveProperty('suspectedCause');
+    expect(onSubmitFull.mock.calls[0][0]).toHaveProperty('treatmentActions', []);
   });
 });
 

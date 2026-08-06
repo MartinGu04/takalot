@@ -37,8 +37,9 @@ async function fillMinimalValidForm(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(screen.getByLabelText(/^מערכת \/ עמדה/), 'sys-alpha');
   await user.selectOptions(screen.getByLabelText(/^מיקום/), 'loc-1');
   await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה לצורך בדיקה אוטומטית');
+  await user.selectOptions(screen.getByLabelText(/^תחום התקלה/), 'equipment');
   await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה אוטומטית');
-  await user.type(screen.getByLabelText(/^פעולות שבוצעו עד כה/), 'נבדק ראשונית לצורך הבדיקה');
+  await user.type(screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/), 'נבדק ראשונית לצורך הבדיקה');
   await user.selectOptions(screen.getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
 }
 
@@ -174,8 +175,9 @@ describe('IncidentCreatePage: form behavior', () => {
     await user.selectOptions(screen.getByLabelText(/^מערכת \/ עמדה/), 'sys-alpha');
     await user.selectOptions(screen.getByLabelText(/^מיקום/), 'loc-1');
     await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה לצורך בדיקה');
+    await user.selectOptions(screen.getByLabelText(/^תחום התקלה/), 'equipment');
     await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה');
-    await user.type(screen.getByLabelText(/^פעולות שבוצעו עד כה/), 'נבדק ראשונית');
+    await user.type(screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/), 'נבדק ראשונית');
     // The owner now defaults to the signed-in user, so "leaving it
     // unselected" must be done explicitly -- clearing a default is itself a
     // manual choice the app must respect (never silently re-forced).
@@ -511,7 +513,7 @@ describe('IncidentCreatePage: form resets fully after a successful creation', ()
 
     expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe('');
     expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe('');
-    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
     // The internal owner defaults again to the current signed-in user, not
@@ -524,7 +526,7 @@ describe('IncidentCreatePage: 600-character limit (פעולות שבוצעו ע�
   it('caps the field at maxLength 600 and shows a live character counter', async () => {
     const user = await loginAs('login-u-admin');
     await goToCreatePage(user);
-    const actionsTaken = screen.getByLabelText(/^פעולות שבוצעו עד כה/);
+    const actionsTaken = screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/);
     expect(actionsTaken).toHaveAttribute('maxLength', '600');
     // Two counters legitimately start at "0/600": this field's own, and the
     // separate optional "הערה נוספת" field's (also capped at 600).
@@ -564,7 +566,7 @@ describe('IncidentCreatePage: draft discarded on navigating away from the create
     expect((screen.getByLabelText(/^מיקום/) as HTMLSelectElement).value).toBe('');
     expect((screen.getByLabelText(/^תיאור התקלה/) as HTMLTextAreaElement).value).toBe('');
     expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe('');
-    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe('');
     expect(screen.getByLabelText('האם דווח לתקשוב למבצעים?')).toHaveValue('no');
     expect(screen.queryByLabelText(/^למי דווח\?/)).not.toBeInTheDocument();
     expect(screen.getByLabelText('האם נפתחה תקלה ב-WISDOM?')).toHaveValue('no');
@@ -611,7 +613,7 @@ describe('IncidentCreatePage: restoring a draft saved before the external-handle
     expect((screen.getByLabelText(/^השפעה מבצעית/) as HTMLTextAreaElement).value).toBe(
       'השפעה שנשמרה בטיוטה ישנה',
     );
-    expect((screen.getByLabelText(/^פעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe(
+    expect((screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/) as HTMLTextAreaElement).value).toBe(
       'פעולות שנשמרו בטיוטה ישנה',
     );
     expect(screen.getByLabelText(/^מערכת \/ עמדה/)).toHaveValue('sys-alpha');
@@ -729,5 +731,37 @@ describe('IncidentCreatePage: WhatsApp notification-copy modal (post-creation)',
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     await user.click(within(dialog).getByRole('button', { name: 'העתקת הודעה' }));
     expect(writeText).toHaveBeenCalledWith(message);
+  });
+});
+
+// The free-text field's label and the structured initial-classification
+// section's own label/helper text were revised to make clear the structured
+// action types SUPPLEMENT the free-text explanation, never replace it --
+// the section stays collapsed by default and the low-friction mobile layout
+// is unaffected.
+describe('IncidentCreatePage: revised action-field labels and helper text (duplicate-looking fields clarification)', () => {
+  it('renders the free-text field under its revised label "פירוט הפעולות שבוצעו עד כה", not the old "פעולות שבוצעו עד כה"', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    expect(screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/)).toBeInTheDocument();
+    // The exact old label text is no longer a field's accessible name --
+    // exact-match (not substring/regex) so the new, longer label (which
+    // legitimately contains the old text as a substring) doesn't self-match.
+    expect(screen.queryByLabelText('פעולות שבוצעו עד כה')).not.toBeInTheDocument();
+  });
+
+  it('the optional classification disclosure is collapsed by default, and once opened shows the structured-action label and helper text distinguishing it from the free-text field above', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+
+    // Collapsed by default -- no structured-action UI visible yet.
+    expect(screen.queryByText('סיווג הפעולות שתוארו למעלה')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'הוספת חשד ראשוני ופרטי טיפול' }));
+
+    expect(screen.getByText('סיווג הפעולות שתוארו למעלה')).toBeInTheDocument();
+    expect(
+      screen.getByText('אין צורך לכתוב שוב — בחר רק את סוגי הפעולות לצורך מעקב וניתוח.'),
+    ).toBeInTheDocument();
   });
 });

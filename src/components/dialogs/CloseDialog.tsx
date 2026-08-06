@@ -1,12 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Incident } from '../../domain/types';
-import { closeIncidentSchema, type CloseIncidentInput } from '../../domain/schemas';
-import { readinessLabels, reportedToOpsLabels } from '../../domain/labels';
+import type { ConfirmedCause, Incident, ResolutionAttribution, SuspectedCause, TreatmentOutcome } from '../../domain/types';
+import { closeIncidentSchema, type CloseIncidentInput, type TreatmentActionInput } from '../../domain/schemas';
+import {
+  readinessLabels,
+  reportedToOpsLabels,
+  confirmedCauseLabels,
+  CONFIRMED_CAUSE_ORDER,
+  treatmentOutcomeLabels,
+  TREATMENT_OUTCOME_ORDER,
+  resolutionAttributionLabels,
+  RESOLUTION_ATTRIBUTION_ORDER,
+  treatmentActionTypeLabels,
+} from '../../domain/labels';
 import { formatDuration, isoToLocalInput, localInputToIso } from '../../lib/time';
 import { Dialog, Field, Input, Select, Textarea, Button, DateTimeLocalInput } from '../ui';
 import { OwnerField } from '../OwnerField';
 import { ExternalPartyFields } from '../ExternalPartyFields';
-import { useProfiles } from '../../data/hooks';
+import { TreatmentActionPicker } from '../TreatmentActionPicker';
+import { useProfiles, useIncidentTreatmentActions } from '../../data/hooks';
+
+/** Maps a current suspected cause to its confirmed-cause counterpart for
+ *  the (non-binding) closure suggestion chip: the two enums share every
+ *  literal value except suspectedCause's 'unknown'/confirmedCause's
+ *  'undetermined' (the same concept, different name) and 'other' (never
+ *  suggested -- too ambiguous to pre-fill, it needs its own detail
+ *  regardless). Returns null when there is nothing to suggest. */
+function suggestConfirmedCause(cause: SuspectedCause | null): ConfirmedCause | null {
+  if (!cause || cause === 'other') return null;
+  if (cause === 'unknown') return 'undetermined';
+  return cause;
+}
 
 export function CloseDialog({
   open,
@@ -22,6 +45,11 @@ export function CloseDialog({
   submitting: boolean;
 }) {
   const { data: profiles } = useProfiles();
+  const { data: allTreatmentActions } = useIncidentTreatmentActions(incident.id);
+  // Only actions recorded during the CURRENT (still-open) cycle are
+  // selectable here -- an action from a previous, already-closed cycle
+  // belongs to that cycle's own history, not this one.
+  const cycleActions = (allTreatmentActions ?? []).filter((a) => a.cycleNumber === incident.reopenCount);
   const [eventTime, setEventTime] = useState(() => isoToLocalInput(new Date().toISOString()));
   const [rootCause, setRootCause] = useState('');
   const [resolution, setResolution] = useState('');
@@ -39,7 +67,30 @@ export function CloseDialog({
   const [error, setError] = useState<string | undefined>();
   const [confirming, setConfirming] = useState(false);
 
+  // Structured closure classification -- shown only when readiness is
+  // full (only a genuine close carries a classification at all).
+  const [confirmedCause, setConfirmedCause] = useState<ConfirmedCause | ''>('');
+  const [confirmedCauseOtherDetail, setConfirmedCauseOtherDetail] = useState('');
+  const [treatmentOutcome, setTreatmentOutcome] = useState<TreatmentOutcome | ''>('');
+  const [treatmentOutcomeOtherDetail, setTreatmentOutcomeOtherDetail] = useState('');
+  const [resolutionAttribution, setResolutionAttribution] = useState<ResolutionAttribution | ''>('');
+  const [resolutionAttributionOtherDetail, setResolutionAttributionOtherDetail] = useState('');
+  const [resolutionActionIds, setResolutionActionIds] = useState<string[]>([]);
+  const [newTreatmentActions, setNewTreatmentActions] = useState<TreatmentActionInput[]>([]);
+  const [confirmedCauseError, setConfirmedCauseError] = useState<string | undefined>();
+  const [treatmentOutcomeError, setTreatmentOutcomeError] = useState<string | undefined>();
+  const [resolutionAttributionError, setResolutionAttributionError] = useState<string | undefined>();
+
   const fullyReady = readiness === 'full';
+  // 'התקלה נעלמה ללא פעולה' forces 'לא בוצעה פעולה' as a fixed consequence
+  // -- never an editable control while this outcome is selected, since the
+  // DB rejects any other combination outright (see migration 0046's
+  // incident_closure_resolved_without_action_requires_no_action CHECK).
+  const outcomeForcesNoAction = treatmentOutcome === 'resolved_without_action';
+  const effectiveResolutionAttribution: ResolutionAttribution | '' = outcomeForcesNoAction
+    ? 'no_action_taken'
+    : resolutionAttribution;
+  const suggestedConfirmedCause = suggestConfirmedCause(incident.currentSuspectedCause);
 
   // This dialog stays mounted across opens/closes (unlike UpdateDialog,
   // which remounts fresh each time), so ownerUserId/external-handler
@@ -86,6 +137,17 @@ export function CloseDialog({
     setNote('');
     setConfirming(false);
     setError(undefined);
+    setConfirmedCause('');
+    setConfirmedCauseOtherDetail('');
+    setTreatmentOutcome('');
+    setTreatmentOutcomeOtherDetail('');
+    setResolutionAttribution('');
+    setResolutionAttributionOtherDetail('');
+    setResolutionActionIds([]);
+    setNewTreatmentActions([]);
+    setConfirmedCauseError(undefined);
+    setTreatmentOutcomeError(undefined);
+    setResolutionAttributionError(undefined);
     onClose();
   };
 
@@ -117,6 +179,17 @@ export function CloseDialog({
       reportedToOps,
       reportedToOpsRecipient: reportedToOps === 'yes' ? reportedToOpsRecipient : null,
       note,
+      // Only meaningful on a genuine (full-readiness) close -- '' becomes
+      // `undefined` (unanswered), which the schema's own superRefine
+      // rejects with a clear Hebrew message when readiness === 'full'.
+      confirmedCause: fullyReady ? confirmedCause || undefined : undefined,
+      confirmedCauseOtherDetail: confirmedCauseOtherDetail || undefined,
+      treatmentOutcome: fullyReady ? treatmentOutcome || undefined : undefined,
+      treatmentOutcomeOtherDetail: treatmentOutcomeOtherDetail || undefined,
+      resolutionAttribution: fullyReady ? effectiveResolutionAttribution || undefined : undefined,
+      resolutionAttributionOtherDetail: resolutionAttributionOtherDetail || undefined,
+      resolutionActionIds: outcomeForcesNoAction ? [] : resolutionActionIds,
+      newTreatmentActions: outcomeForcesNoAction ? [] : newTreatmentActions,
     });
 
   const proceedToConfirm = () => {
@@ -129,16 +202,45 @@ export function CloseDialog({
     }
     const parsed = parsedInput();
     if (!parsed.success) {
+      const classificationPaths = new Set([
+        'confirmedCause',
+        'confirmedCauseOtherDetail',
+        'treatmentOutcome',
+        'treatmentOutcomeOtherDetail',
+        'resolutionAttribution',
+        'resolutionAttributionOtherDetail',
+        'resolutionActionIds',
+      ]);
       const ownerIssue = parsed.error.issues.find((i) => i.path[0] === 'ownerUserId');
       const extIssue = parsed.error.issues.find((i) => i.path[0] === 'externalHandlerName');
-      const otherIssue = parsed.error.issues.find((i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName');
+      const confirmedCauseIssue = parsed.error.issues.find(
+        (i) => i.path[0] === 'confirmedCause' || i.path[0] === 'confirmedCauseOtherDetail',
+      );
+      const treatmentOutcomeIssue = parsed.error.issues.find(
+        (i) => i.path[0] === 'treatmentOutcome' || i.path[0] === 'treatmentOutcomeOtherDetail',
+      );
+      const resolutionIssue = parsed.error.issues.find(
+        (i) =>
+          i.path[0] === 'resolutionAttribution' ||
+          i.path[0] === 'resolutionAttributionOtherDetail' ||
+          i.path[0] === 'resolutionActionIds',
+      );
+      const otherIssue = parsed.error.issues.find(
+        (i) => i.path[0] !== 'ownerUserId' && i.path[0] !== 'externalHandlerName' && !classificationPaths.has(String(i.path[0])),
+      );
       setOwnerError(ownerIssue?.message);
       setExtError(extIssue?.message);
+      setConfirmedCauseError(confirmedCauseIssue?.message);
+      setTreatmentOutcomeError(treatmentOutcomeIssue?.message);
+      setResolutionAttributionError(resolutionIssue?.message);
       setError(otherIssue?.message);
       return;
     }
     setOwnerError(undefined);
     setExtError(undefined);
+    setConfirmedCauseError(undefined);
+    setTreatmentOutcomeError(undefined);
+    setResolutionAttributionError(undefined);
     setError(undefined);
     setConfirming(true);
   };
@@ -255,6 +357,173 @@ export function CloseDialog({
               </>
             )}
           </Field>
+          {fullyReady && (
+            <div className="flex flex-col gap-3 rounded-xl border border-hairline p-3">
+              <p className="text-sm font-semibold text-text-primary">סיווג סגירה</p>
+              <Field label="הגורם שאומת" required error={confirmedCauseError}>
+                {(a) => (
+                  <Select
+                    {...a}
+                    value={confirmedCause}
+                    onChange={(e) => setConfirmedCause(e.target.value as ConfirmedCause | '')}
+                  >
+                    <option value="">— בחירה —</option>
+                    {CONFIRMED_CAUSE_ORDER.map((c) => (
+                      <option key={c} value={c}>
+                        {confirmedCauseLabels[c]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              {confirmedCause === '' && suggestedConfirmedCause && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmedCause(suggestedConfirmedCause)}
+                  className="self-start rounded-lg border border-brand-300 bg-brand-50 px-2.5 py-1.5 text-xs font-medium text-brand-900 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-200 dark:hover:bg-brand-900/60"
+                >
+                  החשד האחרון: {confirmedCauseLabels[suggestedConfirmedCause]} — לחיצה לבחירה
+                </button>
+              )}
+              {confirmedCause === 'other' && (
+                <Field label="פירוט הגורם שאומת" required>
+                  {(a) => (
+                    <Input
+                      {...a}
+                      value={confirmedCauseOtherDetail}
+                      onChange={(e) => setConfirmedCauseOtherDetail(e.target.value)}
+                      maxLength={500}
+                    />
+                  )}
+                </Field>
+              )}
+
+              <Field label="תוצאת הטיפול" required error={treatmentOutcomeError}>
+                {(a) => (
+                  <Select
+                    {...a}
+                    value={treatmentOutcome}
+                    onChange={(e) => {
+                      const next = e.target.value as TreatmentOutcome | '';
+                      setTreatmentOutcome(next);
+                      if (next === 'resolved_without_action') {
+                        setResolutionActionIds([]);
+                        setNewTreatmentActions([]);
+                      }
+                    }}
+                  >
+                    <option value="">— בחירה —</option>
+                    {TREATMENT_OUTCOME_ORDER.map((o) => (
+                      <option key={o} value={o}>
+                        {treatmentOutcomeLabels[o]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              {treatmentOutcome === 'other' && (
+                <Field label="פירוט תוצאת הטיפול" required>
+                  {(a) => (
+                    <Input
+                      {...a}
+                      value={treatmentOutcomeOtherDetail}
+                      onChange={(e) => setTreatmentOutcomeOtherDetail(e.target.value)}
+                      maxLength={500}
+                    />
+                  )}
+                </Field>
+              )}
+
+              {outcomeForcesNoAction ? (
+                <div className="rounded-lg border border-hairline bg-surface-active px-3 py-2 text-sm">
+                  <p>
+                    <strong>מה ידוע על מה שהוביל לפתרון:</strong> {resolutionAttributionLabels.no_action_taken}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    נגזר אוטומטית מתוצאת הטיפול שנבחרה. כדי לבחור אפשרות אחרת יש לשנות תחילה את תוצאת הטיפול.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <Field label="מה ידוע על מה שהוביל לפתרון?" required error={resolutionAttributionError}>
+                    {(a) => (
+                      <Select
+                        {...a}
+                        value={resolutionAttribution}
+                        onChange={(e) => {
+                          const next = e.target.value as ResolutionAttribution | '';
+                          setResolutionAttribution(next);
+                          if (next !== 'specific_action' && next !== 'combination_of_actions') {
+                            setResolutionActionIds([]);
+                            setNewTreatmentActions([]);
+                          }
+                        }}
+                      >
+                        <option value="">— בחירה —</option>
+                        {RESOLUTION_ATTRIBUTION_ORDER.map((r) => (
+                          <option key={r} value={r}>
+                            {resolutionAttributionLabels[r]}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                  {resolutionAttribution === 'other' && (
+                    <Field label="פירוט" required>
+                      {(a) => (
+                        <Input
+                          {...a}
+                          value={resolutionAttributionOtherDetail}
+                          onChange={(e) => setResolutionAttributionOtherDetail(e.target.value)}
+                          maxLength={500}
+                        />
+                      )}
+                    </Field>
+                  )}
+                  {(resolutionAttribution === 'specific_action' || resolutionAttribution === 'combination_of_actions') && (
+                    <div className="flex flex-col gap-2 rounded-lg border border-hairline p-3">
+                      {cycleActions.length > 0 && (
+                        <fieldset className="flex flex-col gap-1.5">
+                          <legend className="mb-1 text-xs font-semibold text-text-secondary">
+                            פעולות שכבר תועדו בתקלה זו
+                          </legend>
+                          {cycleActions.map((act) => (
+                            <label key={act.id} className="flex min-h-9 items-center gap-2 text-sm">
+                              <input
+                                type={resolutionAttribution === 'specific_action' ? 'radio' : 'checkbox'}
+                                name="resolution-action"
+                                checked={resolutionActionIds.includes(act.id)}
+                                onChange={() => {
+                                  if (resolutionAttribution === 'specific_action') {
+                                    setResolutionActionIds([act.id]);
+                                  } else {
+                                    setResolutionActionIds((ids) =>
+                                      ids.includes(act.id) ? ids.filter((x) => x !== act.id) : [...ids, act.id],
+                                    );
+                                  }
+                                }}
+                                className="size-4"
+                              />
+                              <span>
+                                {treatmentActionTypeLabels[act.actionType]}
+                                {act.actionType === 'other' && act.otherDetail ? ` — ${act.otherDetail}` : ''}
+                              </span>
+                            </label>
+                          ))}
+                        </fieldset>
+                      )}
+                      <TreatmentActionPicker
+                        label="הוספת פעולה שלא תועדה קודם"
+                        actions={newTreatmentActions}
+                        onChange={setNewTreatmentActions}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <p className="text-sm text-muted">משך התקלה למועד הסגירה שנבחר: {estimatedDuration}</p>
           {error && <p role="alert" className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
@@ -268,6 +537,12 @@ export function CloseDialog({
           <div className="rounded-lg bg-surface-active p-3 text-sm">
             <p><strong>משך התקלה:</strong> {estimatedDuration}</p>
             <p className="mt-1"><strong>כשירות:</strong> {readinessLabels[readiness ?? 'full']}</p>
+            {fullyReady && confirmedCause && treatmentOutcome && (
+              <>
+                <p className="mt-1"><strong>הגורם שאומת:</strong> {confirmedCauseLabels[confirmedCause]}</p>
+                <p className="mt-1"><strong>תוצאת הטיפול:</strong> {treatmentOutcomeLabels[treatmentOutcome]}</p>
+              </>
+            )}
             {!fullyReady && (
               <p className="mt-1 text-orange-700 dark:text-orange-400">
                 התקלה לא תיסגר — היא תסומן כ"כשירות חלקית" ותישאר בתקלות הפעילות עד השלמת פעולות ההמשך.

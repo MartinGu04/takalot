@@ -4,8 +4,11 @@ import type {
   AppNotification,
   AuditLog,
   Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
   IncidentEvent,
   IncidentStatus,
+  IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
@@ -264,6 +267,22 @@ export interface Repository {
   getIncident(session: Session, id: string): Promise<Incident | null>;
   getIncidentEvents(session: Session, incidentId: string): Promise<IncidentEvent[]>;
   getIncidentUpdates(session: Session, incidentId: string): Promise<IncidentUpdate[]>;
+  /** Full structured-cause-assessment history for one incident, across
+   *  every closure cycle -- used to render the Timeline's inline
+   *  creation-card assessment and every later cause_assessment_changed
+   *  event's context. */
+  getIncidentCauseAssessments(session: Session, incidentId: string): Promise<IncidentCauseAssessment[]>;
+  /** Every structured treatment action recorded for one incident, across
+   *  every closure cycle -- used by the Timeline (joined by operationId
+   *  onto the event that recorded them) and by CloseDialog's action
+   *  picker (filtered to the current cycle). */
+  getIncidentTreatmentActions(session: Session, incidentId: string): Promise<IncidentTreatmentAction[]>;
+  /** Every closure classification recorded for one incident -- one row
+   *  per genuine (full-readiness) closure cycle; absent for a cycle
+   *  closed without structured classification (legacy incident, or a
+   *  closure made through the still-permissive legacy close_incident
+   *  RPC). */
+  getIncidentClosures(session: Session, incidentId: string): Promise<IncidentClosureClassification[]>;
   createIncident(session: Session, input: CreateIncidentInput): Promise<Incident>;
   acknowledgeIncident(session: Session, incidentId: string, expectedVersion: number): Promise<Incident>;
   updateIncident(session: Session, incidentId: string, input: UpdateIncidentInput): Promise<Incident>;

@@ -6,7 +6,10 @@ import type {
   AppNotification,
   AuditLog,
   Incident,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
   IncidentEvent,
+  IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
@@ -125,8 +128,13 @@ function wrapReferenceData(error: { message: string; code?: string } | null): vo
   }
 }
 
-// snake_case rows → camelCase domain objects
-const mapIncident = (r: Record<string, unknown>): Incident => ({
+// snake_case rows → camelCase domain objects. Exported (not just used
+// internally) so the exact same mapping logic can be reused wherever raw
+// snake_case rows are read outside a live SupabaseClient -- e.g. an
+// integration test running these queries directly against a local
+// Postgres instance via psql, verifying the real mapper output against
+// the real RPC/schema, not a reimplementation of it.
+export const mapIncident = (r: Record<string, unknown>): Incident => ({
   id: r.id as string,
   number: r.number as string,
   version: r.version as number,
@@ -168,9 +176,102 @@ const mapIncident = (r: Record<string, unknown>): Incident => ({
   cancelledAt: r.cancelled_at as string | null,
   cancelledBy: r.cancelled_by as string | null,
   cancellationReason: r.cancellation_reason as string | null,
+  reportedDomain: r.reported_domain as Incident['reportedDomain'],
+  currentSuspectedCause: r.current_suspected_cause as Incident['currentSuspectedCause'],
+  currentSuspectedCauseOtherDetail: r.current_suspected_cause_other_detail as string | null,
 });
 
-const mapProfile = (r: Record<string, unknown>): Profile => ({
+export const mapCauseAssessment = (r: Record<string, unknown>): IncidentCauseAssessment => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  cause: r.cause as IncidentCauseAssessment['cause'],
+  otherDetail: r.other_detail as string | null,
+  cycleNumber: r.cycle_number as number,
+  recordedBy: r.recorded_by as string,
+  eventTime: r.event_time as string | null,
+  recordedAt: r.recorded_at as string,
+  operationId: r.operation_id as string | null,
+  createdAt: r.created_at as string,
+});
+
+export const mapTreatmentAction = (r: Record<string, unknown>): IncidentTreatmentAction => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  actionType: r.action_type as IncidentTreatmentAction['actionType'],
+  otherDetail: r.other_detail as string | null,
+  cycleNumber: r.cycle_number as number,
+  eventTime: r.event_time as string | null,
+  recordedBy: r.recorded_by as string,
+  recordedAt: r.recorded_at as string,
+  operationId: r.operation_id as string | null,
+  createdAt: r.created_at as string,
+});
+
+// incident_closures rows are joined with their linked action ids via a
+// nested select on the incident_closure_resolution_actions junction table
+// (see getIncidentClosures) -- the raw row therefore carries an extra
+// `incident_closure_resolution_actions: { treatment_action_id: string }[]`
+// array that this mapper flattens into resolutionActionIds.
+export const mapClosure = (r: Record<string, unknown>): IncidentClosureClassification => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  cycleNumber: r.cycle_number as number,
+  operationId: r.operation_id as string | null,
+  confirmedCause: r.confirmed_cause as IncidentClosureClassification['confirmedCause'],
+  confirmedCauseOtherDetail: r.confirmed_cause_other_detail as string | null,
+  treatmentOutcome: r.treatment_outcome as IncidentClosureClassification['treatmentOutcome'],
+  treatmentOutcomeOtherDetail: r.treatment_outcome_other_detail as string | null,
+  resolutionAttribution: r.resolution_attribution as IncidentClosureClassification['resolutionAttribution'],
+  resolutionAttributionOtherDetail: r.resolution_attribution_other_detail as string | null,
+  resolutionActionIds: Array.isArray(r.incident_closure_resolution_actions)
+    ? (r.incident_closure_resolution_actions as Array<{ treatment_action_id: string }>).map(
+        (link) => link.treatment_action_id,
+      )
+    : [],
+  recordedBy: r.recorded_by as string,
+  eventTime: r.event_time as string,
+  recordedAt: r.recorded_at as string,
+  createdAt: r.created_at as string,
+});
+
+export const mapIncidentEvent = (r: Record<string, unknown>): IncidentEvent => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  type: r.type as IncidentEvent['type'],
+  actorId: r.actor_id as string | null,
+  actorLabel: r.actor_label as string | null,
+  eventTime: r.event_time as string,
+  serverTime: r.server_time as string,
+  field: r.field as string | null,
+  oldValue: r.old_value as string | null,
+  newValue: r.new_value as string | null,
+  note: r.note as string | null,
+  userNote: (r.user_note as string | null | undefined) ?? null,
+  refId: r.ref_id as string | null,
+  createdAt: r.created_at as string,
+  operationId: (r.operation_id as string | null | undefined) ?? null,
+});
+
+export const mapIncidentUpdate = (r: Record<string, unknown>): IncidentUpdate => ({
+  id: r.id as string,
+  incidentId: r.incident_id as string,
+  authorId: r.author_id as string,
+  eventTime: r.event_time as string,
+  serverTime: r.server_time as string,
+  actionsTaken: r.actions_taken as string,
+  findings: r.findings as string,
+  nextSteps: r.next_steps as string,
+  currentStatusText: r.current_status_text as string | null,
+  updateReportedToOps: r.update_reported_to_ops as IncidentUpdate['updateReportedToOps'],
+  updateReportedToOpsRecipient: r.update_reported_to_ops_recipient as string | null,
+  updateReportedToComms: r.update_reported_to_comms as boolean | null,
+  updateReportedToCommsRecipient: r.update_reported_to_comms_recipient as string | null,
+  updateWisdomReported: r.update_wisdom_reported as boolean | null,
+  userNote: (r.user_note as string | null | undefined) ?? null,
+  createdAt: r.created_at as string,
+});
+
+export const mapProfile = (r: Record<string, unknown>): Profile => ({
   id: r.id as string,
   fullName: r.full_name as string,
   role: r.role as Role,
@@ -196,7 +297,7 @@ const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
   cancelledAt: r.cancelled_at as string | null,
 });
 
-const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
+export const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
   id: r.id as string,
   name: r.name as string,
   archived: r.archived as boolean,
@@ -205,7 +306,7 @@ const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
   createdAt: r.created_at as string,
 });
 
-const mapLocation = (r: Record<string, unknown>): LocationRecord => ({
+export const mapLocation = (r: Record<string, unknown>): LocationRecord => ({
   id: r.id as string,
   name: r.name as string,
   archived: r.archived as boolean,
@@ -561,23 +662,7 @@ export class SupabaseRepository implements Repository {
       .eq('incident_id', incidentId)
       .order('event_time');
     wrap(error);
-    return (data ?? []).map((r) => ({
-      id: r.id,
-      incidentId: r.incident_id,
-      type: r.type,
-      actorId: r.actor_id,
-      actorLabel: r.actor_label,
-      eventTime: r.event_time,
-      serverTime: r.server_time,
-      field: r.field,
-      oldValue: r.old_value,
-      newValue: r.new_value,
-      note: r.note,
-      userNote: r.user_note ?? null,
-      refId: r.ref_id,
-      createdAt: r.created_at,
-      operationId: r.operation_id ?? null,
-    }));
+    return (data ?? []).map(mapIncidentEvent);
   }
 
   async getIncidentUpdates(_s: Session, incidentId: string): Promise<IncidentUpdate[]> {
@@ -587,28 +672,46 @@ export class SupabaseRepository implements Repository {
       .eq('incident_id', incidentId)
       .order('event_time');
     wrap(error);
-    return (data ?? []).map((r) => ({
-      id: r.id,
-      incidentId: r.incident_id,
-      authorId: r.author_id,
-      eventTime: r.event_time,
-      serverTime: r.server_time,
-      actionsTaken: r.actions_taken,
-      findings: r.findings,
-      nextSteps: r.next_steps,
-      currentStatusText: r.current_status_text,
-      updateReportedToOps: r.update_reported_to_ops,
-      updateReportedToOpsRecipient: r.update_reported_to_ops_recipient,
-      updateReportedToComms: r.update_reported_to_comms,
-      updateReportedToCommsRecipient: r.update_reported_to_comms_recipient,
-      updateWisdomReported: r.update_wisdom_reported,
-      userNote: r.user_note ?? null,
-      createdAt: r.created_at,
-    }));
+    return (data ?? []).map(mapIncidentUpdate);
   }
 
+  async getIncidentCauseAssessments(_s: Session, incidentId: string): Promise<IncidentCauseAssessment[]> {
+    const { data, error } = await this.client
+      .from('incident_cause_assessments')
+      .select('*')
+      .eq('incident_id', incidentId)
+      .order('recorded_at');
+    wrap(error);
+    return (data ?? []).map(mapCauseAssessment);
+  }
+
+  async getIncidentTreatmentActions(_s: Session, incidentId: string): Promise<IncidentTreatmentAction[]> {
+    const { data, error } = await this.client
+      .from('incident_treatment_actions')
+      .select('*')
+      .eq('incident_id', incidentId)
+      .order('recorded_at');
+    wrap(error);
+    return (data ?? []).map(mapTreatmentAction);
+  }
+
+  async getIncidentClosures(_s: Session, incidentId: string): Promise<IncidentClosureClassification[]> {
+    const { data, error } = await this.client
+      .from('incident_closures')
+      .select('*, incident_closure_resolution_actions(treatment_action_id)')
+      .eq('incident_id', incidentId)
+      .order('event_time');
+    wrap(error);
+    return (data ?? []).map(mapClosure);
+  }
+
+  // Calls create_incident_v2 (never the legacy, still-permissive
+  // create_incident): the new frontend always requires reportedDomain, so
+  // it exclusively uses the always-enforcing entry point. The legacy RPC
+  // remains in the database solely for any still-cached old frontend build
+  // to keep working against -- see migration 0047.
   async createIncident(_s: Session, input: CreateIncidentInput): Promise<Incident> {
-    const data = await this.rpc<Record<string, unknown>>('create_incident', { p_input: input });
+    const data = await this.rpc<Record<string, unknown>>('create_incident_v2', { p_input: input });
     return mapIncident(data);
   }
 
@@ -644,8 +747,12 @@ export class SupabaseRepository implements Repository {
     return mapIncident(data);
   }
 
+  // Calls close_incident_v2, for the same reason createIncident above
+  // calls create_incident_v2 -- the new frontend always collects the full
+  // closure classification on a genuine close, so it exclusively uses the
+  // always-enforcing entry point.
   async closeIncident(_s: Session, incidentId: string, input: CloseIncidentInput): Promise<Incident> {
-    const data = await this.rpc<Record<string, unknown>>('close_incident', {
+    const data = await this.rpc<Record<string, unknown>>('close_incident_v2', {
       p_incident_id: incidentId,
       p_input: input,
     });

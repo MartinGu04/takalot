@@ -4,7 +4,15 @@
 // compact subordinate change inside it. operationId=null (legacy) rows are
 // never grouped with anything -- see domain/timelineGrouping.ts. Readable on
 // mobile; does not rely on color, arrows, or strikethrough alone.
-import type { EventType, IncidentEvent, IncidentUpdate, Profile } from '../domain/types';
+import type {
+  EventType,
+  IncidentCauseAssessment,
+  IncidentClosureClassification,
+  IncidentEvent,
+  IncidentTreatmentAction,
+  IncidentUpdate,
+  Profile,
+} from '../domain/types';
 import { groupTimelineEvents } from '../domain/timelineGrouping';
 import {
   eventTypeLabels,
@@ -13,6 +21,12 @@ import {
   statusLabels,
   readinessLabels,
   reportedToOpsLabels,
+  suspectedCauseLabels,
+  confirmedCauseLabels,
+  treatmentOutcomeLabels,
+  resolutionAttributionLabels,
+  treatmentActionTypeLabels,
+  UNASSESSED_CAUSE_LABEL,
 } from '../domain/labels';
 import { formatDateTime, formatDuration, formatDate, formatTime } from '../lib/time';
 import { Avatar } from './ui';
@@ -31,6 +45,10 @@ function valueLabel(field: string | null, value: string | null): string {
   }
   if (field === 'severity' && value in severityLabels) {
     return severityLabels[value as keyof typeof severityLabels];
+  }
+  if (field === 'current_suspected_cause') {
+    if (!value) return UNASSESSED_CAUSE_LABEL;
+    return value in suspectedCauseLabels ? suspectedCauseLabels[value as keyof typeof suspectedCauseLabels] : value;
   }
   if (field === 'next_update_due') return value === 'null' || !value ? 'ללא צפי' : formatDateTime(value);
   if (field === 'status_check_due') return value === 'null' || !value ? 'ללא' : formatDateTime(value);
@@ -58,7 +76,31 @@ const typeIcon: Record<string, string> = {
   status_check_changed: '☑',
   reported_to_ops_room: '↗',
   reported_to_ops_communications: '↗',
+  cause_assessment_changed: '⚑',
 };
+
+/** Compact inline chip list of structured treatment actions sharing one
+ *  operationId -- rendered within/beside the update (or creation) card that
+ *  recorded them, never as a separate timeline event. */
+function TreatmentActionChips({ actions }: { actions: IncidentTreatmentAction[] }) {
+  if (actions.length === 0) return null;
+  return (
+    <div className="mt-1.5">
+      <p className="text-xs font-medium text-secondary">פעולות טיפול שנרשמו:</p>
+      <ul className="mt-1 flex flex-wrap gap-1.5">
+        {actions.map((a) => (
+          <li
+            key={a.id}
+            className="rounded-md border border-hairline bg-surface px-2 py-0.5 text-xs text-text-primary"
+          >
+            {treatmentActionTypeLabels[a.actionType]}
+            {a.actionType === 'other' && a.otherDetail ? ` — ${a.otherDetail}` : ''}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 const CORRECTABLE_TYPES = new Set(['update', 'status_change', 'severity_change', 'impact_change', 'assignment_change']);
 
@@ -249,6 +291,9 @@ export function Timeline({
   onCorrect,
   discoveredAt,
   closedAt,
+  causeAssessments,
+  treatmentActions,
+  closures,
 }: {
   events: IncidentEvent[];
   updates: IncidentUpdate[];
@@ -262,8 +307,32 @@ export function Timeline({
    *  timestamp or the current clock. */
   discoveredAt?: string;
   closedAt?: string | null;
+  /** Structured lifecycle classification data -- all optional so this
+   *  component still renders correctly (simply without these sections) for
+   *  any caller that hasn't wired them up yet. Joined onto the relevant
+   *  primary event by operationId (causeAssessments/treatmentActions) or by
+   *  refId (closures), never rendered as separate timeline events of their
+   *  own. */
+  causeAssessments?: IncidentCauseAssessment[];
+  treatmentActions?: IncidentTreatmentAction[];
+  closures?: IncidentClosureClassification[];
 }) {
   const updatesById = new Map(updates.map((u) => [u.id, u]));
+  const closuresById = new Map((closures ?? []).map((c) => [c.id, c]));
+  const treatmentActionsByOperation = new Map<string, IncidentTreatmentAction[]>();
+  for (const a of treatmentActions ?? []) {
+    if (!a.operationId) continue;
+    const list = treatmentActionsByOperation.get(a.operationId) ?? [];
+    list.push(a);
+    treatmentActionsByOperation.set(a.operationId, list);
+  }
+  const initialCauseByOperation = new Map<string, IncidentCauseAssessment>();
+  for (const c of causeAssessments ?? []) {
+    // Only the initial, creation-time assessment (no known effective time)
+    // is rendered inline this way -- every later change already gets its
+    // own explicit cause_assessment_changed event via FieldChangeRow.
+    if (c.operationId && c.eventTime === null) initialCauseByOperation.set(c.operationId, c);
+  }
   const actorName = (id: string | null, label: string | null) =>
     label ?? (id ? (profiles?.find((p) => p.id === id)?.fullName ?? 'משתמש') : 'המערכת');
 
@@ -305,6 +374,14 @@ export function Timeline({
         const isHumanActor = !!primary.actorId && !primary.actorLabel;
         const actorProfile = isHumanActor ? profiles?.find((p) => p.id === primary.actorId) : undefined;
         const actorDisplayName = actorName(primary.actorId, primary.actorLabel);
+        const groupTreatmentActions = group.operationId ? treatmentActionsByOperation.get(group.operationId) ?? [] : [];
+        const initialCause = group.operationId ? initialCauseByOperation.get(group.operationId) : undefined;
+        const closure = primary.type === 'closed' && primary.refId ? closuresById.get(primary.refId) : undefined;
+        const closureResolvedActions = closure
+          ? closure.resolutionActionIds
+              .map((id) => (treatmentActions ?? []).find((a) => a.id === id))
+              .filter((a): a is IncidentTreatmentAction => !!a)
+          : [];
 
         return (
           <li key={group.operationId ?? primary.id} className="relative flex gap-3 pb-4">
@@ -427,6 +504,54 @@ export function Timeline({
                       <span>{update.updateWisdomReported ? 'כן' : 'לא'}</span>
                     </p>
                   )}
+                </div>
+              )}
+              {primary.type === 'created' && initialCause && (
+                <p className="mt-1.5 text-sm">
+                  <span className="font-medium">חשד ראשוני: </span>
+                  <span>
+                    {suspectedCauseLabels[initialCause.cause]}
+                    {initialCause.cause === 'other' && initialCause.otherDetail ? ` — ${initialCause.otherDetail}` : ''}
+                  </span>
+                  <span className="text-xs text-muted"> — תועד בעת פתיחת התקלה</span>
+                </p>
+              )}
+              {primary.type !== 'closed' && <TreatmentActionChips actions={groupTreatmentActions} />}
+              {primary.type === 'closed' && closure && (
+                <div className="mt-1.5 rounded-lg bg-surface-active p-2.5 text-sm">
+                  <p>
+                    <span className="font-medium">הגורם שאומת: </span>
+                    <span>
+                      {confirmedCauseLabels[closure.confirmedCause]}
+                      {closure.confirmedCause === 'other' && closure.confirmedCauseOtherDetail
+                        ? ` — ${closure.confirmedCauseOtherDetail}`
+                        : ''}
+                    </span>
+                  </p>
+                  <p className="mt-1">
+                    <span className="font-medium">תוצאת הטיפול: </span>
+                    <span>
+                      {treatmentOutcomeLabels[closure.treatmentOutcome]}
+                      {closure.treatmentOutcome === 'other' && closure.treatmentOutcomeOtherDetail
+                        ? ` — ${closure.treatmentOutcomeOtherDetail}`
+                        : ''}
+                    </span>
+                    {closure.treatmentOutcome === 'temporary_workaround' && (
+                      <span className="mr-1.5 inline-flex items-center rounded-md border border-orange-300 bg-orange-100 px-1.5 py-0.5 text-xs font-medium text-orange-900 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200">
+                        פתרון זמני
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1">
+                    <span className="font-medium">מה ידוע על מה שהוביל לפתרון: </span>
+                    <span>
+                      {resolutionAttributionLabels[closure.resolutionAttribution]}
+                      {closure.resolutionAttribution === 'other' && closure.resolutionAttributionOtherDetail
+                        ? ` — ${closure.resolutionAttributionOtherDetail}`
+                        : ''}
+                    </span>
+                  </p>
+                  <TreatmentActionChips actions={closureResolvedActions} />
                 </div>
               )}
               {/* Correction content: the persisted correction note, shown

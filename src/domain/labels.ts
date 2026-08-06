@@ -10,6 +10,12 @@ import type {
   NotificationCategory,
   SystemCategory,
   LocationCategory,
+  IncidentDomain,
+  SuspectedCause,
+  TreatmentActionType,
+  ConfirmedCause,
+  TreatmentOutcome,
+  ResolutionAttribution,
 } from './types';
 
 export const APP_NAME = 'AVARIA';
@@ -79,6 +85,141 @@ export const reportedToOpsLabels: Record<ReportedToOps, string> = {
   not_required: 'לא נדרש',
 };
 
+export const incidentDomainLabels: Record<IncidentDomain, string> = {
+  communications: 'תקשורת',
+  equipment: 'ציוד או חומרה',
+  software: 'תוכנה',
+  infrastructure: 'תשתית או חשמל',
+  operational: 'תפעול או הגדרה',
+  unknown: 'לא ידוע בשלב זה',
+  other: 'אחר',
+};
+
+/** Fixed display order, mirrors incident_domain's own declaration order. */
+export const INCIDENT_DOMAIN_ORDER: IncidentDomain[] = [
+  'communications',
+  'equipment',
+  'software',
+  'infrastructure',
+  'operational',
+  'unknown',
+  'other',
+];
+
+/** Shown only when Incident.reportedDomain is `null` -- never used as a
+ *  fallback for the explicit 'unknown' enum value, which has its own
+ *  label above ("לא ידוע בשלב זה"). */
+export const UNCLASSIFIED_DOMAIN_LABEL = 'לא סווג בעת פתיחת התקלה';
+
+export const suspectedCauseLabels: Record<SuspectedCause, string> = {
+  equipment: 'ציוד או חומרה',
+  software: 'תוכנה',
+  communications: 'תקשורת',
+  infrastructure: 'תשתית או חשמל',
+  operational: 'תפעול או הגדרה',
+  external: 'גורם חיצוני',
+  unknown: 'הגורם טרם ידוע',
+  other: 'אחר',
+};
+
+export const SUSPECTED_CAUSE_ORDER: SuspectedCause[] = [
+  'equipment',
+  'software',
+  'communications',
+  'infrastructure',
+  'operational',
+  'external',
+  'unknown',
+  'other',
+];
+
+/** Shown only when Incident.currentSuspectedCause is `null` ("never
+ *  assessed") -- never used as a fallback for the explicit 'unknown'
+ *  enum value, which has its own label above ("הגורם טרם ידוע"). */
+export const UNASSESSED_CAUSE_LABEL = 'לא הוזנה הערכת גורם';
+
+export const treatmentActionTypeLabels: Record<TreatmentActionType, string> = {
+  diagnosis: 'בדיקה או אבחון',
+  reset_restart: 'אתחול או איפוס',
+  equipment_replacement: 'החלפת ציוד',
+  config_change: 'שינוי הגדרה',
+  software_fix: 'תיקון תוכנה',
+  communications_handling: 'טיפול בתקשורת',
+  infrastructure_handling: 'טיפול בתשתית או חשמל',
+  external_party_handling: 'פנייה או טיפול של גורם חיצוני',
+  other: 'אחר',
+};
+
+export const TREATMENT_ACTION_TYPE_ORDER: TreatmentActionType[] = [
+  'diagnosis',
+  'reset_restart',
+  'equipment_replacement',
+  'config_change',
+  'software_fix',
+  'communications_handling',
+  'infrastructure_handling',
+  'external_party_handling',
+  'other',
+];
+
+export const confirmedCauseLabels: Record<ConfirmedCause, string> = {
+  equipment: 'ציוד או חומרה',
+  software: 'תוכנה',
+  communications: 'תקשורת',
+  infrastructure: 'תשתית או חשמל',
+  operational: 'תפעול או הגדרה',
+  external: 'גורם חיצוני',
+  undetermined: 'לא אותר גורם',
+  other: 'אחר',
+};
+
+export const CONFIRMED_CAUSE_ORDER: ConfirmedCause[] = [
+  'equipment',
+  'software',
+  'communications',
+  'infrastructure',
+  'operational',
+  'external',
+  'undetermined',
+  'other',
+];
+
+export const treatmentOutcomeLabels: Record<TreatmentOutcome, string> = {
+  permanent_resolution: 'פתרון קבוע',
+  temporary_workaround: 'פתרון זמני או מעקף',
+  not_reproduced: 'התקלה לא שוחזרה',
+  resolved_without_action: 'התקלה נעלמה ללא פעולה',
+  closed_without_technical_resolution: 'נסגרה ללא פתרון טכני',
+  other: 'אחר',
+};
+
+export const TREATMENT_OUTCOME_ORDER: TreatmentOutcome[] = [
+  'permanent_resolution',
+  'temporary_workaround',
+  'not_reproduced',
+  'resolved_without_action',
+  'closed_without_technical_resolution',
+  'other',
+];
+
+export const resolutionAttributionLabels: Record<ResolutionAttribution, string> = {
+  specific_action: 'פעולה מסוימת שתועדה',
+  combination_of_actions: 'שילוב של מספר פעולות',
+  undetermined: 'לא ניתן לקבוע',
+  no_action_taken: 'לא בוצעה פעולה',
+  external_party_no_details: 'הטיפול בוצע על ידי גורם חיצוני ולא נמסרו פרטים',
+  other: 'אחר',
+};
+
+export const RESOLUTION_ATTRIBUTION_ORDER: ResolutionAttribution[] = [
+  'specific_action',
+  'combination_of_actions',
+  'undetermined',
+  'no_action_taken',
+  'external_party_no_details',
+  'other',
+];
+
 export const eventTypeLabels: Record<EventType, string> = {
   created: 'פתיחת תקלה',
   acknowledged: 'קבלת התקלה',
@@ -102,6 +243,7 @@ export const eventTypeLabels: Record<EventType, string> = {
   status_check_changed: 'עדכון בדיקת סטטוס',
   reported_to_ops_room: 'דיווח לחמ״ל',
   reported_to_ops_communications: 'דיווח לתקשוב למבצעים',
+  cause_assessment_changed: 'עדכון חשד לגורם',
 };
 
 export const notificationTypeLabels: Record<NotificationType, string> = {
@@ -256,4 +398,5 @@ export const fieldLabels: Record<string, string> = {
   reported_to_ops: 'דווח למבצעים',
   reported_to_ops_recipient: 'למי דווח',
   current_status_text: 'סטטוס נוכחי',
+  current_suspected_cause: 'חשד נוכחי',
 };

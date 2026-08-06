@@ -39,6 +39,9 @@ test('closing with full readiness still closes the incident normally', async ({ 
   const dialog = page.getByRole('dialog', { name: 'סגירת תקלה' });
   await dialog.getByLabel('סיבת התקלה').fill('תקלת חומרה בכרטיס');
   await dialog.getByLabel('הפתרון שבוצע').fill('הוחלף הכרטיס ואומתה תקינות');
+  await dialog.getByLabel('הגורם שאומת').selectOption({ label: 'ציוד או חומרה' });
+  await dialog.getByLabel('תוצאת הטיפול').selectOption({ label: 'פתרון קבוע' });
+  await dialog.getByLabel('מה ידוע על מה שהוביל לפתרון?').selectOption({ label: 'לא בוצעה פעולה' });
   await dialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
   await dialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
 

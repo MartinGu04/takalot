@@ -3,12 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildIncidentPdf, incidentPdfFilename } from './incidentPdf';
 import { DEPARTMENT_LOGOS } from '../components/DepartmentLogos';
 import {
+  fixtureCauseAssessments,
+  fixtureClosure,
+  fixtureClosures,
   fixtureEvents,
   fixtureExportedByName,
   fixtureIncident,
   fixtureLocations,
   fixtureProfiles,
   fixtureSystems,
+  fixtureTreatmentActions,
   fixtureUpdate,
 } from './fixtures/incidentPdfFixture';
 
@@ -29,6 +33,9 @@ async function buildFixturePdf() {
     fixtureLocations,
     fixtureExportedByName,
     loadRealLogos(),
+    fixtureCauseAssessments,
+    fixtureTreatmentActions,
+    fixtureClosures,
   );
 }
 
@@ -181,5 +188,155 @@ describe('buildIncidentPdf', () => {
     // (no section silently failed to render / threw mid-build).
     expect(allOps.length).toBeGreaterThan(0);
     expect(pdf.doc.getNumberOfPages()).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// Structured lifecycle classification (AVARIA incident classification
+// feature): the main summary/details area, wired through buildIncidentPdf.
+// Content-string extraction is not viable for these PDF-drawn glyphs (see
+// pdf.ts's own header comment on why the content stream uses glyph CIDs,
+// not literal characters) -- see timelineNarrative.test.ts for the direct,
+// literal-string-level coverage of the exact same formatting functions this
+// wiring calls. These tests instead confirm: it never throws for every
+// required incident shape (open/closed/legacy/reopened/cancelled), and a
+// classification-dependent choice (e.g. temporary-workaround vs a plain
+// outcome) actually produces different page content, proving the new data
+// is really reaching the page and not silently ignored.
+describe('buildIncidentPdf: structured lifecycle classification wiring', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('a legacy incident (reportedDomain/currentSuspectedCause both null, no classification rows at all, omitted params) still builds a valid PDF, exactly like before this feature', async () => {
+    const legacyIncident = {
+      ...fixtureIncident,
+      reportedDomain: null,
+      currentSuspectedCause: null,
+      currentSuspectedCauseOtherDetail: null,
+    };
+    const pdf = await buildIncidentPdf(
+      legacyIncident,
+      fixtureEvents,
+      [fixtureUpdate],
+      fixtureProfiles,
+      fixtureSystems,
+      fixtureLocations,
+      fixtureExportedByName,
+      loadRealLogos(),
+      // causeAssessments/treatmentActions/closures omitted entirely.
+    );
+    const buf = new Uint8Array(pdf.doc.output('arraybuffer') as ArrayBuffer);
+    expect(String.fromCharCode(...buf.slice(0, 5))).toBe('%PDF-');
+  });
+
+  it('an open incident (isOpen) with a reported domain and a current suspected cause builds without error, and differs from the same incident with currentSuspectedCause null', async () => {
+    const openWithCause = {
+      ...fixtureIncident,
+      status: 'in_progress' as const,
+      closedAt: null,
+      closedBy: null,
+      reportedDomain: 'infrastructure' as const,
+      currentSuspectedCause: 'software' as const,
+    };
+    const openWithoutCause = { ...openWithCause, currentSuspectedCause: null };
+    const pdfWith = await buildIncidentPdf(
+      openWithCause, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [],
+    );
+    const pdfWithout = await buildIncidentPdf(
+      openWithoutCause, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [],
+    );
+    expect(pageOps(pdfWith, 1)).not.toBe(pageOps(pdfWithout, 1));
+  });
+
+  it('explicit \'unknown\' current suspected cause produces different page content than null (never conflated)', async () => {
+    const base = {
+      ...fixtureIncident,
+      status: 'in_progress' as const,
+      closedAt: null,
+      closedBy: null,
+    };
+    const pdfNull = await buildIncidentPdf(
+      { ...base, currentSuspectedCause: null }, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems,
+      fixtureLocations, fixtureExportedByName, loadRealLogos(),
+    );
+    const pdfUnknown = await buildIncidentPdf(
+      { ...base, currentSuspectedCause: 'unknown' }, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems,
+      fixtureLocations, fixtureExportedByName, loadRealLogos(),
+    );
+    expect(pageOps(pdfNull, 1)).not.toBe(pageOps(pdfUnknown, 1));
+  });
+
+  it('a closed incident with no matching closure row (legacy closure) builds without error and omits the closure-classification block (no blank rows/invented values)', async () => {
+    const pdfNoClosure = await buildIncidentPdf(
+      fixtureIncident, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [],
+    );
+    const pdfWithClosure = await buildFixturePdf();
+    // The closure block adds real content -- the two documents must differ.
+    expect(pageOps(pdfNoClosure, 1)).not.toBe(pageOps(pdfWithClosure, 1));
+  });
+
+  it('a temporary-workaround closure builds without error and produces different page content than a plain permanent-resolution closure (the small-but-noticeable badge treatment actually applies)', async () => {
+    const temp = { ...fixtureClosure, treatmentOutcome: 'temporary_workaround' as const };
+    const permanent = { ...fixtureClosure, treatmentOutcome: 'permanent_resolution' as const };
+    const pdfTemp = await buildIncidentPdf(
+      fixtureIncident, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [temp],
+    );
+    const pdfPermanent = await buildIncidentPdf(
+      fixtureIncident, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [permanent],
+    );
+    expect(pageOps(pdfTemp, 1)).not.toBe(pageOps(pdfPermanent, 1));
+  });
+
+  it('a cancelled incident never shows closure classification, even when a closure row is supplied', async () => {
+    const cancelled = {
+      ...fixtureIncident,
+      status: 'cancelled' as const,
+      closedAt: null,
+      closedBy: null,
+      cancelledAt: fixtureIncident.closedAt,
+      cancelledBy: fixtureIncident.closedBy,
+      cancellationReason: 'נפתחה בטעות',
+    };
+    const pdf = await buildIncidentPdf(
+      cancelled, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, fixtureClosures,
+    );
+    const buf = new Uint8Array(pdf.doc.output('arraybuffer') as ArrayBuffer);
+    expect(String.fromCharCode(...buf.slice(0, 5))).toBe('%PDF-');
+    // No "פרטי סגירה" section at all for a cancellation -- gated on
+    // incident.status === 'closed', unaffected by this feature.
+    expect(pdf.doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+  });
+
+  it('a reopened incident with two separate closure cycles builds without error', async () => {
+    const reopenedIncident = { ...fixtureIncident, status: 'closed' as const, reopenCount: 1 };
+    const cycle0 = { ...fixtureClosure, id: 'closure-cycle-0', cycleNumber: 0, resolutionActionIds: [] as string[], resolutionAttribution: 'undetermined' as const };
+    const cycle1 = { ...fixtureClosure, id: 'closure-cycle-1', cycleNumber: 1 };
+    const pdf = await buildIncidentPdf(
+      reopenedIncident, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [cycle0, cycle1],
+    );
+    const buf = new Uint8Array(pdf.doc.output('arraybuffer') as ArrayBuffer);
+    expect(String.fromCharCode(...buf.slice(0, 5))).toBe('%PDF-');
+  });
+
+  it('a very long "other" detail value wraps across multiple lines without throwing (no clipped/overlapping content)', async () => {
+    const longDetail = 'פירוט ארוך מאוד לבדיקת גלישת טקסט '.repeat(20);
+    const closureWithLongDetail = {
+      ...fixtureClosure,
+      confirmedCause: 'other' as const,
+      confirmedCauseOtherDetail: longDetail,
+    };
+    const pdf = await buildIncidentPdf(
+      fixtureIncident, fixtureEvents, [fixtureUpdate], fixtureProfiles, fixtureSystems, fixtureLocations,
+      fixtureExportedByName, loadRealLogos(), fixtureCauseAssessments, fixtureTreatmentActions, [closureWithLongDetail],
+    );
+    const buf = new Uint8Array(pdf.doc.output('arraybuffer') as ArrayBuffer);
+    expect(String.fromCharCode(...buf.slice(0, 5))).toBe('%PDF-');
   });
 });

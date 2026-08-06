@@ -38,8 +38,9 @@ test('technician creates an incident, then reassigns and closes an incident owne
   await page.getByLabel('מערכת / עמדה').selectOption({ label: 'מערכת בטא' });
   await page.getByLabel('מיקום').selectOption({ label: 'אתר 1' });
   await page.getByLabel('תיאור התקלה').fill('בדיקת קצה לקצה: תקלה נוצרה על ידי טכנאי');
+  await page.getByLabel('תחום התקלה').selectOption({ label: 'ציוד או חומרה' });
   await page.getByLabel('השפעה מבצעית').fill('השפעה מבצעית לבדיקה אוטומטית');
-  await page.getByLabel('פעולות שבוצעו עד כה').fill('נבדק ראשונית על ידי הטכנאי');
+  await page.getByLabel('פירוט הפעולות שבוצעו עד כה').fill('נבדק ראשונית על ידי הטכנאי');
   await page.getByLabel('בעל אחריות פנימי').selectOption({ label: 'עומר פרץ (דמו)' });
   await page.locator('form button[type="submit"]').click();
   await page.getByRole('dialog', { name: 'התקלה נפתחה בהצלחה' }).getByRole('button', { name: 'המשך ללא העתקה' }).click();
@@ -71,6 +72,9 @@ test('technician creates an incident, then reassigns and closes an incident owne
   const closeDialog = page.getByRole('dialog', { name: 'סגירת תקלה' });
   await closeDialog.getByLabel('סיבת התקלה').fill('סיבת התקלה שזוהתה על ידי הטכנאי');
   await closeDialog.getByLabel('הפתרון שבוצע').fill('הפתרון שבוצע על ידי הטכנאי');
+  await closeDialog.getByLabel('הגורם שאומת').selectOption({ label: 'ציוד או חומרה' });
+  await closeDialog.getByLabel('תוצאת הטיפול').selectOption({ label: 'פתרון קבוע' });
+  await closeDialog.getByLabel('מה ידוע על מה שהוביל לפתרון?').selectOption({ label: 'לא בוצעה פעולה' });
   await closeDialog.getByRole('button', { name: 'המשך לאישור סגירה' }).click();
   await closeDialog.getByRole('button', { name: 'אישור סגירת תקלה' }).click();
 
