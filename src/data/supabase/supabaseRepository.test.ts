@@ -359,6 +359,7 @@ describe('SupabaseRepository.getIncidentEvents: operation_id mapping', () => {
 describe('SupabaseRepository.listNotifications: excludes historical update_overdue rows, bounded, category preserved', () => {
   function fakeNotificationsClient(rows: Record<string, unknown>[]) {
     const neqCalls: [string, unknown][] = [];
+    const isCalls: [string, unknown][] = [];
     const limitCalls: number[] = [];
     const builder = {
       select: () => builder,
@@ -367,13 +368,17 @@ describe('SupabaseRepository.listNotifications: excludes historical update_overd
         neqCalls.push([col, val]);
         return builder;
       },
+      is: (col: string, val: unknown) => {
+        isCalls.push([col, val]);
+        return builder;
+      },
       order: () => builder,
       limit: async (n: number) => {
         limitCalls.push(n);
         return { data: rows, error: null };
       },
     };
-    return { client: { from: () => builder }, neqCalls, limitCalls };
+    return { client: { from: () => builder }, neqCalls, isCalls, limitCalls };
   }
 
   it('filters update_overdue at the query level (never fetched as an active row), and preserves category', async () => {
@@ -397,6 +402,14 @@ describe('SupabaseRepository.listNotifications: excludes historical update_overd
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe('incident_assigned');
     expect(result[0].category).toBe('action_required');
+  });
+
+  it('excludes dismissed (נקה הכל) rows at the query level, via dismissed_at IS NULL', async () => {
+    const { client, isCalls } = fakeNotificationsClient([]);
+    const repo = new SupabaseRepository(client as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    await repo.listNotifications(session);
+
+    expect(isCalls).toContainEqual(['dismissed_at', null]);
   });
 
   it('bounds the request: never loads unbounded notification history', async () => {
@@ -547,5 +560,29 @@ describe('SupabaseRepository.setMyOperationalNotificationsEnabled', () => {
     await expect(repo.setMyOperationalNotificationsEnabled(session, true)).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
+  });
+});
+
+describe('SupabaseRepository.clearNotifications (נקה הכל)', () => {
+  it('calls clear_my_notifications with no arguments -- no user id is ever sent', async () => {
+    let calledFn = '';
+    let calledArgs: Record<string, unknown> | undefined;
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calledFn = fn;
+        calledArgs = args;
+        return { data: null, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    await repo.clearNotifications(session);
+
+    expect(calledFn).toBe('clear_my_notifications');
+    expect(calledArgs).toEqual({});
+  });
+
+  it('propagates a rejected call as a controlled AppError, without swallowing the failure', async () => {
+    const repo = repoWithRpcError('permission: אין הרשאה');
+    await expect(repo.clearNotifications(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });

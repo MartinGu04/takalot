@@ -338,3 +338,205 @@ describe('NotificationsMenu: system_admin operational-notifications settings gea
     }
   });
 });
+
+// נקה הכל: persistent per-user dismissal, distinct from marking read. See
+// migration 0048_notification_dismissal.sql (notifications.dismissed_at) and
+// LocalDemoRepository.clearNotifications.
+describe('NotificationsMenu: נקה הכל (clear all notifications)', () => {
+  it('is hidden when the signed-in user has no notifications at all', async () => {
+    const user = await loginAs('login-u-viewer');
+    await user.click(screen.getByTestId('notifications-button'));
+    const p = within(panel());
+    expect(p.getByText('אין התראות.')).toBeVisible();
+    expect(p.queryByRole('button', { name: 'ניקוי כל ההתראות' })).not.toBeInTheDocument();
+  });
+
+  it('appears when visible notifications exist; clearing empties every tab, zeroes the badge, shows a success toast, and persists across a fresh fetch', async () => {
+    const seeding = render(<App />);
+    const seedUser = userEvent.setup();
+    await seedUser.click(await screen.findByTestId('login-u-tech-1'));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    await seedUser.click(screen.getByTestId('notifications-button'));
+    let p = within(panel());
+    const clearButton = p.getByRole('button', { name: 'ניקוי כל ההתראות' });
+    expect(clearButton).toBeVisible();
+
+    await seedUser.click(clearButton);
+    await screen.findByText('ההתראות נוקו');
+
+    expect(screen.getByTestId('notifications-button')).toHaveAccessibleName('התראות');
+    p = within(panel());
+    expect(p.getByText('אין התראות.')).toBeVisible();
+    expect(p.queryByRole('button', { name: 'ניקוי כל ההתראות' })).not.toBeInTheDocument();
+
+    await seedUser.click(p.getByRole('button', { name: 'דורש פעולה' }));
+    expect(within(panel()).getByText('אין התראות שדורשות פעולה.')).toBeVisible();
+    await seedUser.click(within(panel()).getByRole('button', { name: 'עדכונים' }));
+    expect(within(panel()).getByText('אין עדכונים.')).toBeVisible();
+    seeding.unmount();
+
+    // Persistence across a fresh repository fetch: unmount and re-render
+    // (same technique as the update_overdue regression test above) --
+    // the already-authenticated session survives separately from the
+    // cleared demo database, so this lands straight back on the dashboard.
+    window.history.pushState({}, '', '/');
+    vi.resetModules();
+    App = (await import('../App')).default;
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    expect(screen.getByTestId('notifications-button')).toHaveAccessibleName('התראות');
+    await userEvent.setup().click(screen.getByTestId('notifications-button'));
+    expect(within(panel()).getByText('אין התראות.')).toBeVisible();
+  });
+
+  it('clearing affects only the current user -- another user’s notifications are unaffected', async () => {
+    const seeding = render(<App />);
+    const seedUser = userEvent.setup();
+    await seedUser.click(await screen.findByTestId('login-u-tech-1'));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    await seedUser.click(screen.getByTestId('notifications-button'));
+    await seedUser.click(within(panel()).getByRole('button', { name: 'ניקוי כל ההתראות' }));
+    await screen.findByText('ההתראות נוקו');
+    seeding.unmount();
+
+    // Sign out of tech1's persisted demo session (without touching the demo
+    // database itself, which is where the just-cleared/still-active
+    // notification rows live) so the login screen reappears for switching
+    // to a different user.
+    localStorage.removeItem('takalot-demo-session-user');
+    window.history.pushState({}, '', '/');
+    vi.resetModules();
+    App = (await import('../App')).default;
+    const manager = await loginAs('login-u-manager');
+    await manager.click(screen.getByTestId('notifications-button'));
+    expect(within(panel()).getByText('תקלה נפתחה')).toBeVisible();
+  });
+
+  it('a notification created after clearing appears normally', async () => {
+    const seeding = render(<App />);
+    const seedUser = userEvent.setup();
+    await seedUser.click(await screen.findByTestId('login-u-tech-1'));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    await seedUser.click(screen.getByTestId('notifications-button'));
+    await seedUser.click(within(panel()).getByRole('button', { name: 'ניקוי כל ההתראות' }));
+    await screen.findByText('ההתראות נוקו');
+    seeding.unmount();
+
+    const raw = JSON.parse(localStorage.getItem('takalot-demo-db-v1')!);
+    raw.notifications.push({
+      id: 'ntf-after-clear',
+      userId: 'u-tech-1',
+      type: 'incident_assigned',
+      category: 'action_required',
+      incidentId: 'inc-1',
+      handoverId: null,
+      text: 'תקלה חדשה הוקצתה אליך.',
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+    localStorage.setItem('takalot-demo-db-v1', JSON.stringify(raw));
+    window.history.pushState({}, '', '/');
+    vi.resetModules();
+    App = (await import('../App')).default;
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    await userEvent.setup().click(screen.getByTestId('notifications-button'));
+    expect(within(panel()).getByText('תקלה חדשה הוקצתה אליך.')).toBeVisible();
+  });
+
+  it('mark-as-read keeps working after נקה הכל is used', async () => {
+    const seeding = render(<App />);
+    const seedUser = userEvent.setup();
+    await seedUser.click(await screen.findByTestId('login-u-tech-1'));
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    await seedUser.click(screen.getByTestId('notifications-button'));
+    await seedUser.click(within(panel()).getByRole('button', { name: 'ניקוי כל ההתראות' }));
+    await screen.findByText('ההתראות נוקו');
+    seeding.unmount();
+
+    const raw = JSON.parse(localStorage.getItem('takalot-demo-db-v1')!);
+    raw.notifications.push({
+      id: 'ntf-mark-read-after-clear',
+      userId: 'u-tech-1',
+      type: 'incident_assigned',
+      category: 'action_required',
+      incidentId: 'inc-1',
+      handoverId: null,
+      text: 'התראה נוספת.',
+      read: false,
+      createdAt: new Date().toISOString(),
+    });
+    localStorage.setItem('takalot-demo-db-v1', JSON.stringify(raw));
+    window.history.pushState({}, '', '/');
+    vi.resetModules();
+    App = (await import('../App')).default;
+    render(<App />);
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+
+    const freshUser = userEvent.setup();
+    expect(screen.getByTestId('notifications-button')).toHaveAccessibleName(/1 שלא נקראו/);
+    await freshUser.click(screen.getByTestId('notifications-button'));
+    await freshUser.click(within(panel()).getByRole('button', { name: 'סימון הכול כנקרא' }));
+    expect(screen.getByTestId('notifications-button')).toHaveAccessibleName('התראות');
+  });
+
+  it('while clearing, the button disables and shows a loading label, preventing repeated submissions', async () => {
+    const user = await loginAs('login-u-tech-1');
+    let resolveClear: () => void = () => {};
+    const spy = vi.spyOn(hooks.repo(), 'clearNotifications').mockImplementation(
+      () => new Promise<void>((resolve) => { resolveClear = resolve; }),
+    );
+
+    await user.click(screen.getByTestId('notifications-button'));
+    const clearButton = within(panel()).getByRole('button', { name: 'ניקוי כל ההתראות' });
+    await user.click(clearButton);
+
+    expect(clearButton).toBeDisabled();
+    expect(clearButton).toHaveTextContent('מנקה');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // A second click while pending must not fire a second call.
+    await user.click(clearButton);
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    resolveClear();
+    await screen.findByText('ההתראות נוקו');
+    await waitFor(() => expect(clearButton).not.toBeDisabled());
+    expect(clearButton).toHaveTextContent('נקה הכל');
+  });
+
+  it('a failed clear preserves the current notifications and shows an understandable error', async () => {
+    const user = await loginAs('login-u-tech-1');
+    const failure = new AppError('NETWORK', 'אירעה שגיאה בלתי צפויה מול השרת. הנתונים לא נשמרו — ניתן לנסות שוב.');
+    const spy = vi.spyOn(hooks.repo(), 'clearNotifications').mockRejectedValueOnce(failure);
+
+    await user.click(screen.getByTestId('notifications-button'));
+    await user.click(within(panel()).getByRole('button', { name: 'ניקוי כל ההתראות' }));
+    await screen.findByText(failure.message);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const p = within(panel());
+    expect(p.getByText('תקלה הוקצתה אליך')).toBeVisible();
+    expect(screen.getByTestId('notifications-button')).toHaveAccessibleName(/1 שלא נקראו/);
+  });
+
+  it('does not overflow a narrow mobile viewport', async () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 360 });
+    window.dispatchEvent(new Event('resize'));
+    try {
+      const user = await loginAs('login-u-tech-1');
+      await user.click(screen.getByTestId('notifications-button'));
+      const el = panel();
+      expect(el).toBeInTheDocument();
+      expect(within(el).getByRole('button', { name: 'ניקוי כל ההתראות' })).toBeVisible();
+      const width = parseFloat(el.style.width);
+      expect(width).toBeLessThanOrEqual(360);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalWidth });
+      window.dispatchEvent(new Event('resize'));
+    }
+  });
+});

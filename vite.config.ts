@@ -1,9 +1,21 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Single build-time source of truth for the displayed app version (Sidebar /
+// mobile עוד screen -- see src/config/appVersion.ts) -- read from package.json
+// rather than duplicated as a literal, so a release bump only ever touches
+// one file. Applies identically under `vite build` and `vitest` (this same
+// config object doubles as the Vitest config below), so the constant is
+// exercised by tests too, not just the production bundle.
+const pkgVersion = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')) as { version: string }).version;
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgVersion),
+  },
   plugins: [
     react(),
     tailwindcss(),

@@ -298,6 +298,12 @@ export interface Repository {
   listNotifications(session: Session): Promise<AppNotification[]>;
   markNotificationRead(session: Session, id: string): Promise<void>;
   markAllNotificationsRead(session: Session): Promise<void>;
+  /** Persistently dismisses every currently-active notification for the
+   *  authenticated user (נקה הכל) -- not equivalent to marking read. Cleared
+   *  rows are preserved, never deleted, and simply excluded from
+   *  listNotifications going forward; a notification created afterward is
+   *  unaffected and appears normally. */
+  clearNotifications(session: Session): Promise<void>;
 
   // --- audit ---
   /**

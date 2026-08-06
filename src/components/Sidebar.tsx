@@ -2,6 +2,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { hasCapability } from '../domain/permissions';
 import { APP_NAME, roleLabels } from '../domain/labels';
+import { APP_VERSION_LABEL } from '../config/appVersion';
 import type { Profile } from '../domain/types';
 import { navItems } from './navItems';
 import { Avatar, TruncatedTooltip } from './ui';
@@ -66,6 +67,9 @@ export function Sidebar({ user }: { user: Profile }) {
         ))}
       </nav>
 
+      <p className="px-4 pb-2 text-xs text-muted" data-testid="app-version">
+        {APP_VERSION_LABEL}
+      </p>
       <div className="border-t border-hairline p-3.5">
         <div className="flex items-center gap-2.5 rounded-xl bg-surface-active/60 p-3">
           <Avatar

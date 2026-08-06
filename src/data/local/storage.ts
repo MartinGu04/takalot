@@ -17,6 +17,10 @@ import type { PolicyFlags } from '../../domain/permissions';
 
 export interface StoredNotification extends AppNotification {
   dedupeKey?: string;
+  /** Set once the recipient clears it (נקה הכל) -- see 0048_notification_dismissal.
+   *  Absent/null on every row from a database persisted before this feature,
+   *  which is exactly the correct "not dismissed" default -- no backfill needed. */
+  dismissedAt?: string | null;
 }
 
 export interface DemoDatabase {
