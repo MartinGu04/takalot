@@ -40,12 +40,16 @@ import type {
 } from '../../domain/schemas';
 import { AppError } from '../repository';
 import type {
+  AnalyticsEntityFilters,
   AnalyticsFilters,
+  AnalyticsModuleKey,
   AuditFilters,
   AuditLogPage,
   ExportAuditInfo,
   IncidentAnalytics,
+  IncidentClosureInsights,
   IncidentFilters,
+  IncidentOpenBacklog,
   IncidentSort,
   ReferenceDataDeleteOutcome,
   ReferenceDataMoveDirection,
@@ -694,12 +698,71 @@ export class SupabaseRepository implements Repository {
    * needed here, unlike mapIncident() below for the incidents table.
    */
   async getIncidentAnalytics(_session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics> {
-    return this.rpc<IncidentAnalytics>('get_incident_analytics', {
+    // Calls get_incident_analytics_v2 (migration 0051), NOT the original
+    // get_incident_analytics -- a new, distinctly-named function, deployed
+    // this way specifically so it never becomes an ambiguous PostgREST
+    // overload of the original (see that migration's header). The original
+    // 4-parameter function is left in the database, untouched, as a
+    // compatibility path for any client still calling it by name -- this
+    // repository method's NAME and SHAPE stay stable across that change;
+    // only the RPC it targets underneath does not.
+    return this.rpc<IncidentAnalytics>('get_incident_analytics_v2', {
       p_period_days: filters.periodDays,
       p_system_id: filters.systemId ?? null,
       p_location_id: filters.locationId ?? null,
-      p_severity: filters.severity ?? null,
+      p_severities: filters.severities ?? null,
+      p_domains: filters.domains ?? null,
+      p_include_unclassified_domain: filters.includeUnclassifiedDomain ?? false,
+      p_confirmed_causes: filters.confirmedCauses ?? null,
+      p_treatment_outcomes: filters.treatmentOutcomes ?? null,
     });
+  }
+
+  async getIncidentOpenBacklog(_session: Session, filters: AnalyticsEntityFilters): Promise<IncidentOpenBacklog> {
+    return this.rpc<IncidentOpenBacklog>('get_incident_open_backlog', {
+      p_system_id: filters.systemId ?? null,
+      p_location_id: filters.locationId ?? null,
+      p_severities: filters.severities ?? null,
+      p_domains: filters.domains ?? null,
+      p_include_unclassified_domain: filters.includeUnclassifiedDomain ?? false,
+      p_confirmed_causes: filters.confirmedCauses ?? null,
+      p_treatment_outcomes: filters.treatmentOutcomes ?? null,
+    });
+  }
+
+  async getIncidentClosureInsights(_session: Session, filters: AnalyticsFilters): Promise<IncidentClosureInsights> {
+    return this.rpc<IncidentClosureInsights>('get_incident_closure_insights', {
+      p_period_days: filters.periodDays,
+      p_system_id: filters.systemId ?? null,
+      p_location_id: filters.locationId ?? null,
+      p_severities: filters.severities ?? null,
+      p_domains: filters.domains ?? null,
+      p_include_unclassified_domain: filters.includeUnclassifiedDomain ?? false,
+      p_confirmed_causes: filters.confirmedCauses ?? null,
+      p_treatment_outcomes: filters.treatmentOutcomes ?? null,
+    });
+  }
+
+  /**
+   * Direct RLS-scoped read (no RPC needed for reads -- migration 0052):
+   * returns null both when the caller has never customized their view AND
+   * when the caller is not personalize_analytics-eligible (the RLS policy
+   * silently excludes their row either way, even if one somehow existed --
+   * never a thrown error for the ineligible case, matching how the RPC's
+   * own reset path treats "no row" as "use the role default").
+   */
+  async getAnalyticsPreferences(session: Session): Promise<AnalyticsModuleKey[] | null> {
+    const { data, error } = await this.client
+      .from('user_analytics_preferences')
+      .select('visible_modules')
+      .eq('user_id', session.userId)
+      .maybeSingle();
+    wrap(error);
+    return (data?.visible_modules as AnalyticsModuleKey[] | undefined) ?? null;
+  }
+
+  async setAnalyticsVisibleModules(_session: Session, modules: AnalyticsModuleKey[] | null): Promise<void> {
+    await this.rpc<void>('set_my_analytics_visible_modules', { p_modules: modules });
   }
 
   async getIncident(_s: Session, id: string): Promise<Incident | null> {

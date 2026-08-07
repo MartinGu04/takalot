@@ -42,8 +42,19 @@ import type {
 // same place as every other repository-adjacent type, even though they are
 // defined in the domain layer -- see analyticsSummary.ts for why the
 // domain module owns these types rather than this file.
-export type { AnalyticsFilters, AnalyticsPeriodDays, IncidentAnalytics } from '../domain/analyticsSummary';
-import type { AnalyticsFilters, IncidentAnalytics } from '../domain/analyticsSummary';
+export type {
+  AnalyticsEntityFilters,
+  AnalyticsFilters,
+  AnalyticsPeriodDays,
+  IncidentAnalytics,
+} from '../domain/analyticsSummary';
+import type { AnalyticsEntityFilters, AnalyticsFilters, IncidentAnalytics } from '../domain/analyticsSummary';
+export type { IncidentOpenBacklog } from '../domain/analyticsOpenBacklog';
+import type { IncidentOpenBacklog } from '../domain/analyticsOpenBacklog';
+export type { AnalyticsEnumCount, IncidentClosureInsights } from '../domain/analyticsClosureInsights';
+import type { IncidentClosureInsights } from '../domain/analyticsClosureInsights';
+export type { AnalyticsModuleKey } from '../domain/analyticsPreferences';
+import type { AnalyticsModuleKey } from '../domain/analyticsPreferences';
 
 export type ErrorCode =
   | 'FORBIDDEN'
@@ -268,12 +279,54 @@ export interface Repository {
    * (currently-open counts/durations) must reflect the true, unbounded
    * current set, which the 500-row cap on listIncidents cannot safely
    * represent. In production this calls a single Postgres RPC
-   * (get_incident_analytics, migration 0036) that is the actual
+   * (get_incident_analytics_v2, migration 0051) that is the actual
    * calculation authority; the local/demo repository computes the same
    * documented rules in-memory via src/domain/analyticsSummary.ts, which
    * exists only to power demo mode and is not itself the source of truth.
+   * Method name/shape kept stable across v1.4.0 even though the underlying
+   * SQL function is a new, distinctly-named one (get_incident_analytics_v2,
+   * not the original get_incident_analytics -- see that migration's header
+   * for why a same-signature `create or replace` was rejected as unsafe);
+   * that versioning is purely internal to SupabaseRepository.
    */
   getIncidentAnalytics(session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics>;
+  /**
+   * Open-incident age distribution for the ניתוחים page's backlog module.
+   * Deliberately NOT period-bound (no periodDays in AnalyticsEntityFilters) --
+   * matches getIncidentAnalytics's own currentlyOpen/avgOpenMinutes
+   * semantics. Backed by get_incident_open_backlog (migration 0051) in
+   * production; src/domain/analyticsOpenBacklog.ts in demo mode.
+   */
+  getIncidentOpenBacklog(session: Session, filters: AnalyticsEntityFilters): Promise<IncidentOpenBacklog>;
+  /**
+   * Confirmed-cause / treatment-outcome breakdown and closure-scoped
+   * external-involvement counts for the ניתוחים page's closure-insights
+   * module. Backed by get_incident_closure_insights (migration 0051) in
+   * production; src/domain/analyticsClosureInsights.ts in demo mode. The
+   * one analytics fetch the frontend genuinely skips when both of its
+   * personalizable modules ('closures'/'externalInvolvement') are hidden --
+   * see useIncidentClosureInsights.
+   */
+  getIncidentClosureInsights(session: Session, filters: AnalyticsFilters): Promise<IncidentClosureInsights>;
+  /**
+   * The caller's own stored analytics module-visibility preference, or
+   * `null` when none is stored (use the role default -- see
+   * src/domain/analyticsPreferences.ts). A direct RLS-scoped read, no RPC:
+   * an ineligible role (technician/viewer) always reads null, never an
+   * error, since the RLS policy silently excludes their row even if one
+   * somehow existed.
+   */
+  getAnalyticsPreferences(session: Session): Promise<AnalyticsModuleKey[] | null>;
+  /**
+   * Sets (or, with `modules = null`, resets to the role default) the
+   * caller's OWN analytics module visibility -- self-only by construction,
+   * no user_id parameter exists to target anyone else. Restricted to
+   * shift_supervisor and above, enforced server-side (RLS + the RPC's own
+   * is_operational_role() check, migration 0052) -- being authenticated is
+   * explicitly not sufficient; a technician/viewer call is rejected with a
+   * controlled FORBIDDEN error, not merely hidden in the UI.
+   */
+  setAnalyticsVisibleModules(session: Session, modules: AnalyticsModuleKey[] | null): Promise<void>;
   getIncident(session: Session, id: string): Promise<Incident | null>;
   getIncidentEvents(session: Session, incidentId: string): Promise<IncidentEvent[]>;
   getIncidentUpdates(session: Session, incidentId: string): Promise<IncidentUpdate[]>;

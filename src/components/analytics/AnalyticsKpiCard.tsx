@@ -23,6 +23,7 @@
 // (text-text-primary) on every card, deliberately not tinted, so six tones
 // at once still reads as calm and restrained rather than a noisy dashboard.
 import type { SVGProps } from 'react';
+import { AnalyticsInfoTooltip } from './AnalyticsInfoTooltip';
 
 export type KpiTone = 'brand' | 'green' | 'blue' | 'orange' | 'amber' | 'red';
 
@@ -65,12 +66,17 @@ export function AnalyticsKpiCard({
   value,
   context,
   tone = 'brand',
+  infoTooltip,
 }: {
   icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element;
   label: string;
   value: string | number;
   context: string;
   tone?: KpiTone;
+  /** Short plain-language explanation, shown behind an ⓘ trigger next to the
+   *  label. Used sparingly -- only pass this where the concept genuinely
+   *  benefits from it (e.g. median vs. average), never as decoration. */
+  infoTooltip?: string;
 }) {
   const t = toneStyles[tone];
   return (
@@ -115,11 +121,23 @@ export function AnalyticsKpiCard({
           {value}
         </div>
       </div>
-      <div className="min-w-0" aria-hidden="true">
-        {/* No truncate: Hebrew KPI labels/context must wrap on narrow
-            screens rather than lose text to an ellipsis. */}
-        <div className="text-sm font-bold leading-snug text-text-primary">{label}</div>
-        <div className="mt-1 text-xs leading-relaxed text-muted">{context}</div>
+      <div className="min-w-0">
+        {/* The label row itself is NOT aria-hidden (unlike the label text
+            inside it) so the ⓘ trigger, when present, stays independently
+            reachable/focusable and keeps its own accessible name -- the
+            group's single combined aria-label above only needs the plain
+            label TEXT hidden from a second read, not the whole row. */}
+        <div className="flex items-center gap-1.5">
+          {/* No truncate: Hebrew KPI labels/context must wrap on narrow
+              screens rather than lose text to an ellipsis. */}
+          <span aria-hidden="true" className="text-sm font-bold leading-snug text-text-primary">
+            {label}
+          </span>
+          {infoTooltip && <AnalyticsInfoTooltip text={infoTooltip} />}
+        </div>
+        <div aria-hidden="true" className="mt-1 text-xs leading-relaxed text-muted">
+          {context}
+        </div>
       </div>
     </div>
   );

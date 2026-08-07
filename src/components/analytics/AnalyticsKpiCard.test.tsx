@@ -55,4 +55,27 @@ describe('AnalyticsKpiCard accessibility', () => {
     expect(numericValueEl?.className).toContain('text-3xl');
     expect(durationValueEl?.className).not.toContain('text-3xl');
   });
+
+  it('renders no ⓘ info trigger when infoTooltip is not passed', () => {
+    render(<AnalyticsKpiCard icon={IconPulse} label="פתוחות עכשיו" value={6} context="כל התקלות הפעילות כרגע" />);
+    expect(screen.queryByRole('button', { name: 'מידע נוסף' })).not.toBeInTheDocument();
+  });
+
+  it('renders an independently reachable ⓘ info trigger when infoTooltip is passed, without duplicating its text into the group label', () => {
+    render(
+      <AnalyticsKpiCard
+        icon={IconPulse}
+        label="זמן טיפול חציוני"
+        value="1 יום"
+        context="מגילוי ועד סגירה בפועל"
+        infoTooltip="הסבר על החציון."
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'מידע נוסף' });
+    expect(button).toBeInTheDocument();
+    // Not swallowed by the card's combined aria-label.
+    expect(
+      screen.getByRole('group', { name: 'זמן טיפול חציוני: 1 יום. מגילוי ועד סגירה בפועל.' }),
+    ).toBeInTheDocument();
+  });
 });
