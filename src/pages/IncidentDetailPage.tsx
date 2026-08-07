@@ -19,6 +19,7 @@ import { isOpen, type Incident } from '../domain/types';
 import { hasCapability, canTechnicianUpdate } from '../domain/permissions';
 import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { Timeline } from '../components/Timeline';
+import { CurrentStateSummary } from '../components/CurrentStateSummary';
 import { Button, EmptyState, ErrorState, Spinner, useToast } from '../components/ui';
 import { formatDateTime, formatDuration } from '../lib/time';
 import {
@@ -412,6 +413,14 @@ export default function IncidentDetailPage() {
           כשירות לא מלאה — נדרשות פעולות המשך: {incident.followUpNotes}
         </div>
       )}
+
+      <CurrentStateSummary
+        incident={incident}
+        updates={updates ?? []}
+        events={events ?? []}
+        closures={closures}
+        profiles={profiles}
+      />
 
       <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
