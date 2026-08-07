@@ -23,6 +23,20 @@ export interface StoredNotification extends AppNotification {
   dismissedAt?: string | null;
 }
 
+/** Canonical storage shape, mirroring incident_relations (migration 0049)
+ *  exactly: one row per unordered pair, incidentAId < incidentBId always
+ *  (LocalDemoRepository enforces this the same way the SQL CHECK
+ *  constraint does). "The other side" is resolved at READ time
+ *  (getIncidentRelations), never stored twice. */
+export interface StoredIncidentRelation {
+  id: string;
+  incidentAId: string;
+  incidentBId: string;
+  createdBy: string;
+  createdAt: string;
+  operationId: string;
+}
+
 export interface DemoDatabase {
   seededAt: string | null;
   /** 1: reference-data ordering (displayOrder) backfilled. 2: reference-data
@@ -42,6 +56,9 @@ export interface DemoDatabase {
   incidentCauseAssessments?: IncidentCauseAssessment[];
   incidentTreatmentActions?: IncidentTreatmentAction[];
   incidentClosures?: IncidentClosureClassification[];
+  /** Optional for databases persisted before this feature existed -- same
+   *  backward-compat pattern as incidentCauseAssessments etc. above. */
+  incidentRelations?: StoredIncidentRelation[];
   notifications: StoredNotification[];
   auditLogs: AuditLog[];
   /** Optional for databases persisted before 0008's model existed. */
@@ -63,6 +80,7 @@ export function emptyDatabase(): DemoDatabase {
     incidentCauseAssessments: [],
     incidentTreatmentActions: [],
     incidentClosures: [],
+    incidentRelations: [],
     notifications: [],
     auditLogs: [],
     pendingPersonnel: [],

@@ -3,7 +3,7 @@
 // display -> timeline end to end, mirroring the established pattern from
 // IncidentDetailPage.test.tsx / ArchivePage.test.tsx.
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { act, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type AppType from '../App';
 
@@ -763,5 +763,93 @@ describe('IncidentCreatePage: revised action-field labels and helper text (dupli
     expect(
       screen.getByText('אין צורך לכתוב שוב — בחר רק את סוגי הפעולות לצורך מעקב וניתוח.'),
     ).toBeInTheDocument();
+  });
+});
+
+// Related-incident suggestions (creation-time). Real app, real demo
+// repository -- seeded inc-1 (sys-alpha, "מערכת אלפא אינה מגיבה לפקודות
+// הפעלה...") is the natural match target for a similarly-worded draft on
+// the same system.
+describe('IncidentCreatePage: related-incident suggestions', () => {
+  const SIMILAR_DESCRIPTION = 'מערכת אלפא אינה מגיבה לפקודות הפעלה, מתקבל קוד שגיאה E-401 במסך הראשי';
+
+  async function fillTowardsSuggestion(user: ReturnType<typeof userEvent.setup>) {
+    await user.selectOptions(screen.getByLabelText(/^מערכת \/ עמדה/), 'sys-alpha');
+    await user.selectOptions(screen.getByLabelText(/^מיקום/), 'loc-1');
+    await user.type(screen.getByLabelText(/^תיאור התקלה/), SIMILAR_DESCRIPTION);
+  }
+
+  it('shows a suggestion for a description similar to an existing open incident on the same system', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillTowardsSuggestion(user);
+
+    expect(
+      await screen.findByText('נמצאו תקלות פעילות שעשויות להיות קשורות', {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('2026-001')).toBeInTheDocument(); // inc-1's seeded number
+    expect(screen.getByRole('button', { name: /קשר לתקלה זו/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /צפה בתקלה/ })).toHaveAttribute('target', '_blank');
+  });
+
+  it('does not appear for a short/generic description below the trigger length or without a system selected', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await user.type(screen.getByLabelText(/^תיאור התקלה/), 'תקלה קצרה');
+    await act(() => new Promise((r) => setTimeout(r, 700)));
+    expect(screen.queryByText('נמצאו תקלות פעילות שעשויות להיות קשורות')).not.toBeInTheDocument();
+  });
+
+  it('"התעלם" removes only that suggestion from view without any network/database effect', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillTowardsSuggestion(user);
+    await screen.findByText('נמצאו תקלות פעילות שעשויות להיות קשורות', {}, { timeout: 3000 });
+
+    await user.click(screen.getByRole('button', { name: 'התעלם' }));
+    expect(screen.queryByText('נמצאו תקלות פעילות שעשויות להיות קשורות')).not.toBeInTheDocument();
+  });
+
+  it('creating the incident WITHOUT selecting any suggestion (ignored) still succeeds normally, and creates no relation', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillTowardsSuggestion(user);
+    await screen.findByText('נמצאו תקלות פעילות שעשויות להיות קשורות', {}, { timeout: 3000 });
+
+    await user.selectOptions(screen.getByLabelText(/^תחום התקלה/), 'equipment');
+    await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה אוטומטית');
+    await user.type(screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/), 'נבדק ראשונית לצורך הבדיקה');
+    await user.selectOptions(screen.getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
+
+    expect(await within(main()).findByRole('heading', { level: 1 })).toBeInTheDocument();
+    // No "תקלות קשורות" section for a brand-new incident with zero relations
+    // (system_admin holds manage_incident_relations, so an empty section
+    // WOULD render with the management entry point -- assert the empty
+    // state text specifically, not just section absence).
+    expect(await screen.findByText('אין תקלות קשורות')).toBeInTheDocument();
+  });
+
+  it('selecting "קשר לתקלה זו" then creating links the new incident to the suggested one, visible on both incidents\' detail pages', async () => {
+    const user = await loginAs('login-u-admin');
+    await goToCreatePage(user);
+    await fillTowardsSuggestion(user);
+    await screen.findByText('נמצאו תקלות פעילות שעשויות להיות קשורות', {}, { timeout: 3000 });
+
+    const linkButton = screen.getByRole('button', { name: /קשר לתקלה זו/ });
+    await user.click(linkButton);
+    expect(screen.getByRole('button', { name: /יקושר עם השמירה/ })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.selectOptions(screen.getByLabelText(/^תחום התקלה/), 'equipment');
+    await user.type(screen.getByLabelText(/^השפעה מבצעית/), 'השפעה לצורך בדיקה אוטומטית');
+    await user.type(screen.getByLabelText(/^פירוט הפעולות שבוצעו עד כה/), 'נבדק ראשונית לצורך הבדיקה');
+    await user.selectOptions(screen.getByLabelText(/^בעל אחריות פנימי/), 'u-tech-1');
+    await user.click(screen.getByRole('button', { name: 'פתיחת תקלה' }));
+    await dismissCreationNotification(user);
+
+    // The new incident's own detail page shows the relation to inc-1.
+    expect(await screen.findByText('תקלות קשורות')).toBeInTheDocument();
+    expect(await screen.findByText('2026-001')).toBeInTheDocument();
   });
 });

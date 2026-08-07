@@ -319,6 +319,32 @@ body {
   }
 }
 
+/* ---------- Similar-incident suggestion entrance (incident creation) ---------- */
+/* A single short glow when the suggestion panel first appears -- an insight
+   cue ("AVARIA noticed something"), not an alarm. Applied to the panel's
+   className directly (see SimilarIncidentSuggestions.tsx): since the panel
+   only exists in the DOM while suggestions are visible (the component
+   returns null otherwise), the class is present from the node's first
+   insertion and plays once on that mount. Ordinary re-renders while the
+   panel stays mounted (typing further, toggling a selection, other
+   suggestions being dismissed) do not touch the DOM node itself, so the
+   animation never restarts -- only a genuine unmount-then-remount (panel
+   disappears, then a new match appears later) triggers it again. */
+@layer components {
+  .suggestion-panel-entrance {
+    animation: suggestion-panel-glow 1.6s ease-out;
+  }
+}
+
+@keyframes suggestion-panel-glow {
+  from {
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.32);
+  }
+  to {
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0);
+  }
+}
+
 /* ---------- Current-state header/KPI atmosphere ---------- */
 /* Restrained depth behind the מצב נוכחי header and KPI row only -- never
    applied to the incident-card sections below, which stay on the plain
@@ -386,6 +412,12 @@ body {
   .incident-card-pulse-high {
     animation: none;
     box-shadow: var(--shadow-soft);
+  }
+  /* Belt-and-suspenders alongside the blanket animation-duration override
+     above: the one-time suggestion-panel entrance glow is skipped entirely
+     rather than merely flashing near-instantly. */
+  .suggestion-panel-entrance {
+    animation: none;
   }
 }
 

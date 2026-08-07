@@ -680,6 +680,21 @@ export function buildSeed(now: Date = new Date()): DemoDatabase {
   ];
   db.incidentClosures = closures;
 
+  // Explicit related-incident fixture (תקלות קשורות): two open incidents an
+  // אחמ״ש judged worth cross-referencing manually. Canonical order
+  // (incidentAId < incidentBId) mirrors the DB's own CHECK constraint --
+  // 'inc-1' < 'inc-4' lexicographically.
+  db.incidentRelations = [
+    {
+      id: 'rel-1-4',
+      incidentAId: 'inc-1',
+      incidentBId: 'inc-4',
+      createdBy: DEMO_USERS.supervisor1,
+      createdAt: at(-hours(1)),
+      operationId: 'op-rel-1-4',
+    },
+  ];
+
   db.notifications = [
     {
       id: 'ntf-2',

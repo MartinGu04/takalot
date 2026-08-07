@@ -8,7 +8,11 @@ import type {
   Incident,
   IncidentCauseAssessment,
   IncidentClosureClassification,
+  IncidentDomain,
   IncidentEvent,
+  IncidentRelation,
+  IncidentStatus,
+  IncidentSummary,
   IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
@@ -17,6 +21,8 @@ import type {
   PersonnelEntry,
   Profile,
   Role,
+  Severity,
+  SimilarIncidentSuggestion,
   SystemCategory,
   SystemRecord,
 } from '../../domain/types';
@@ -106,6 +112,9 @@ function wrap(error: { message: string; code?: string } | null): void {
   }
   if (/not_found:/.test(error.message)) {
     throw new AppError('NOT_FOUND', error.message.replace(/^.*not_found:\s*/, ''));
+  }
+  if (/stale_target:/.test(error.message)) {
+    throw new AppError('STALE_TARGET', error.message.replace(/^.*stale_target:\s*/, ''));
   }
   throw new AppError('NETWORK', `שגיאת תקשורת מול השרת: ${error.message}`);
 }
@@ -303,6 +312,50 @@ export const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
   archived: r.archived as boolean,
   category: r.category as SystemCategory,
   displayOrder: r.display_order as number,
+  createdAt: r.created_at as string,
+});
+
+export const mapIncidentSummary = (r: Record<string, unknown>): IncidentSummary => ({
+  id: r.incident_id as string,
+  number: r.number as string,
+  severity: r.severity as Severity,
+  status: r.status as IncidentStatus,
+  systemId: r.system_id as string,
+  locationId: r.location_id as string,
+  description: r.description as string,
+});
+
+export const mapSimilarIncidentSuggestion = (r: Record<string, unknown>): SimilarIncidentSuggestion => ({
+  incidentId: r.incident_id as string,
+  number: r.number as string,
+  severity: r.severity as Severity,
+  status: r.status as IncidentStatus,
+  systemId: r.system_id as string,
+  locationId: r.location_id as string,
+  description: r.description as string,
+  sameSystem: r.same_system as boolean,
+  sameLocation: r.same_location as boolean,
+  sameDomain: r.same_domain as boolean,
+  similarityBand: r.similarity_band as SimilarIncidentSuggestion['similarityBand'],
+});
+
+// incident_relations rows are read via a view-shaped RPC (see
+// getIncidentRelations) that already resolves "the other side" and its
+// summary fields server-side -- this mapper never needs to know which of
+// incident_a_id/incident_b_id was the canonical storage slot.
+export const mapIncidentRelation = (r: Record<string, unknown>): IncidentRelation => ({
+  id: r.id as string,
+  relatedIncident: {
+    id: r.related_incident_id as string,
+    number: r.related_number as string,
+    severity: r.related_severity as Severity,
+    status: r.related_status as IncidentStatus,
+    systemId: r.related_system_id as string,
+    locationId: r.related_location_id as string,
+    description: r.related_description as string,
+  },
+  relationType: 'related',
+  createdBy: r.created_by as string,
   createdAt: r.created_at as string,
 });
 
@@ -785,6 +838,55 @@ export class SupabaseRepository implements Repository {
       p_note: note,
     });
     return mapIncident(data);
+  }
+
+  async suggestSimilarIncidents(
+    _s: Session,
+    query: { systemId: string; locationId: string | null; reportedDomain: IncidentDomain | null; description: string },
+  ): Promise<SimilarIncidentSuggestion[]> {
+    const { data, error } = await this.client.rpc('suggest_related_incidents', {
+      p_system_id: query.systemId,
+      p_description: query.description,
+      p_location_id: query.locationId,
+      p_reported_domain: query.reportedDomain,
+    });
+    wrap(error);
+    return (data ?? []).map(mapSimilarIncidentSuggestion);
+  }
+
+  async getIncidentRelations(_s: Session, incidentId: string): Promise<IncidentRelation[]> {
+    const { data, error } = await this.client.rpc('get_incident_relations', { p_incident_id: incidentId });
+    wrap(error);
+    return (data ?? []).map(mapIncidentRelation);
+  }
+
+  async linkIncidentOnCreation(_s: Session, newIncidentId: string, relatedIncidentId: string): Promise<void> {
+    await this.rpc('link_incident_on_creation', {
+      p_new_incident_id: newIncidentId,
+      p_related_incident_id: relatedIncidentId,
+    });
+  }
+
+  async manageIncidentRelation(
+    _s: Session,
+    incidentId: string,
+    relatedIncidentId: string,
+    action: 'link' | 'unlink',
+  ): Promise<void> {
+    await this.rpc('manage_incident_relation', {
+      p_incident_id: incidentId,
+      p_related_incident_id: relatedIncidentId,
+      p_action: action,
+    });
+  }
+
+  async searchIncidentsForRelation(_s: Session, query: string, excludeIncidentId: string): Promise<IncidentSummary[]> {
+    const { data, error } = await this.client.rpc('search_incidents_for_relation', {
+      p_query: query,
+      p_exclude_incident_id: excludeIncidentId,
+    });
+    wrap(error);
+    return (data ?? []).map(mapIncidentSummary);
   }
 
   // Bounded: the bell is a compact notification center, not an audit log --

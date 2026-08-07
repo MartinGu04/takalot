@@ -23,7 +23,19 @@ export type Capability =
    *  Enforced independently at the database level (RLS + list_audit_events'
    *  own role check); this capability only controls frontend visibility. */
   | 'view_audit_log'
-  | 'complete_follow_up';
+  | 'complete_follow_up'
+  /** Post-creation management of explicit related-incident links (add or
+   *  remove) -- אחמ״ש (shift_supervisor) and above. No existing capability
+   *  covers exactly this role set (closest analogs, full_update/
+   *  change_severity, are a different concept), so this is a narrowly
+   *  scoped new capability rather than an overload of one of those.
+   *  Creation-time linking (see the incident-creation flow) is deliberately
+   *  NOT gated by this capability -- it's covered by create_incident plus a
+   *  short server-enforced time window on the creator of that specific
+   *  incident (link_incident_on_creation, migration 0050), never a standing
+   *  permission. Real enforcement is the database RPC's own role check
+   *  (manage_incident_relation); this only controls frontend visibility. */
+  | 'manage_incident_relations';
 
 /**
  * Backend policy flags. In demo mode these mirror what would be secure
@@ -58,6 +70,7 @@ const matrix: Record<Role, Capability[]> = {
     'manage_config',
     'view_audit_log',
     'complete_follow_up',
+    'manage_incident_relations',
   ],
   professional_manager: [
     'view_all_incidents',
@@ -73,6 +86,7 @@ const matrix: Record<Role, Capability[]> = {
     'manage_personnel',
     'view_audit_log',
     'complete_follow_up',
+    'manage_incident_relations',
   ],
   shift_supervisor: [
     'view_all_incidents',
@@ -86,6 +100,7 @@ const matrix: Record<Role, Capability[]> = {
     'export_data',
     'manage_personnel',
     'complete_follow_up',
+    'manage_incident_relations',
     // 'reopen_incident' is granted only via PolicyFlags.allowSupervisorReopen
   ],
   technician: ['view_all_incidents', 'technical_update', 'create_incident', 'close_incident', 'assign_incident'],

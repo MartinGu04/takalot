@@ -43,3 +43,26 @@ describe('severity pulse CSS', () => {
     expect(reducedMotionBlock).toMatch(/animation-duration:\s*0\.001ms\s*!important/);
   });
 });
+
+describe('similar-incident suggestion entrance glow (incident creation only)', () => {
+  it('plays once (no infinite/looping) and is short (1-2s)', () => {
+    const rule = css.match(/\.suggestion-panel-entrance\s*\{\s*animation:\s*suggestion-panel-glow\s+([^;]+);/)?.[1] ?? '';
+    expect(rule).not.toMatch(/infinite/);
+    const seconds = Number(rule.match(/(\d+(?:\.\d+)?)s/)?.[1]);
+    expect(seconds).toBeGreaterThanOrEqual(1);
+    expect(seconds).toBeLessThanOrEqual(2);
+  });
+
+  it('the glow keyframes only vary box-shadow -- never opacity, transform, or scale', () => {
+    const block = css.match(/@keyframes suggestion-panel-glow\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+    expect(block).toMatch(/box-shadow/);
+    expect(block).not.toMatch(/opacity/);
+    expect(block).not.toMatch(/transform/);
+    expect(block).not.toMatch(/scale/);
+  });
+
+  it('disables the entrance glow entirely under prefers-reduced-motion', () => {
+    const reducedMotionBlock = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}\n/)?.[1] ?? '';
+    expect(reducedMotionBlock).toMatch(/\.suggestion-panel-entrance\s*\{\s*animation:\s*none;\s*\}/);
+  });
+});

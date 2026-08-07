@@ -8,7 +8,10 @@ import type {
   Incident,
   IncidentCauseAssessment,
   IncidentClosureClassification,
+  IncidentDomain,
   IncidentEvent,
+  IncidentRelation,
+  IncidentSummary,
   IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
@@ -17,11 +20,13 @@ import type {
   PersonnelEntry,
   Profile,
   Role,
+  SimilarIncidentSuggestion,
   SuspectedCause,
   SystemCategory,
   SystemRecord,
   EventType,
 } from '../../domain/types';
+import { selectSimilarIncidentSuggestions, incidentToSimilarityCandidate } from '../../domain/similarity';
 import type { TreatmentActionInput } from '../../domain/schemas';
 import { isOpen } from '../../domain/types';
 import { computeIncidentAnalytics, type AnalyticsFilters, type IncidentAnalytics } from '../../domain/analyticsSummary';
@@ -66,7 +71,7 @@ import type {
   Repository,
   Session,
 } from '../repository';
-import type { DemoDatabase, DemoStorage } from './storage';
+import type { DemoDatabase, DemoStorage, StoredIncidentRelation } from './storage';
 import { emptyDatabase } from './storage';
 import { buildSeed } from './seed';
 
@@ -164,6 +169,7 @@ export class LocalDemoRepository implements Repository {
       this.db.incidentCauseAssessments ??= [];
       this.db.incidentTreatmentActions ??= [];
       this.db.incidentClosures ??= [];
+      this.db.incidentRelations ??= [];
       this.backfillReferenceDataOrder();
       this.backfillReferenceDataCategory();
     } else if (options.autoSeed !== false) {
@@ -1027,6 +1033,23 @@ export class LocalDemoRepository implements Repository {
   private closureRows(): IncidentClosureClassification[] {
     if (!this.db.incidentClosures) this.db.incidentClosures = [];
     return this.db.incidentClosures;
+  }
+
+  private relationRows(): StoredIncidentRelation[] {
+    if (!this.db.incidentRelations) this.db.incidentRelations = [];
+    return this.db.incidentRelations;
+  }
+
+  private incidentSummary(incident: Incident): IncidentSummary {
+    return {
+      id: incident.id,
+      number: incident.number,
+      severity: incident.severity,
+      status: incident.status,
+      systemId: incident.systemId,
+      locationId: incident.locationId,
+      description: incident.description,
+    };
   }
 
   /** Records one current-suspected-cause history row -- mirrors
@@ -2690,6 +2713,176 @@ export class LocalDemoRepository implements Repository {
     });
     this.persist();
     return { ...incident };
+  }
+
+  // --- related incidents ---
+  // Mirrors supabase/migrations/0050's four RPCs as closely as the two
+  // languages allow -- see domain/similarity.ts for the shared scoring
+  // algorithm both this class and the SQL RPC independently implement.
+
+  private static readonly RELATION_LINK_WINDOW_MS = 10 * 60_000;
+
+  async suggestSimilarIncidents(
+    session: Session,
+    query: { systemId: string; locationId: string | null; reportedDomain: IncidentDomain | null; description: string },
+  ): Promise<SimilarIncidentSuggestion[]> {
+    this.requireCap(session, 'view_all_incidents');
+    const candidates = this.db.incidents.filter((i) => isOpen(i.status)).map(incidentToSimilarityCandidate);
+    return selectSimilarIncidentSuggestions(query, candidates);
+  }
+
+  async getIncidentRelations(session: Session, incidentId: string): Promise<IncidentRelation[]> {
+    this.requireCap(session, 'view_all_incidents');
+    return this.relationRows()
+      .filter((r) => r.incidentAId === incidentId || r.incidentBId === incidentId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((r) => {
+        const otherId = r.incidentAId === incidentId ? r.incidentBId : r.incidentAId;
+        const other = this.db.incidents.find((i) => i.id === otherId);
+        // Referential integrity is guaranteed by construction (relations are
+        // only ever created against real incident ids, and incidents are
+        // never deleted) -- this is defensive, never expected to fire.
+        if (!other) throw new AppError('NOT_FOUND', 'התקלה המקושרת לא נמצאה.');
+        return {
+          id: r.id,
+          relatedIncident: this.incidentSummary(other),
+          relationType: 'related' as const,
+          createdBy: r.createdBy,
+          createdAt: r.createdAt,
+        };
+      });
+  }
+
+  /** Shared insert/audit logic for both linkIncidentOnCreation and
+   *  manageIncidentRelation's 'link' branch -- canonical ordering,
+   *  idempotent no-op on an already-linked pair, symmetric audit rows
+   *  correlated via a shared operationId (mirrors write_audit's p_metadata
+   *  usage on the SQL side -- see 0050's own comment on why that, not a
+   *  new write_audit parameter). */
+  private linkRelationRows(actorId: string, incidentId: string, relatedIncidentId: string): void {
+    const [a, b] = [incidentId, relatedIncidentId].sort();
+    if (this.relationRows().some((r) => r.incidentAId === a && r.incidentBId === b)) {
+      return; // already linked: idempotent success, no duplicate audit row
+    }
+    const operationId = newId();
+    this.relationRows().push({
+      id: newId(),
+      incidentAId: a,
+      incidentBId: b,
+      createdBy: actorId,
+      createdAt: this.now().toISOString(),
+      operationId,
+    });
+    const incident = this.getIncidentOrThrow(incidentId);
+    const related = this.getIncidentOrThrow(relatedIncidentId);
+    this.audit(actorId, 'incident_related', 'incident', incidentId, {
+      incidentNumber: incident.number,
+      entityLabel: incident.number,
+      summary: `קושרה לתקלה ${related.number}`,
+      after: JSON.stringify({ relatedIncidentId, relatedIncidentNumber: related.number }),
+      metadata: JSON.stringify({ relationOperationId: operationId }),
+      correlationId: operationId,
+    });
+    this.audit(actorId, 'incident_related', 'incident', relatedIncidentId, {
+      incidentNumber: related.number,
+      entityLabel: related.number,
+      summary: `קושרה לתקלה ${incident.number}`,
+      after: JSON.stringify({ relatedIncidentId: incidentId, relatedIncidentNumber: incident.number }),
+      metadata: JSON.stringify({ relationOperationId: operationId }),
+      correlationId: operationId,
+    });
+  }
+
+  async linkIncidentOnCreation(session: Session, newIncidentId: string, relatedIncidentId: string): Promise<void> {
+    const actor = this.requireSession(session);
+    if (newIncidentId === relatedIncidentId) {
+      throw new AppError('VALIDATION', 'לא ניתן לקשר תקלה לעצמה.');
+    }
+    const incident = this.getIncidentOrThrow(newIncidentId);
+    if (incident.createdBy !== actor.id) {
+      throw new AppError('FORBIDDEN', 'ניתן לקשר רק תקלה שפתחת בעצמך, בסמוך לפתיחתה.');
+    }
+    if (this.now().getTime() - new Date(incident.createdAt).getTime() > LocalDemoRepository.RELATION_LINK_WINDOW_MS) {
+      throw new AppError(
+        'FORBIDDEN',
+        'החלון לקישור אוטומטי בעת פתיחת התקלה הסתיים -- ניתן לבקש מאחמ״ש קישור ידני.',
+      );
+    }
+    const related = this.getIncidentOrThrow(relatedIncidentId);
+    if (!isOpen(related.status)) {
+      throw new AppError(
+        'STALE_TARGET',
+        'התקלה המקושרת כבר אינה פעילה -- ניתן לבקש מאחמ״ש קישור ידני מאוחר יותר.',
+      );
+    }
+    this.linkRelationRows(actor.id, newIncidentId, relatedIncidentId);
+    this.persist();
+  }
+
+  async manageIncidentRelation(
+    session: Session,
+    incidentId: string,
+    relatedIncidentId: string,
+    action: 'link' | 'unlink',
+  ): Promise<void> {
+    const actor = this.requireCap(session, 'manage_incident_relations');
+    if (incidentId === relatedIncidentId) {
+      throw new AppError('VALIDATION', 'לא ניתן לקשר תקלה לעצמה.');
+    }
+    this.getIncidentOrThrow(incidentId);
+    this.getIncidentOrThrow(relatedIncidentId);
+
+    if (action === 'link') {
+      this.linkRelationRows(actor.id, incidentId, relatedIncidentId);
+      this.persist();
+      return;
+    }
+
+    const [a, b] = [incidentId, relatedIncidentId].sort();
+    const rows = this.relationRows();
+    const index = rows.findIndex((r) => r.incidentAId === a && r.incidentBId === b);
+    if (index === -1) {
+      // Nothing to remove: idempotent success, no phantom audit row.
+      return;
+    }
+    rows.splice(index, 1);
+    const operationId = newId();
+    const incident = this.getIncidentOrThrow(incidentId);
+    const related = this.getIncidentOrThrow(relatedIncidentId);
+    this.audit(actor.id, 'incident_unrelated', 'incident', incidentId, {
+      incidentNumber: incident.number,
+      entityLabel: incident.number,
+      summary: `הוסר קישור לתקלה ${related.number}`,
+      before: JSON.stringify({ relatedIncidentId, relatedIncidentNumber: related.number }),
+      metadata: JSON.stringify({ relationOperationId: operationId }),
+      correlationId: operationId,
+    });
+    this.audit(actor.id, 'incident_unrelated', 'incident', relatedIncidentId, {
+      incidentNumber: related.number,
+      entityLabel: related.number,
+      summary: `הוסר קישור לתקלה ${incident.number}`,
+      before: JSON.stringify({ relatedIncidentId: incidentId, relatedIncidentNumber: incident.number }),
+      metadata: JSON.stringify({ relationOperationId: operationId }),
+      correlationId: operationId,
+    });
+    this.persist();
+  }
+
+  async searchIncidentsForRelation(session: Session, query: string, excludeIncidentId: string): Promise<IncidentSummary[]> {
+    this.requireCap(session, 'manage_incident_relations');
+    const q = query.trim();
+    if (q.length < 2) return [];
+    const systemsById = new Map(this.db.systems.map((s) => [s.id, s.name]));
+    const locationsById = new Map(this.db.locations.map((l) => [l.id, l.name]));
+    return this.db.incidents
+      .filter((i) => i.id !== excludeIncidentId)
+      .filter((i) => {
+        const haystack = [i.number, i.description, systemsById.get(i.systemId) ?? '', locationsById.get(i.locationId) ?? ''].join(' ');
+        return haystack.includes(q);
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 10)
+      .map((i) => this.incidentSummary(i));
   }
 
   // --- notifications ---

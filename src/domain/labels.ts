@@ -362,6 +362,8 @@ export const auditActionLabels: Record<string, string> = {
   incident_cancelled: 'ביטול תקלה',
   incident_correction: 'תיקון רישום בתקלה',
   incident_follow_up_completed: 'השלמת פעולות המשך',
+  incident_related: 'קישור תקלה קשורה',
+  incident_unrelated: 'הסרת קישור תקלה קשורה',
   // Handovers -- historical only, written by the now-removed shift-handover
   // feature; kept for read compatibility with the audit log (free-text
   // action column, never validated against a fixed enum).

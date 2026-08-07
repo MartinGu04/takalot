@@ -6,8 +6,11 @@ import type {
   Incident,
   IncidentCauseAssessment,
   IncidentClosureClassification,
+  IncidentDomain,
   IncidentEvent,
+  IncidentRelation,
   IncidentStatus,
+  IncidentSummary,
   IncidentTreatmentAction,
   IncidentUpdate,
   LocationCategory,
@@ -18,6 +21,7 @@ import type {
   ReportedToOps,
   Role,
   Severity,
+  SimilarIncidentSuggestion,
   SystemCategory,
   SystemRecord,
 } from '../domain/types';
@@ -52,7 +56,13 @@ export type ErrorCode =
   // The profile was deactivated and tombstoned successfully, but deleting
   // the Auth account failed and must be retried (server-side delete-user
   // flow). Distinct from NETWORK: the DB step already succeeded.
-  | 'DELETE_INCOMPLETE';
+  | 'DELETE_INCOMPLETE'
+  // linkIncidentOnCreation only: the suggested incident closed/cancelled
+  // between the suggestion being shown and this call. Distinct from a
+  // generic failure -- the incident being created is NEVER affected by
+  // this, and the UI shows a specific, non-alarming message ("can be
+  // linked later by a supervisor") rather than a scary error.
+  | 'STALE_TARGET';
 
 /** Application error with a user-facing Hebrew message. */
 export class AppError extends Error {
@@ -293,6 +303,53 @@ export interface Repository {
   reopenIncident(session: Session, incidentId: string, input: ReopenIncidentInput): Promise<Incident>;
   addCorrection(session: Session, incidentId: string, input: CorrectionInput): Promise<void>;
   completeFollowUp(session: Session, incidentId: string, note: string): Promise<Incident>;
+
+  // --- related incidents ---
+  /**
+   * Up to 3 bounded, server-scored candidates for the incident-creation
+   * suggestion block. Description similarity is a mandatory gate -- never
+   * "same system alone" -- see supabase/migrations/0050 (production) /
+   * src/domain/similarity.ts (demo mode) for the exact algorithm both
+   * independently implement. Purely a recommendation: never creates any
+   * relationship by itself.
+   */
+  suggestSimilarIncidents(
+    session: Session,
+    query: { systemId: string; locationId: string | null; reportedDomain: IncidentDomain | null; description: string },
+  ): Promise<SimilarIncidentSuggestion[]>;
+  /** Every explicit relation for one incident, from that incident's own
+   *  point of view -- symmetric by construction (see IncidentRelation). */
+  getIncidentRelations(session: Session, incidentId: string): Promise<IncidentRelation[]>;
+  /**
+   * Links a JUST-created incident to a suggested one. Only ever callable by
+   * the incident's own creator, and only within a short window after
+   * creation (server-enforced, not merely UI-hidden) -- never a standing
+   * permission. Throws AppError('STALE_TARGET', ...) if the related
+   * incident closed/cancelled since the suggestion was shown; the caller
+   * (already-created incident) is never affected by that failure.
+   */
+  linkIncidentOnCreation(session: Session, newIncidentId: string, relatedIncidentId: string): Promise<void>;
+  /**
+   * Post-creation relation management -- add or remove, on any incident
+   * pair, restricted to manage_incident_relations (אחמ״ש ומעלה). Idempotent:
+   * linking an already-linked pair, or unlinking an already-absent one, is
+   * a silent success (no duplicate/phantom audit event), the least noisy
+   * behavior for a possible double-submission.
+   */
+  manageIncidentRelation(
+    session: Session,
+    incidentId: string,
+    relatedIncidentId: string,
+    action: 'link' | 'unlink',
+  ): Promise<void>;
+  /**
+   * Bounded (max 10 rows, server-side) manual search for the "קישור תקלה
+   * קשורה" picker -- manage_incident_relations only, requires a meaningful
+   * (>=2 char) query, excludes the current incident, and deliberately
+   * reaches closed/cancelled incidents too (manual linking may intend that
+   * on purpose, unlike the suggestion path above).
+   */
+  searchIncidentsForRelation(session: Session, query: string, excludeIncidentId: string): Promise<IncidentSummary[]>;
 
   // --- notifications ---
   listNotifications(session: Session): Promise<AppNotification[]>;
