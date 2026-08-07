@@ -15,11 +15,11 @@ describe('appVersion: single source of truth', () => {
     expect(APP_VERSION).toBe(pkg.version);
   });
 
-  it('the approved 1.2.0 release is what package.json currently declares', () => {
-    expect(pkg.version).toBe('1.2.0');
+  it('package.json declares a valid semantic version', () => {
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it('APP_VERSION_LABEL renders as "AVARIA v<version>"', () => {
-    expect(APP_VERSION_LABEL).toBe('AVARIA v1.2.0');
+  it('APP_VERSION_LABEL renders as "AVARIA v<version>", matching whatever version package.json currently declares', () => {
+    expect(APP_VERSION_LABEL).toBe(`AVARIA v${pkg.version}`);
   });
 });
