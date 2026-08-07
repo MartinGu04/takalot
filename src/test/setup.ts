@@ -40,3 +40,9 @@ if (!(Element.prototype.getBoundingClientRect as { __mocked?: boolean }).__mocke
   mockRect.__mocked = true;
   Element.prototype.getBoundingClientRect = mockRect;
 }
+
+// jsdom does not implement scrollIntoView (used by CurrentStateSummary to
+// jump to the corresponding Timeline entry).
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}

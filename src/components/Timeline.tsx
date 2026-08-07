@@ -383,8 +383,19 @@ export function Timeline({
               .filter((a): a is IncidentTreatmentAction => !!a)
           : [];
 
+        // Same key every group already uses as its React identity, reused
+        // as a DOM anchor id: CurrentStateSummary (the תמונת מצב עדכנית
+        // section above this Timeline) computes this exact same id from the
+        // source update's originating event to scroll/focus this entry.
+        const anchorId = group.operationId ?? primary.id;
+
         return (
-          <li key={group.operationId ?? primary.id} className="relative flex gap-3 pb-4">
+          <li
+            key={anchorId}
+            id={`timeline-entry-${anchorId}`}
+            tabIndex={-1}
+            className="relative flex gap-3 pb-4 outline-none focus-visible:rounded-lg focus-visible:ring-2 focus-visible:ring-brand-600"
+          >
             {idx < groups.length - 1 && (
               <span
                 aria-hidden
