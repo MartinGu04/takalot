@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import { useSimilarIncidentSuggestions, useLocations, useSystems } from '../data/hooks';
 import { formatSuggestionReason } from '../domain/similarity';
 import { SeverityBadge, StatusBadge } from './incident';
+import { IconLightbulb } from './icons';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import type { IncidentDomain, SimilarIncidentSuggestion } from '../domain/types';
 
@@ -72,8 +73,17 @@ export function SimilarIncidentSuggestions({
   const locationName = (id: string) => locations?.find((l) => l.id === id)?.name ?? '—';
 
   return (
-    <div className="rounded-xl border border-hairline bg-surface p-3">
-      <p className="text-sm font-medium text-text-primary">נמצאו תקלות פעילות שעשויות להיות קשורות</p>
+    // Amber/yellow -- "worth a look", never red/error. The panel only
+    // exists in the DOM while a match is visible, so the entrance-glow
+    // class plays once on mount and never restarts on ordinary rerenders
+    // (see the CSS comment in index.css for why).
+    <div className="suggestion-panel-entrance rounded-xl border border-amber-300 bg-amber-50 p-3 shadow-soft dark:border-amber-800/70 dark:bg-amber-950/30">
+      <div className="flex items-center gap-1.5">
+        <IconLightbulb className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+          נמצאו תקלות פעילות שעשויות להיות קשורות
+        </p>
+      </div>
       <ul className="mt-2 flex flex-col gap-2">
         {visible.map((s) => {
           const selected = selectedIds.has(s.incidentId);

@@ -300,6 +300,19 @@ export function IconClipboardList(props: IconProps) {
   );
 }
 
+/** Lightbulb -- "AVARIA noticed something worth a look", used for the
+ *  creation-time similar-incident suggestion heading. Deliberately an
+ *  insight cue, not IconAlertTriangle, which reads as a warning/error. */
+export function IconLightbulb(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7 8.2a3 3 0 1 1 6 0c0 1.5-.9 2.2-1.5 2.9-.4.5-.5 1-.5 1.6v.3h-2v-.3c0-.6-.1-1.1-.5-1.6C7.9 10.4 7 9.7 7 8.2Z" />
+      <path d="M8.3 15h3.4" />
+      <path d="M8.7 17h2.6" />
+    </svg>
+  );
+}
+
 /** Gear/settings icon -- used for the notification-center's system_admin-only "הגדרות התראות" trigger. */
 export function IconSettings(props: IconProps) {
   return (
