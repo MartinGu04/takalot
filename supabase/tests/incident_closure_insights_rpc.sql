@@ -40,13 +40,15 @@ insert into systems (id, name, display_order) values
   ('00000000-0000-0000-0000-0003c0000002', 'CIG2 Reopen Reclose', 2),
   ('00000000-0000-0000-0000-0003c0000003', 'CIG3 Breakdown', 3),
   ('00000000-0000-0000-0000-0003c0000004', 'CIG4 External', 4),
-  ('00000000-0000-0000-0000-0003c0000005', 'CIG5 Filters', 5);
+  ('00000000-0000-0000-0000-0003c0000005', 'CIG5 Filters', 5),
+  ('00000000-0000-0000-0000-0003c0000006', 'CIG6 Row-Level Filter', 6);
 insert into locations (id, name, display_order) values
   ('00000000-0000-0000-0000-0003d0000001', 'CIG1 Loc', 1),
   ('00000000-0000-0000-0000-0003d0000002', 'CIG2 Loc', 2),
   ('00000000-0000-0000-0000-0003d0000003', 'CIG3 Loc', 3),
   ('00000000-0000-0000-0000-0003d0000004', 'CIG4 Loc', 4),
-  ('00000000-0000-0000-0000-0003d0000005', 'CIG5 Loc', 5);
+  ('00000000-0000-0000-0000-0003d0000005', 'CIG5 Loc', 5),
+  ('00000000-0000-0000-0000-0003d0000006', 'CIG6 Loc', 6);
 
 create temp table results (id serial, test text, result text, detail text);
 grant all on results to authenticated, anon;
@@ -172,6 +174,36 @@ values
   ('00000000-0000-0000-0000-0003e0000009', 0, 'equipment', 'permanent_resolution', 'specific_action', '00000000-0000-0000-0000-0003b0000001', now() - interval '1 day'),
   ('00000000-0000-0000-0000-0003e000000a', 0, 'equipment', 'permanent_resolution', 'specific_action', '00000000-0000-0000-0000-0003b0000001', now() - interval '1 day');
 
+-- ===== G6: row-level confirmed-cause/treatment-outcome filter consistency.
+-- Incident closes an OLDER cycle (60 days ago -- outside a 30-day period)
+-- with confirmed_cause='equipment', is reopened, then closes again INSIDE
+-- the 30-day period with confirmed_cause='software'/
+-- treatment_outcome='temporary_workaround'. `f`'s own EXISTS-based
+-- membership test (unbounded by period, by design -- see the migration
+-- header) matches this incident under a confirmed_causes=['equipment']
+-- filter purely because of the OLD, out-of-period cycle. Before the fix,
+-- closures_in_period pulled in the in-period 'software' row anyway (any
+-- closure of a qualifying incident, unfiltered at the row level) --
+-- contradicting the active 'equipment' filter. =====
+insert into incidents (id, number, system_id, location_id, description, severity, status,
+  operational_impact, owner_user_id, discovered_at, created_by, updated_by, no_deadline_reason,
+  closed_at, closed_by, root_cause, resolution, readiness_at_close, reopen_count)
+values
+  ('00000000-0000-0000-0000-0003e000000b', 'CIG6-001', '00000000-0000-0000-0000-0003c0000006', '00000000-0000-0000-0000-0003d0000006',
+   'd', 'medium', 'closed', 'i', '00000000-0000-0000-0000-0003b0000001', now() - interval '70 days',
+   '00000000-0000-0000-0000-0003b0000001', '00000000-0000-0000-0000-0003b0000001', 'n/a',
+   now() - interval '1 day', '00000000-0000-0000-0000-0003b0000001', 'rc', 'res', 'full', 1);
+
+insert into incident_closures (incident_id, cycle_number, confirmed_cause, treatment_outcome, resolution_attribution, recorded_by, event_time)
+values
+  ('00000000-0000-0000-0000-0003e000000b', 0, 'equipment', 'permanent_resolution', 'specific_action', '00000000-0000-0000-0000-0003b0000001', now() - interval '60 days'),
+  ('00000000-0000-0000-0000-0003e000000b', 1, 'software', 'temporary_workaround', 'specific_action', '00000000-0000-0000-0000-0003b0000001', now() - interval '1 day');
+
+insert into incident_events (incident_id, type, actor_id, event_time) values
+  ('00000000-0000-0000-0000-0003e000000b', 'closed', '00000000-0000-0000-0000-0003b0000001', now() - interval '60 days'),
+  ('00000000-0000-0000-0000-0003e000000b', 'reopened', '00000000-0000-0000-0000-0003b0000001', now() - interval '30 days'),
+  ('00000000-0000-0000-0000-0003e000000b', 'closed', '00000000-0000-0000-0000-0003b0000001', now() - interval '1 day');
+
 -- =====================================================================
 -- Functional checks.
 -- =====================================================================
@@ -225,6 +257,70 @@ begin
   v := get_incident_closure_insights(30, '00000000-0000-0000-0000-0003c0000005', null, array['critical']::incident_severity[], null, false, null, null);
   insert into results (test, result, detail) values
     ('page-wide severity filter narrows structuredClosuresInPeriod to the matching fixture only',
+      case when (v->>'structuredClosuresInPeriod')::int = 1 then 'PASS' else 'FAIL' end, v->>'structuredClosuresInPeriod');
+
+  -- ===== G6: row-level confirmed-cause/treatment-outcome filter
+  -- consistency (reopened incident, matching closure only in an
+  -- out-of-period cycle). =====
+
+  -- Baseline, unfiltered: the in-period 'software'/'temporary_workaround'
+  -- closure is visible and correctly attributed -- confirms the fixture
+  -- itself (not the filter) drives the counts below.
+  v := get_incident_closure_insights(30, '00000000-0000-0000-0000-0003c0000006', null, null, null, false, null, null);
+  insert into results (test, result, detail) values
+    ('G6 unfiltered: the in-period software/temporary_workaround closure counts in structuredClosuresInPeriod',
+      case when (v->>'structuredClosuresInPeriod')::int = 1 then 'PASS' else 'FAIL' end, v->>'structuredClosuresInPeriod');
+  select e into entry from jsonb_array_elements(v->'confirmedCauseCounts') e where e->>'value' = 'software';
+  insert into results (test, result, detail) values
+    ('G6 unfiltered: confirmedCauseCounts shows the in-period software cause',
+      case when (entry->>'count')::int = 1 then 'PASS' else 'FAIL' end, entry);
+
+  -- Filtered by confirmed_cause='equipment' (matches only the OLDER,
+  -- out-of-period cycle): the incident still qualifies for `f` (entity-
+  -- level, unbounded-by-period membership, unchanged/correct), but the
+  -- in-period 'software' closure must NOT surface anywhere in the
+  -- breakdown -- that would contradict the active 'equipment' filter.
+  v := get_incident_closure_insights(30, '00000000-0000-0000-0000-0003c0000006', null, null, null, false,
+    array['equipment']::incident_confirmed_cause[], null);
+  insert into results (test, result, detail) values
+    ('G6 filtered by confirmed_cause=equipment: structuredClosuresInPeriod excludes the non-matching in-period closure',
+      case when (v->>'structuredClosuresInPeriod')::int = 0 then 'PASS' else 'FAIL' end, v->>'structuredClosuresInPeriod');
+  insert into results (test, result, detail) values
+    ('G6 filtered by confirmed_cause=equipment: confirmedCauseCounts never surfaces the contradicting software cause',
+      case when not exists (
+        select 1 from jsonb_array_elements(v->'confirmedCauseCounts') e where e->>'value' = 'software'
+      ) then 'PASS' else 'FAIL' end, v->'confirmedCauseCounts');
+  insert into results (test, result, detail) values
+    ('G6 filtered by confirmed_cause=equipment: confirmedCauseCounts is empty (no matching in-period row at all)',
+      case when v->'confirmedCauseCounts' = '[]'::jsonb then 'PASS' else 'FAIL' end, v->'confirmedCauseCounts');
+  insert into results (test, result, detail) values
+    ('G6 filtered by confirmed_cause=equipment: totalClosureEventsInPeriod still counts the in-period closing action (page-wide coverage denominator, deliberately not row-filtered)',
+      case when (v->>'totalClosureEventsInPeriod')::int = 1 then 'PASS' else 'FAIL' end, v->>'totalClosureEventsInPeriod');
+  insert into results (test, result, detail) values
+    ('G6 filtered by confirmed_cause=equipment: structuredClosuresInPeriod <= totalClosureEventsInPeriod still holds (0 <= 1)',
+      case when (v->>'structuredClosuresInPeriod')::int <= (v->>'totalClosureEventsInPeriod')::int then 'PASS' else 'FAIL' end,
+      'X=' || (v->>'structuredClosuresInPeriod') || ' Y=' || (v->>'totalClosureEventsInPeriod'));
+
+  -- Filtered by treatment_outcome='permanent_resolution' (the OLDER
+  -- cycle's outcome; the in-period cycle is 'temporary_workaround'): same
+  -- row-level contradiction check, for the treatment-outcome filter.
+  v := get_incident_closure_insights(30, '00000000-0000-0000-0000-0003c0000006', null, null, null, false,
+    null, array['permanent_resolution']::incident_treatment_outcome[]);
+  insert into results (test, result, detail) values
+    ('G6 filtered by treatment_outcome=permanent_resolution: structuredClosuresInPeriod excludes the non-matching in-period closure',
+      case when (v->>'structuredClosuresInPeriod')::int = 0 then 'PASS' else 'FAIL' end, v->>'structuredClosuresInPeriod');
+  insert into results (test, result, detail) values
+    ('G6 filtered by treatment_outcome=permanent_resolution: treatmentOutcomeCounts never surfaces the contradicting temporary_workaround outcome',
+      case when not exists (
+        select 1 from jsonb_array_elements(v->'treatmentOutcomeCounts') e where e->>'value' = 'temporary_workaround'
+      ) then 'PASS' else 'FAIL' end, v->'treatmentOutcomeCounts');
+
+  -- Filtered by confirmed_cause='software' (matches the IN-PERIOD cycle):
+  -- sanity check that the fix does not also suppress a genuine match.
+  v := get_incident_closure_insights(30, '00000000-0000-0000-0000-0003c0000006', null, null, null, false,
+    array['software']::incident_confirmed_cause[], null);
+  insert into results (test, result, detail) values
+    ('G6 filtered by confirmed_cause=software (the genuinely matching in-period cause): structuredClosuresInPeriod still counts it',
       case when (v->>'structuredClosuresInPeriod')::int = 1 then 'PASS' else 'FAIL' end, v->>'structuredClosuresInPeriod');
 
   reset role;

@@ -62,6 +62,20 @@
 -- "this incident was once closed with a confirmed equipment cause, and is
 -- currently open again" is meaningful information, not noise.
 --
+-- That unbounded-by-period rule governs ENTITY selection only (which
+-- incidents qualify for the page-wide filtered set `f`) -- it is used
+-- consistently that way in all three RPCs below. get_incident_closure_insights
+-- additionally re-applies the same p_confirmed_causes/p_treatment_outcomes
+-- predicate at the individual CLOSURE-ROW level (see its closures_in_period
+-- CTE) before that RPC ever surfaces a cause/outcome VALUE, since it is the
+-- only one of the three that displays closure attributes rather than just
+-- counting/existence-checking incidents. Without that row-level check, a
+-- reopened incident whose only matching closure was an earlier, out-of-
+-- period cycle could surface an unrelated, non-matching cause/outcome in
+-- the period breakdown -- contradicting the active filter. The other two
+-- RPCs never surface a closure's cause/outcome value, so entity-level
+-- membership via `f` alone is already correct for them, unchanged here.
+--
 -- Security: all three follow this schema's universal RPC convention --
 -- `language plpgsql stable security definer set search_path = public`, an
 -- explicit `is_active_member()` guard as the first statement (never relying on
@@ -438,18 +452,51 @@ begin
   ),
   -- X: structured closures in period -- distinct incidents with an
   -- incident_closures row (full-readiness only, by construction of that
-  -- table) whose event_time falls in the period.
+  -- table) whose event_time falls in the period AND whose own cause/
+  -- outcome values match the active filter (when set).
+  --
+  -- The second condition is not redundant with `f`'s own EXISTS-based
+  -- membership test above: `f` only proves the incident had A matching
+  -- closure SOMEWHERE in its history, unbounded by period (the correct,
+  -- intentional page-wide entity-selection rule -- see the migration
+  -- header, and unchanged here). It does NOT prove that THIS SPECIFIC
+  -- in-period row matches. Without re-applying the filter here, a reopened
+  -- incident whose only matching closure was an earlier, out-of-period
+  -- cycle could surface an unrelated, non-matching cause/outcome value in
+  -- the period breakdown below -- directly contradicting the active
+  -- filter (e.g. filtering by confirmed_cause='equipment' must never let a
+  -- same-period 'software'-caused closure count towards
+  -- structuredClosuresInPeriod/confirmedCauseCounts just because that
+  -- incident had an unrelated equipment closure in an earlier cycle).
+  -- causeExternalClosedCount/resolutionAttributionExternalCount below
+  -- inherit this fix automatically, since both are computed from this CTE.
   closures_in_period as (
     select ic.*
     from incident_closures ic
     join f on f.id = ic.incident_id
     where ic.event_time >= v_period_start and ic.event_time <= v_period_end
+      and (p_confirmed_causes is null or ic.confirmed_cause = any(p_confirmed_causes))
+      and (p_treatment_outcomes is null or ic.treatment_outcome = any(p_treatment_outcomes))
   ),
   -- Y: EVERY genuine closure action in period, full or partial-readiness,
   -- sourced from the immutable incident_events log rather than
   -- incidents.closed_at (which partial-readiness closures never set) --
   -- see the migration header and the plan's §C6 correction. Distinct
   -- incidents, not row count.
+  --
+  -- Deliberately NOT re-filtered by p_confirmed_causes/p_treatment_outcomes,
+  -- unlike closures_in_period above: incident_events carries no cause/
+  -- outcome column at all (a partial-readiness closure is structurally
+  -- unclassifiable), and this CTE's sole role is the structured-vs-
+  -- unstructured coverage denominator the UI's caveat text describes ("X
+  -- out of Y incidents with a closing action this period, full closures
+  -- with structured classification only") -- it never claims those Y
+  -- closures share the selected cause/outcome, only that a closing action
+  -- happened in period for a page-wide-qualifying incident. Narrowing X to
+  -- row-level matches (above) while leaving Y as the broader, page-wide
+  -- entity-level count keeps that coverage statement true under any
+  -- active filter, rather than needing a second, differently-scoped
+  -- reading of "qualifying incident" for Y alone.
   closure_events_in_period as (
     select e.incident_id
     from incident_events e
