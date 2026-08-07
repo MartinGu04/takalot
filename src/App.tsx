@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Analytics } from '@vercel/analytics/react';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { Layout } from './components/Layout';
 import { Spinner, ToastProvider } from './components/ui';
@@ -116,6 +117,7 @@ export default function App() {
             <AppRoutes />
           </BrowserRouter>
           <UpdatePrompt />
+          <Analytics />
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
