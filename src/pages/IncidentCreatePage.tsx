@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { createIncidentSchema, type CreateIncidentInput, type TreatmentActionInput } from '../domain/schemas';
 import { useLocations, useProfiles, useSystems, useAppMutation, repo } from '../data/hooks';
 import { useAuth, useSession } from '../auth/AuthContext';
-import { Button, Disclosure, Field, Input, Select, Textarea } from '../components/ui';
+import { Button, Disclosure, Field, Input, Select, Textarea, useToast } from '../components/ui';
 import { ExternalPartyFields } from '../components/ExternalPartyFields';
 import { OwnerField } from '../components/OwnerField';
 import { TreatmentActionPicker } from '../components/TreatmentActionPicker';
 import { SystemOptions, LocationOptions } from '../components/ReferenceDataOptions';
 import { NotificationCopyDialog } from '../components/dialogs/NotificationCopyDialog';
+import { SimilarIncidentSuggestions } from '../components/SimilarIncidentSuggestions';
 import {
   severityLabels,
   reportedToOpsLabels,
@@ -19,7 +21,7 @@ import {
   SUSPECTED_CAUSE_ORDER,
 } from '../domain/labels';
 import { buildIncidentOpenedMessage } from '../domain/notificationMessage';
-import type { Incident, IncidentDomain, SuspectedCause } from '../domain/types';
+import type { Incident, IncidentDomain, SimilarIncidentSuggestion, SuspectedCause } from '../domain/types';
 import { isoToLocalInput, localInputToIso } from '../lib/time';
 import { loadDraft, clearDraft, useDraft, useClearDraftOnRouteLeave, useWarnOnUnload } from '../lib/useDraft';
 
@@ -86,11 +88,20 @@ export default function IncidentCreatePage() {
   const navigate = useNavigate();
   const session = useSession();
   const { user } = useAuth();
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
   const { data: profiles } = useProfiles();
   const [submitted, setSubmitted] = useState(false);
   const [createdIncident, setCreatedIncident] = useState<Incident | null>(null);
+  // Related-incident suggestions: purely local UI state until the incident
+  // is successfully created -- selecting "קשר לתקלה זו" never itself calls
+  // the database. Keyed by incidentId (not just a Set) so the post-creation
+  // linking pass and its partial-failure message can reference each
+  // suggestion's number without a second lookup.
+  const [selectedRelations, setSelectedRelations] = useState<Map<string, SimilarIncidentSuggestion>>(new Map());
+  const [dismissedRelationIds, setDismissedRelationIds] = useState<Set<string>>(new Set());
 
   // Merge a restored draft OVER the current defaults rather than using it
   // directly: a draft saved before a later form revision (e.g. PR C's
@@ -146,6 +157,33 @@ export default function IncidentCreatePage() {
         // must appear right after the confirmed success, built from this
         // exact persisted incident (not the form's now-stale local state).
         setCreatedIncident(incident);
+        // The incident is already fully, successfully created at this
+        // point -- everything below is best-effort enrichment, called
+        // directly against repo() (not another useAppMutation) specifically
+        // so each attempt is isolated: Promise.allSettled, never
+        // Promise.all -- one failing must never roll back the incident,
+        // and must never affect any OTHER selected relation that already
+        // succeeded. ['incident-relations'] is invalidated manually once
+        // every attempt settles, so the incident's own detail page (reached
+        // after the notification modal below) shows the current, real
+        // relation state -- never stale.
+        if (selectedRelations.size > 0) {
+          const attempts = Array.from(selectedRelations.values());
+          void Promise.allSettled(
+            attempts.map((s) => repo().linkIncidentOnCreation(session, incident.id, s.incidentId)),
+          ).then((results) => {
+            queryClient.invalidateQueries({ queryKey: ['incident-relations'] });
+            const failed = results.filter((r) => r.status === 'rejected').length;
+            const succeeded = attempts.length - failed;
+            if (failed === 0) return;
+            toast(
+              succeeded > 0
+                ? `התקלה נפתחה בהצלחה. קושרה ל-${succeeded} מתוך ${attempts.length} תקלות שנבחרו -- ניתן להשלים ידנית מעמוד התקלה.`
+                : 'התקלה נפתחה בהצלחה, אך הקישור לתקלות שנבחרו נכשל. ניתן לקשר ידנית מעמוד התקלה.',
+              'error',
+            );
+          });
+        }
       },
     },
   );
@@ -211,6 +249,19 @@ export default function IncidentCreatePage() {
       return;
     }
     createMutation.mutate(parsed.data);
+  };
+
+  const toggleRelationSelected = (suggestion: SimilarIncidentSuggestion) => {
+    setSelectedRelations((prev) => {
+      const next = new Map(prev);
+      if (next.has(suggestion.incidentId)) next.delete(suggestion.incidentId);
+      else next.set(suggestion.incidentId, suggestion);
+      return next;
+    });
+  };
+
+  const dismissRelationSuggestion = (incidentId: string) => {
+    setDismissedRelationIds((prev) => new Set(prev).add(incidentId));
   };
 
   // Prevent accidental double submission
@@ -281,6 +332,17 @@ export default function IncidentCreatePage() {
             </>
           )}
         </Field>
+
+        <SimilarIncidentSuggestions
+          systemId={values.systemId}
+          locationId={values.locationId}
+          reportedDomain={values.reportedDomain}
+          description={values.description}
+          selectedIds={new Set(selectedRelations.keys())}
+          dismissedIds={dismissedRelationIds}
+          onToggleSelect={toggleRelationSelected}
+          onDismiss={dismissRelationSuggestion}
+        />
 
         <Field label="חומרה" required>
           {(a) => (
@@ -500,6 +562,8 @@ export default function IncidentCreatePage() {
             onClick={() => {
               ownerManuallySetRef.current = false;
               setClassificationOpen(false);
+              setSelectedRelations(new Map());
+              setDismissedRelationIds(new Set());
               reset(defaultValues());
             }}
           >

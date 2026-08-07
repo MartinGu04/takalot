@@ -2,6 +2,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepository } from './index';
 import { AppError, type AnalyticsFilters, type AuditFilters, type IncidentFilters, type IncidentSort } from './repository';
+import type { IncidentDomain } from '../domain/types';
 import { useAuth, useSession } from '../auth/AuthContext';
 import { useToast } from '../components/ui';
 
@@ -120,6 +121,39 @@ export function useIncidentClosures(id: string | undefined) {
   });
 }
 
+export function useIncidentRelations(id: string | undefined) {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['incident-relations', id],
+    queryFn: () => repo().getIncidentRelations(session, id!),
+    enabled: !!id,
+  });
+}
+
+/**
+ * Creation-time related-incident suggestions. `enabled` is the caller's
+ * trigger-condition gate (systemId selected + description past the
+ * meaningful-length floor) -- this hook never fires on its own just
+ * because a query object was passed in. The query key is the full input
+ * tuple, so any change to it (system/location/domain/description) is a
+ * fresh cache entry -- stale results are never shown after an input
+ * changes; TanStack Query simply supersedes them, no manual invalidation
+ * needed. A failed lookup is silent by design (see IncidentCreatePage):
+ * this hook exposes isError but nothing in this file decides what to do
+ * with it.
+ */
+export function useSimilarIncidentSuggestions(
+  query: { systemId: string; locationId: string | null; reportedDomain: IncidentDomain | null; description: string },
+  enabled: boolean,
+) {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['similar-incidents', query],
+    queryFn: () => repo().suggestSimilarIncidents(session, query),
+    enabled,
+  });
+}
+
 export function useNotifications() {
   const session = useSession();
   return useQuery({
@@ -171,6 +205,7 @@ export function useAppMutation<TInput, TResult>(
         ['incident-cause-assessments'],
         ['incident-treatment-actions'],
         ['incident-closures'],
+        ['incident-relations'],
         ['notifications'],
         ['audit'],
       ]) {

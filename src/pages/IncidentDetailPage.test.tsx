@@ -947,3 +947,78 @@ describe('IncidentDetailPage: WhatsApp notification-copy modal (post-closure)', 
     expect(screen.queryByRole('dialog', { name: 'התקלה נסגרה בהצלחה' })).not.toBeInTheDocument();
   });
 });
+
+// תקלות קשורות -- explicit related-incident management. Real app, real demo
+// repository, exercising the seeded rel-1-4 fixture (inc-1 <-> inc-4).
+// Reaches an arbitrary incident (not just inc-1, which the dashboard's own
+// "requires attention now" section happens to surface directly) via the
+// full "תקלות" list -- mirrors the established navigation pattern used
+// earlier in this file (see the reporting-fields test above) rather than
+// relying on dashboard placement, which varies by severity/overdue status.
+async function openIncidentViaFullList(userTestId: string, descriptionMatch: RegExp) {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByTestId(userTestId));
+  const sidebarNav = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+  await user.click(within(sidebarNav).getByRole('link', { name: 'תקלות' }));
+  const card = await within(main()).findByText(descriptionMatch);
+  await user.click(card.closest('a.incident-card') as HTMLElement);
+  return user;
+}
+
+describe('IncidentDetailPage: related incidents (תקלות קשורות)', () => {
+  it('shows the seeded relation from BOTH sides, symmetrically', async () => {
+    const user = await openIncidentViaFullList('login-u-admin', INC1_TEXT); // inc-1
+    expect(await within(main()).findByText('תקלות קשורות')).toBeInTheDocument();
+    expect(await within(main()).findByText('2026-004')).toBeInTheDocument(); // inc-4's seeded number
+
+    // Navigate to inc-4 from here (same session) and confirm the reverse side.
+    const sidebarNav = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+    await user.click(within(sidebarNav).getByRole('link', { name: 'תקלות' }));
+    const inc4Card = await within(main()).findByText(/אין פגיעה תפקודית\. במעקב טמפרטורה/);
+    await user.click(inc4Card.closest('a.incident-card') as HTMLElement);
+    expect(await within(main()).findByText('תקלות קשורות')).toBeInTheDocument();
+    expect(await within(main()).findByText('2026-001')).toBeInTheDocument(); // inc-1's own seeded number
+  });
+
+  it('system_admin (manage_incident_relations) can remove the relation, and it disappears from both sides', async () => {
+    const user = await openIncidentViaFullList('login-u-admin', INC1_TEXT); // inc-1
+    await within(main()).findByText('תקלות קשורות');
+    await within(main()).findByText('2026-004');
+    await user.click(within(main()).getByRole('button', { name: 'הסרת קישור לתקלה 2026-004' }));
+
+    expect(await screen.findByText('הקישור הוסר.')).toBeInTheDocument();
+    await waitFor(() => expect(within(main()).queryByText('2026-004')).not.toBeInTheDocument());
+    expect(within(main()).getByText('אין תקלות קשורות')).toBeInTheDocument();
+  });
+
+  it('a technician sees existing relations but no management controls (no add/remove actions)', async () => {
+    await openIncidentViaFullList('login-u-tech-1', INC1_TEXT); // inc-1
+
+    expect(await within(main()).findByText('תקלות קשורות')).toBeInTheDocument();
+    expect(within(main()).getByText('2026-004')).toBeInTheDocument();
+    expect(within(main()).queryByRole('button', { name: 'קישור תקלה קשורה' })).not.toBeInTheDocument();
+    expect(within(main()).queryByRole('button', { name: /הסרת קישור/ })).not.toBeInTheDocument();
+  });
+
+  it('shift_supervisor can manually link a related incident via the bounded search dialog', async () => {
+    // inc-2 has no seeded relations -- a clean slate for the "add" flow.
+    const user = await openIncidentViaFullList(
+      'login-u-supervisor-1',
+      /עיכוב בקבלת נתונים בעמדת הבקרה/,
+    );
+
+    expect(await within(main()).findByText('אין תקלות קשורות')).toBeInTheDocument();
+    await user.click(within(main()).getByRole('button', { name: 'קישור תקלה קשורה' }));
+    const dialog = await screen.findByRole('dialog', { name: 'קישור תקלה קשורה' });
+    expect(within(dialog).getByText('יש להזין לפחות שני תווים לחיפוש.')).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText(/^חיפוש/), '2026-001');
+    await waitFor(() => expect(within(dialog).getByText('2026-001')).toBeInTheDocument());
+    await user.click(within(dialog).getByText('2026-001').closest('button') as HTMLElement);
+
+    expect(await screen.findByText('הקישור נוסף.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'קישור תקלה קשורה' })).not.toBeInTheDocument());
+    expect(await within(main()).findByText('2026-001')).toBeInTheDocument();
+  });
+});

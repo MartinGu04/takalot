@@ -7,6 +7,7 @@ import {
   useIncidentCauseAssessments,
   useIncidentTreatmentActions,
   useIncidentClosures,
+  useIncidentRelations,
   useLocations,
   useProfiles,
   useSystems,
@@ -20,6 +21,7 @@ import { hasCapability, canTechnicianUpdate } from '../domain/permissions';
 import { SeverityBadge, StatusBadge, ReadinessBadge, ownerDisplay, externalHandlerDisplay } from '../components/incident';
 import { Timeline } from '../components/Timeline';
 import { CurrentStateSummary } from '../components/CurrentStateSummary';
+import { RelatedIncidentsSection } from '../components/RelatedIncidentsSection';
 import { Button, EmptyState, ErrorState, Spinner, useToast } from '../components/ui';
 import { formatDateTime, formatDuration } from '../lib/time';
 import {
@@ -224,6 +226,7 @@ export default function IncidentDetailPage() {
   const { data: causeAssessments } = useIncidentCauseAssessments(id);
   const { data: treatmentActions } = useIncidentTreatmentActions(id);
   const { data: closures } = useIncidentClosures(id);
+  const { data: relations } = useIncidentRelations(id);
   const { data: profiles } = useProfiles();
   const { data: systems } = useSystems();
   const { data: locations } = useLocations();
@@ -601,6 +604,12 @@ export default function IncidentDetailPage() {
           />
         </section>
       )}
+
+      <RelatedIncidentsSection
+        incidentId={incident.id}
+        relations={relations}
+        canManage={hasCapability(user.role, 'manage_incident_relations')}
+      />
 
       <section className="mt-6">
         <h2 className="section-title mb-2">ציר זמן</h2>

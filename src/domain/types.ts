@@ -466,6 +466,53 @@ export interface IncidentClosureClassification {
   createdAt: string;
 }
 
+/** Compact display shape for an incident shown as a reference to another
+ *  incident (a related-incident row, a manual-search result) -- never the
+ *  full Incident record, which the caller would need to fetch separately
+ *  if it ever wanted more. */
+export interface IncidentSummary {
+  id: string;
+  number: string;
+  severity: Severity;
+  status: IncidentStatus;
+  systemId: string;
+  locationId: string;
+  description: string;
+}
+
+/** One canonical, symmetric "related" link between two incidents -- always
+ *  read from the CURRENT incident's own point of view: `relatedIncident`
+ *  is always the OTHER side, regardless of which of the two physical
+ *  incident_a_id/incident_b_id columns it happened to be stored under
+ *  (canonical A<->B ordering is a storage/dedup detail, never surfaced to
+ *  the UI). Only one relation type exists in V1. */
+export interface IncidentRelation {
+  id: string;
+  relatedIncident: IncidentSummary;
+  relationType: 'related';
+  createdBy: string;
+  createdAt: string;
+}
+
+/** One candidate surfaced by suggest_related_incidents while creating a new
+ *  incident. Deliberately carries only display fields plus three boolean
+ *  corroborating signals and a coarse similarity band -- never a raw
+ *  numeric score (never shown to the user) and never severity as a
+ *  matching signal (display-only, per the approved similarity design). */
+export interface SimilarIncidentSuggestion {
+  incidentId: string;
+  number: string;
+  severity: Severity;
+  status: IncidentStatus;
+  systemId: string;
+  locationId: string;
+  description: string;
+  sameSystem: boolean;
+  sameLocation: boolean;
+  sameDomain: boolean;
+  similarityBand: 'high' | 'medium';
+}
+
 export type NotificationType =
   | 'incident_assigned'
   // 'update_overdue': the next-update-ETA concept is no longer an active
