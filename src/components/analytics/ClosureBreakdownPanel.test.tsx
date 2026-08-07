@@ -38,6 +38,18 @@ describe('ClosureBreakdownPanel', () => {
     expect(screen.getByText(/מבוסס על 3 מתוך 4 תקלות עם פעולת סגירה בתקופה זו/)).toBeInTheDocument();
   });
 
+  it('omits the row-level-vs-broader-denominator clarification when no confirmed-cause/treatment-outcome filter is active', () => {
+    render(<ClosureBreakdownPanel insights={makeInsights()} />);
+    expect(screen.queryByText(/המספר הראשון תואם את סינון/)).not.toBeInTheDocument();
+  });
+
+  it('adds a clarifying sentence when a confirmed-cause/treatment-outcome filter is active, so X (row-filtered) and Y (page-wide, unfiltered) are never read as the same population', () => {
+    render(<ClosureBreakdownPanel insights={makeInsights()} causeOrOutcomeFilterActive />);
+    expect(screen.getByText(/מבוסס על 3 מתוך 4 תקלות עם פעולת סגירה בתקופה זו/)).toBeInTheDocument();
+    expect(screen.getByText(/המספר הראשון תואם את סינון הגורם\/התוצאה שנבחר/)).toBeInTheDocument();
+    expect(screen.getByText(/המספר השני כולל את כלל פעולות הסגירה בתקופה/)).toBeInTheDocument();
+  });
+
   it('shows a distinct empty state when there were no closure actions at all this period', () => {
     render(
       <ClosureBreakdownPanel

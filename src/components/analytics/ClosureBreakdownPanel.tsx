@@ -49,7 +49,21 @@ function EnumBreakdownList<T extends string>({
   );
 }
 
-export function ClosureBreakdownPanel({ insights }: { insights: IncidentClosureInsights }) {
+export function ClosureBreakdownPanel({
+  insights,
+  causeOrOutcomeFilterActive = false,
+}: {
+  insights: IncidentClosureInsights;
+  /** Whether a confirmed-cause/treatment-outcome filter is currently
+   *  active. When it is, structuredClosuresInPeriod (the numerator below)
+   *  only counts closures matching that filter, while
+   *  totalClosureEventsInPeriod (the denominator) still counts every
+   *  closure action in the period regardless of cause/outcome -- see
+   *  analyticsClosureInsights.ts's header. The footer below adds one
+   *  clarifying sentence in that case so "X out of Y" is never misread as
+   *  both numbers describing the same closure-filtered population. */
+  causeOrOutcomeFilterActive?: boolean;
+}) {
   if (insights.totalClosureEventsInPeriod === 0) {
     return <EmptyState title="אין תקלות עם פעולת סגירה בתקופה שנבחרה" />;
   }
@@ -80,6 +94,13 @@ export function ClosureBreakdownPanel({ insights }: { insights: IncidentClosureI
       <p className="mt-4 text-xs leading-relaxed text-muted">
         מבוסס על {insights.structuredClosuresInPeriod} מתוך {insights.totalClosureEventsInPeriod} תקלות עם פעולת
         סגירה בתקופה זו (סגירות מלאות עם סיווג מובנה בלבד).
+        {causeOrOutcomeFilterActive && (
+          <>
+            {' '}
+            המספר הראשון תואם את סינון הגורם/התוצאה שנבחר; המספר השני כולל את כלל פעולות הסגירה בתקופה, גם כאלה
+            שאינן תואמות את הסינון.
+          </>
+        )}
       </p>
     </div>
   );

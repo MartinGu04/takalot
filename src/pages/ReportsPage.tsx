@@ -376,7 +376,12 @@ export default function ReportsPage() {
               <p className="mt-0.5 text-xs text-muted">גורם שאומת ותוצאת הטיפול, לפי סגירות מובנות בתקופה שנבחרה</p>
               <div className="surface mt-3 p-4 sm:p-5">
                 {closureInsights ? (
-                  <ClosureBreakdownPanel insights={closureInsights} />
+                  <ClosureBreakdownPanel
+                    insights={closureInsights}
+                    causeOrOutcomeFilterActive={
+                      (filters.confirmedCauses?.length ?? 0) > 0 || (filters.treatmentOutcomes?.length ?? 0) > 0
+                    }
+                  />
                 ) : (
                   <Spinner label="טוען נתוני סיווג סגירות…" />
                 )}

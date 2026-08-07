@@ -69,11 +69,35 @@ export function computeIncidentClosureInsights(
   const f = incidents.filter((i) => matchesEntityFilters(i, closures, filters));
   const fIds = new Set(f.map((i) => i.id));
 
+  // Row-level re-application of the confirmed-cause/treatment-outcome
+  // filter, mirroring migration 0051's closures_in_period CTE fix: fIds
+  // membership (via matchesEntityFilters) only proves the incident had A
+  // matching closure SOMEWHERE in its history, unbounded by period -- the
+  // correct, intentional page-wide entity-selection rule, shared with
+  // computeIncidentAnalytics/computeIncidentOpenBacklog and left
+  // unchanged. It does NOT prove that a given IN-PERIOD closure row here
+  // matches. Without this row-level check, a reopened incident whose only
+  // matching closure was an earlier, out-of-period cycle could surface an
+  // unrelated, contradicting cause/outcome value in the breakdown below.
+  const hasCauseFilter = filters.confirmedCauses !== undefined && filters.confirmedCauses.length > 0;
+  const hasOutcomeFilter = filters.treatmentOutcomes !== undefined && filters.treatmentOutcomes.length > 0;
   const closuresInPeriod = closures.filter(
-    (c) => fIds.has(c.incidentId) && withinPeriod(c.eventTime, periodStartIso, periodEndIso),
+    (c) =>
+      fIds.has(c.incidentId) &&
+      withinPeriod(c.eventTime, periodStartIso, periodEndIso) &&
+      (!hasCauseFilter || filters.confirmedCauses!.includes(c.confirmedCause)) &&
+      (!hasOutcomeFilter || filters.treatmentOutcomes!.includes(c.treatmentOutcome)),
   );
   const structuredIncidentIds = new Set(closuresInPeriod.map((c) => c.incidentId));
 
+  // Deliberately NOT re-filtered by confirmedCauses/treatmentOutcomes,
+  // unlike closuresInPeriod above: IncidentEvent carries no cause/outcome
+  // field at all (a partial-readiness closure is structurally
+  // unclassifiable), and this set's sole role is the structured-vs-
+  // unstructured coverage denominator the UI's caveat text describes -- it
+  // never claims those events share the selected cause/outcome, only that
+  // a closing action happened in period for a page-wide-qualifying
+  // incident. See migration 0051's matching comment for the full reasoning.
   const closureEventIncidentIds = new Set(
     events
       .filter(
