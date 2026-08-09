@@ -178,6 +178,31 @@ export function jerusalemMidnightIso(dateKey: string): string {
   return localInputToIso(`${dateKey}T00:00`);
 }
 
+export type AnalyticsBucketUnit = 'day' | 'week';
+
+/** The trend chart's own bucket-granularity rule: daily buckets for 7/30-day
+ *  periods, weekly (ISO week, Monday start) for 90-day -- otherwise a
+ *  90-day trend would render ~90 individual bars. Centralized here (rather
+ *  than re-deriving `periodDays === 90` at each call site) so every
+ *  consumer -- the trend computation itself, and the bucket drill-down,
+ *  which must resolve the exact same bucket a chart bar represents --
+ *  agrees by construction, never by convention. */
+export function bucketUnitForPeriod(periodDays: AnalyticsPeriodDays): AnalyticsBucketUnit {
+  return periodDays === 90 ? 'week' : 'day';
+}
+
+/** The bucket key (day: its own YYYY-MM-DD; week: the Monday of its ISO
+ *  week) that a given instant's Asia/Jerusalem calendar date falls into --
+ *  the exact grouping rule AnalyticsBucket.bucketStart values are built
+ *  from below, and the one the bucket drill-down (analyticsTrendDrilldown.ts)
+ *  re-applies to decide whether a specific incident belongs to a clicked
+ *  bucket. Keeping this in one exported function is what guarantees the
+ *  drill-down can never disagree with the chart it's drilling into. */
+export function bucketKeyOf(iso: string, bucketUnit: AnalyticsBucketUnit): string {
+  const dateKey = jerusalemDateKey(new Date(iso));
+  return bucketUnit === 'day' ? dateKey : isoWeekStart(dateKey);
+}
+
 export function avg(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((a, b) => a + b, 0) / values.length;
@@ -255,7 +280,7 @@ export function computeIncidentAnalytics(
   const todayKey = jerusalemDateKey(now);
   const periodStartKey = addDays(todayKey, -(filters.periodDays - 1));
   const periodStartIso = jerusalemMidnightIso(periodStartKey);
-  const bucketUnit: 'day' | 'week' = filters.periodDays === 90 ? 'week' : 'day';
+  const bucketUnit = bucketUnitForPeriod(filters.periodDays);
 
   const f = incidents.filter((i) => matchesEntityFilters(i, closures, filters));
   const fIds = new Set(f.map((i) => i.id));
@@ -285,18 +310,14 @@ export function computeIncidentAnalytics(
     const endWeek = isoWeekStart(todayKey);
     for (let key = startWeek; key <= endWeek; key = addDays(key, 7)) bucketKeys.push(key);
   }
-  const bucketKeyFor = (iso: string): string => {
-    const dateKey = jerusalemDateKey(new Date(iso));
-    return bucketUnit === 'day' ? dateKey : isoWeekStart(dateKey);
-  };
   const openedByBucket = new Map<string, number>();
   for (const i of openedInPeriod) {
-    const key = bucketKeyFor(i.discoveredAt);
+    const key = bucketKeyOf(i.discoveredAt, bucketUnit);
     openedByBucket.set(key, (openedByBucket.get(key) ?? 0) + 1);
   }
   const closedByBucket = new Map<string, number>();
   for (const i of closedInPeriod) {
-    const key = bucketKeyFor(i.closedAt!);
+    const key = bucketKeyOf(i.closedAt!, bucketUnit);
     closedByBucket.set(key, (closedByBucket.get(key) ?? 0) + 1);
   }
   const buckets: AnalyticsBucket[] = bucketKeys.map((bucketStart) => ({

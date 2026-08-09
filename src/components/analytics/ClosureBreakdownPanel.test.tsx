@@ -68,4 +68,24 @@ describe('ClosureBreakdownPanel', () => {
     expect(screen.getByText('אין תקלות עם סיווג סגירה מובנה בתקופה זו')).toBeInTheDocument();
     expect(screen.queryByText('0%')).not.toBeInTheDocument();
   });
+
+  it('renders both empty states with the compact (reduced-padding) EmptyState treatment, not the default large one', () => {
+    const { rerender } = render(
+      <ClosureBreakdownPanel
+        insights={makeInsights({ totalClosureEventsInPeriod: 0, structuredClosuresInPeriod: 0, confirmedCauseCounts: [], treatmentOutcomeCounts: [] })}
+      />,
+    );
+    let container = screen.getByText('אין תקלות עם פעולת סגירה בתקופה שנבחרה').closest('div');
+    expect(container).toHaveClass('py-5');
+    expect(container).not.toHaveClass('py-10');
+
+    rerender(
+      <ClosureBreakdownPanel
+        insights={makeInsights({ totalClosureEventsInPeriod: 2, structuredClosuresInPeriod: 0, confirmedCauseCounts: [], treatmentOutcomeCounts: [] })}
+      />,
+    );
+    container = screen.getByText('אין תקלות עם סיווג סגירה מובנה בתקופה זו').closest('div');
+    expect(container).toHaveClass('py-5');
+    expect(container).not.toHaveClass('py-10');
+  });
 });

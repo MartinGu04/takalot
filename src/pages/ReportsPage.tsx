@@ -6,7 +6,7 @@
 // 0051) -- kept in sync with the page's period/system/location/severity/
 // domain/confirmed-cause/treatment-outcome filters via the URL (shareable/
 // bookmarkable, same convention as ArchivePage/IncidentsPage).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useAnalyticsPreferences,
   useIncidentAnalytics,
@@ -19,7 +19,7 @@ import {
 import { useSession } from '../auth/AuthContext';
 import { useUrlState } from '../lib/useUrlState';
 import { formatDurationMinutes } from '../lib/time';
-import type { AnalyticsFilters, AnalyticsPeriodDays } from '../domain/analyticsSummary';
+import { bucketUnitForPeriod, type AnalyticsBucket, type AnalyticsFilters, type AnalyticsPeriodDays } from '../domain/analyticsSummary';
 import { SEVERITY_ORDER, type ConfirmedCause, type IncidentDomain, type Severity, type TreatmentOutcome } from '../domain/types';
 import { CONFIRMED_CAUSE_ORDER, INCIDENT_DOMAIN_ORDER, TREATMENT_OUTCOME_ORDER } from '../domain/labels';
 import { canPersonalizeAnalytics, defaultAnalyticsModules } from '../domain/analyticsPreferences';
@@ -28,6 +28,7 @@ import { AnalyticsKpiCard } from '../components/analytics/AnalyticsKpiCard';
 import { AnalyticsInfoTooltip } from '../components/analytics/AnalyticsInfoTooltip';
 import { AnalyticsViewSettingsDialog } from '../components/analytics/AnalyticsViewSettingsDialog';
 import { IncidentTrendChart } from '../components/analytics/IncidentTrendChart';
+import { TrendBucketDrilldown } from '../components/analytics/TrendBucketDrilldown';
 import { AgeDistributionChart } from '../components/analytics/AgeDistributionChart';
 import { TopSystemsList } from '../components/analytics/TopSystemsList';
 import { TopLocationsList } from '../components/analytics/TopLocationsList';
@@ -182,6 +183,25 @@ export default function ReportsPage() {
     enabled: visibleModules.has('closures') || visibleModules.has('externalInvolvement'),
   });
 
+  // Trend chart drill-down ("לחץ לצפייה בתקלות"): the selected bucket is a
+  // snapshot of the exact AnalyticsBucket the chart rendered (bucketStart/
+  // opened/closed), never re-derived -- see TrendBucketDrilldown's header
+  // for why. bucketUnit is the same day/week rule the trend's own buckets
+  // were built from (bucketUnitForPeriod), so a click can only ever resolve
+  // to a bucket boundary the chart itself already drew.
+  const trendAnchorRef = useRef<HTMLDivElement>(null);
+  const [selectedBucket, setSelectedBucket] = useState<AnalyticsBucket | null>(null);
+  const bucketUnit = bucketUnitForPeriod(filters.periodDays);
+  // Closes the drill-down the moment any filter/period changes -- otherwise
+  // the already-open panel would keep showing a bucket's opened/closed
+  // counts from BEFORE the change, no longer matching what the (now
+  // refetched) chart displays for that same bucket key.
+  const filtersKey = JSON.stringify(filters);
+  useEffect(() => {
+    setSelectedBucket(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
+
   // Correct any invalid filter params in the address bar (replace
   // semantics, via useUrlState -- no new history entry, so back/forward
   // navigation and a retry of the same link can't reproduce the malformed
@@ -321,9 +341,17 @@ export default function ReportsPage() {
           {visibleModules.has('trend') && (
             <section className="mt-8" aria-labelledby="analytics-trend-heading">
               <h2 id="analytics-trend-heading" className="section-title">פתיחת וסגירת תקלות</h2>
-              <div className="surface mt-3 p-4 sm:p-5">
-                <IncidentTrendChart buckets={data.buckets} />
+              <div ref={trendAnchorRef} className="surface mt-3 p-4 sm:p-5">
+                <IncidentTrendChart buckets={data.buckets} onBucketClick={setSelectedBucket} />
               </div>
+              <TrendBucketDrilldown
+                bucket={selectedBucket}
+                bucketUnit={bucketUnit}
+                entityFilters={entityFilters}
+                systems={systems}
+                anchorRef={trendAnchorRef}
+                onClose={() => setSelectedBucket(null)}
+              />
             </section>
           )}
 

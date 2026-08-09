@@ -65,11 +65,12 @@ export function ClosureBreakdownPanel({
   causeOrOutcomeFilterActive?: boolean;
 }) {
   if (insights.totalClosureEventsInPeriod === 0) {
-    return <EmptyState title="אין תקלות עם פעולת סגירה בתקופה שנבחרה" />;
+    return <EmptyState compact title="אין תקלות עם פעולת סגירה בתקופה שנבחרה" />;
   }
   if (insights.structuredClosuresInPeriod === 0) {
     return (
       <EmptyState
+        compact
         title="אין תקלות עם סיווג סגירה מובנה בתקופה זו"
         subtitle="התקלות שנסגרו בתקופה זו נסגרו ללא סיווג מובנה (סגירה עם כשירות חלקית, או סגירה ללא סיווג)."
       />

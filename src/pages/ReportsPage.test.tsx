@@ -117,6 +117,23 @@ describe('Analytics page content', () => {
     expect(screen.queryByText('העברת משמרת')).not.toBeInTheDocument();
   });
 
+  it('wires the trend chart drill-down: no detail panel open by default, and the chart is marked clickable (pointer cursor) once buckets are wired to onBucketClick', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await login(user, 'login-u-viewer');
+    await goToAnalytics(user);
+
+    await screen.findByRole('heading', { name: 'פתיחת וסגירת תקלות' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Confirms ReportsPage actually passes onBucketClick through to
+    // IncidentTrendChart end to end (not just that the prop exists in
+    // isolation, already covered by IncidentTrendChart.test.tsx) -- the
+    // real recharts click itself can't be simulated in jsdom (see
+    // TrendBucketDrilldown.test.tsx's header), so this is the deepest
+    // integration check available for the click affordance.
+    expect(container.querySelector('.recharts-wrapper.cursor-pointer')).not.toBeNull();
+  });
+
   it('defaults to a 30-day period with no system/location/severity filter applied', async () => {
     const user = userEvent.setup();
     render(<App />);

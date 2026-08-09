@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { getRepository } from './index';
 import {
   AppError,
+  type AnalyticsBucketUnit,
   type AnalyticsEntityFilters,
   type AnalyticsFilters,
   type AnalyticsModuleKey,
@@ -139,6 +140,28 @@ export function useSetAnalyticsPreferences() {
   const session = useSession();
   return useAppMutation((modules: AnalyticsModuleKey[] | null) => repo().setAnalyticsVisibleModules(session, modules), {
     invalidate: [['analyticsPreferences', session.userId]],
+  });
+}
+
+/** Bounded, on-demand incident summaries for exactly ONE trend-chart bucket
+ *  ("לחץ לצפייה בתקלות"). `bucketStart` is `null` while no bucket is
+ *  selected -- `enabled: bucketStart !== null` means this never fires as
+ *  part of the normal analytics page load, only once the user actually
+ *  clicks a bar. `entityFilters` must be the SAME entity filters the trend
+ *  chart's own data was computed from (no periodDays -- the bucket itself
+ *  already pins the window), so the returned list can never disagree with
+ *  the chart's own opened/closed counts for that bucket. */
+export function useAnalyticsTrendBucketIncidents(
+  bucketStart: string | null,
+  bucketUnit: AnalyticsBucketUnit,
+  entityFilters: AnalyticsEntityFilters,
+) {
+  const session = useSession();
+  const canonical = canonicalizeAnalyticsFilters(entityFilters);
+  return useQuery({
+    queryKey: ['analyticsTrendBucketIncidents', bucketStart, bucketUnit, canonical],
+    queryFn: () => repo().getAnalyticsTrendBucketIncidents(session, bucketStart!, bucketUnit, canonical),
+    enabled: bucketStart !== null,
   });
 }
 

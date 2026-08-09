@@ -31,12 +31,14 @@ import type { TreatmentActionInput } from '../../domain/schemas';
 import { isOpen } from '../../domain/types';
 import {
   computeIncidentAnalytics,
+  type AnalyticsBucketUnit,
   type AnalyticsEntityFilters,
   type AnalyticsFilters,
   type IncidentAnalytics,
 } from '../../domain/analyticsSummary';
 import { computeIncidentOpenBacklog, type IncidentOpenBacklog } from '../../domain/analyticsOpenBacklog';
 import { computeIncidentClosureInsights, type IncidentClosureInsights } from '../../domain/analyticsClosureInsights';
+import { computeTrendBucketIncidents, type TrendBucketIncidents } from '../../domain/analyticsTrendDrilldown';
 import { ANALYTICS_MODULE_KEYS, type AnalyticsModuleKey } from '../../domain/analyticsPreferences';
 import { LOCATION_CATEGORY_ORDER, SYSTEM_CATEGORY_ORDER, reportedToOpsLabels } from '../../domain/labels';
 import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
@@ -1590,6 +1592,16 @@ export class LocalDemoRepository implements Repository {
     }
     map[actor.id] = modules;
     this.persist();
+  }
+
+  async getAnalyticsTrendBucketIncidents(
+    session: Session,
+    bucketStart: string,
+    bucketUnit: AnalyticsBucketUnit,
+    filters: AnalyticsEntityFilters,
+  ): Promise<TrendBucketIncidents> {
+    this.requireCap(session, 'view_all_incidents');
+    return computeTrendBucketIncidents(this.db.incidents, this.closureRows(), bucketStart, bucketUnit, filters);
   }
 
   async getIncident(session: Session, id: string): Promise<Incident | null> {

@@ -43,18 +43,21 @@ import type {
 // defined in the domain layer -- see analyticsSummary.ts for why the
 // domain module owns these types rather than this file.
 export type {
+  AnalyticsBucketUnit,
   AnalyticsEntityFilters,
   AnalyticsFilters,
   AnalyticsPeriodDays,
   IncidentAnalytics,
 } from '../domain/analyticsSummary';
-import type { AnalyticsEntityFilters, AnalyticsFilters, IncidentAnalytics } from '../domain/analyticsSummary';
+import type { AnalyticsBucketUnit, AnalyticsEntityFilters, AnalyticsFilters, IncidentAnalytics } from '../domain/analyticsSummary';
 export type { IncidentOpenBacklog } from '../domain/analyticsOpenBacklog';
 import type { IncidentOpenBacklog } from '../domain/analyticsOpenBacklog';
 export type { AnalyticsEnumCount, IncidentClosureInsights } from '../domain/analyticsClosureInsights';
 import type { IncidentClosureInsights } from '../domain/analyticsClosureInsights';
 export type { AnalyticsModuleKey } from '../domain/analyticsPreferences';
 import type { AnalyticsModuleKey } from '../domain/analyticsPreferences';
+export type { TrendBucketIncidents } from '../domain/analyticsTrendDrilldown';
+import type { TrendBucketIncidents } from '../domain/analyticsTrendDrilldown';
 
 export type ErrorCode =
   | 'FORBIDDEN'
@@ -327,6 +330,30 @@ export interface Repository {
    * controlled FORBIDDEN error, not merely hidden in the UI.
    */
   setAnalyticsVisibleModules(session: Session, modules: AnalyticsModuleKey[] | null): Promise<void>;
+  /**
+   * Bounded (TREND_BUCKET_DRILLDOWN_LIMIT rows per section, server-side)
+   * incident summaries for exactly ONE trend-chart bucket -- the "לחץ
+   * לצפייה בתקלות" drill-down. `bucketStart`/`bucketUnit` MUST be the exact
+   * values the chart itself rendered that bucket from (bucketUnit is
+   * `bucketUnitForPeriod(filters.periodDays)`, matching the trend's own
+   * day/week rule) -- this is what guarantees the returned incidents can
+   * never contradict the chart's own opened/closed counts for that bucket:
+   * both are built from the same matchesEntityFilters/bucketKeyOf rules
+   * (src/domain/analyticsSummary.ts). Filters are entity-only (no
+   * periodDays) since the bucket itself already pins the exact window.
+   * Fetched only on demand, once a bucket is clicked -- never as part of
+   * the normal analytics page load. No dedicated RPC/migration: both
+   * implementations read directly from the same RLS-gated (is_active_member())
+   * incidents/incident_closures tables every other bounded incident query in
+   * this repository already uses (see supabaseRepository.ts for the exact
+   * query shape and why it preserves the trend's semantics exactly).
+   */
+  getAnalyticsTrendBucketIncidents(
+    session: Session,
+    bucketStart: string,
+    bucketUnit: AnalyticsBucketUnit,
+    filters: AnalyticsEntityFilters,
+  ): Promise<TrendBucketIncidents>;
   getIncident(session: Session, id: string): Promise<Incident | null>;
   getIncidentEvents(session: Session, incidentId: string): Promise<IncidentEvent[]>;
   getIncidentUpdates(session: Session, incidentId: string): Promise<IncidentUpdate[]>;

@@ -588,9 +588,27 @@ export function Spinner({ label = 'טוען…', className }: { label?: string; 
 }
 
 // ---------- Empty / error states ----------
-export function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
+export function EmptyState({
+  title,
+  subtitle,
+  compact = false,
+}: {
+  title: string;
+  subtitle?: string;
+  /** Reduced vertical padding, for an empty state sitting inside an
+   *  otherwise-compact module (e.g. ClosureBreakdownPanel) where the
+   *  default py-10 reads as a large missing block rather than a small
+   *  "nothing here yet" note. Opt-in only -- every existing call site
+   *  keeps its current spacing unless it asks for this explicitly. */
+  compact?: boolean;
+}) {
   return (
-    <div className="rounded-xl border border-dashed border-hairline-strong bg-surface/60 py-10 text-center">
+    <div
+      className={cx(
+        'rounded-xl border border-dashed border-hairline-strong bg-surface/60 text-center',
+        compact ? 'py-5' : 'py-10',
+      )}
+    >
       <p className="font-medium text-text-secondary">{title}</p>
       {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
     </div>

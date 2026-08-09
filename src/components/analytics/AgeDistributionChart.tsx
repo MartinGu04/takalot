@@ -63,6 +63,14 @@ export function AgeDistributionChart({ backlog }: { backlog: IncidentOpenBacklog
                 borderRadius: 8,
                 fontSize: 12,
               }}
+              // Recharts' default hover cursor is a bright, near-opaque gray
+              // rectangle -- fine on a light background, but on AVARIA's dark
+              // surface it reads as a large, ill-defined bar of its own
+              // rather than a hover highlight. Swapped for a low-opacity fill
+              // in the same muted hairline tone borders already use, so the
+              // hovered band is still clearly identifiable without competing
+              // with the actual orange data bars.
+              cursor={{ fill: 'var(--color-hairline-strong)', opacity: 0.35 }}
               formatter={(value) => [String(value), 'תקלות פתוחות']}
             />
             <Bar dataKey="count" name="count" fill="var(--color-orange-500)" radius={[3, 3, 0, 0]} />

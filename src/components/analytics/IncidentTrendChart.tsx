@@ -10,6 +10,15 @@
 // exposed instead via a visually-hidden (`sr-only`) table with the same
 // per-bucket opened/closed counts a sighted user reads off the bars --
 // this is the single accessible representation, not a duplicate one.
+//
+// Drill-down: when `onBucketClick` is passed, clicking anywhere in a
+// bucket's column (not just precisely on a bar) selects that whole bucket
+// -- recharts' chart-level onClick resolves the nearest x-axis category
+// from the pointer position, which is what makes the entire column
+// clickable rather than just a few bar pixels. The hover tooltip keeps its
+// existing opened/closed content unchanged and only gains one subtle hint
+// line ("לחץ לצפייה בתקלות") pointing at that affordance -- the incident
+// list itself never lives inside the hover tooltip.
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { AnalyticsBucket } from '../../domain/analyticsSummary';
 import { formatDate } from '../../lib/time';
@@ -21,8 +30,90 @@ function shortDate(bucketStart: string): string {
   return `${bucketStart.slice(8, 10)}/${bucketStart.slice(5, 7)}`;
 }
 
-export function IncidentTrendChart({ buckets }: { buckets: AnalyticsBucket[] }) {
-  const data = buckets.map((b) => ({ ...b, label: shortDate(b.bucketStart) }));
+type TrendDatum = AnalyticsBucket & { label: string };
+
+/** Resolves recharts' chart-level click state (an activeIndex into the
+ *  SAME `data` array the chart was rendered from) to the plain
+ *  AnalyticsBucket the user clicked -- kept as a small, directly-testable
+ *  pure function since simulating recharts' real mouse-position hit-testing
+ *  (which depends on getBoundingClientRect layout jsdom doesn't provide)
+ *  isn't reliable to exercise through the rendered SVG itself.
+ *
+ *  recharts v3's `activeIndex` is typed `number | TooltipIndex | undefined`
+ *  (`TooltipIndex = string | null`), but at runtime it is always a numeric
+ *  STRING (e.g. `"3"`) or `null`/`undefined` -- never an actual `number`
+ *  (verified against `combineActiveTooltipIndex`, which always returns
+ *  `String(clampedIndex)`). A `typeof === 'number'` guard therefore never
+ *  matches; this parses whatever shape arrives instead. */
+export function bucketFromChartClick(
+  data: TrendDatum[],
+  activeIndex: number | string | null | undefined,
+): AnalyticsBucket | null {
+  if (activeIndex === null || activeIndex === undefined) return null;
+  const index = typeof activeIndex === 'number' ? activeIndex : Number(activeIndex);
+  if (!Number.isInteger(index)) return null;
+  const point = data[index];
+  return point ? { bucketStart: point.bucketStart, opened: point.opened, closed: point.closed } : null;
+}
+
+export function TrendTooltipContent({
+  active,
+  payload,
+  label,
+  showHint,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string; value?: number }>;
+  label?: string;
+  showHint: boolean;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div
+      style={{
+        direction: 'rtl',
+        textAlign: 'right',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-hairline)',
+        borderRadius: 8,
+        fontSize: 12,
+        padding: '8px 10px',
+      }}
+    >
+      <p style={{ margin: 0, marginBottom: 4, fontWeight: 600 }}>{label}</p>
+      {payload.map((entry) => (
+        <p key={entry.dataKey} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-block',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: entry.dataKey === 'opened' ? 'var(--color-brand-500)' : 'var(--color-emerald-500)',
+            }}
+          />
+          {entry.dataKey === 'opened' ? 'נפתחו' : 'נסגרו'}: {entry.value}
+        </p>
+      ))}
+      {showHint && (
+        <p style={{ margin: 0, marginTop: 6, fontSize: 11, color: 'var(--color-text-muted)' }}>לחץ לצפייה בתקלות</p>
+      )}
+    </div>
+  );
+}
+
+export function IncidentTrendChart({
+  buckets,
+  onBucketClick,
+}: {
+  buckets: AnalyticsBucket[];
+  /** When provided, every bucket becomes clickable (pointer cursor over
+   *  the whole chart, "לחץ לצפייה בתקלות" hint in the tooltip) and this
+   *  fires with the exact bucket the user selected. */
+  onBucketClick?: (bucket: AnalyticsBucket) => void;
+}) {
+  const data: TrendDatum[] = buckets.map((b) => ({ ...b, label: shortDate(b.bucketStart) }));
   return (
     <>
       {/* Below sm: (mobile), the chart gets a fixed min-width and its own
@@ -42,7 +133,23 @@ export function IncidentTrendChart({ buckets }: { buckets: AnalyticsBucket[] }) 
         <div dir="ltr" className="w-full overflow-x-auto sm:overflow-visible" aria-hidden="true">
           <div className="h-64 min-w-[660px] sm:h-80 sm:min-w-0">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} accessibilityLayer={false}>
+              <BarChart
+                data={data}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                accessibilityLayer={false}
+                // recharts' own wrapper sets an inline `cursor: 'default'`
+                // style, which a `cursor-pointer` CLASS can never win
+                // against (inline style always beats a class in the
+                // cascade) -- passed as `style` instead, which recharts
+                // merges on top of its own default, so this actually wins.
+                style={onBucketClick ? { cursor: 'pointer' } : undefined}
+                className={onBucketClick ? 'cursor-pointer' : undefined}
+                onClick={(state) => {
+                  if (!onBucketClick) return;
+                  const bucket = bucketFromChartClick(data, state?.activeIndex);
+                  if (bucket) onBucketClick(bucket);
+                }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-hairline)" vertical={false} />
                 <XAxis
                   dataKey="label"
@@ -58,17 +165,7 @@ export function IncidentTrendChart({ buckets }: { buckets: AnalyticsBucket[] }) 
                   axisLine={false}
                   width={28}
                 />
-                <Tooltip
-                  contentStyle={{
-                    direction: 'rtl',
-                    textAlign: 'right',
-                    background: 'var(--color-surface)',
-                    border: '1px solid var(--color-hairline)',
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  formatter={(value, name) => [String(value), name === 'opened' ? 'נפתחו' : 'נסגרו']}
-                />
+                <Tooltip content={<TrendTooltipContent showHint={!!onBucketClick} />} />
                 <Legend
                   formatter={(name) => (name === 'opened' ? 'נפתחו' : 'נסגרו')}
                   wrapperStyle={{ direction: 'rtl', fontSize: 12 }}
