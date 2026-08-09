@@ -25,6 +25,7 @@ const SECRET = "test-only-fixture-webhook-secret";
 const NOTIFICATION_ID = "11111111-1111-1111-1111-111111111111";
 const INCIDENT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
+const ACTOR_ID = "44444444-4444-4444-4444-444444444444";
 
 function baseNotification(
   overrides: Partial<NotificationRow> = {},
@@ -35,6 +36,7 @@ function baseNotification(
     type: "incident_assigned",
     category: "action_required",
     incident_id: INCIDENT_ID,
+    actor_id: null,
     ...overrides,
   };
 }
@@ -64,6 +66,7 @@ interface DepsCalls {
       payload: { title: string; body: string; incidentId: string };
     }
   >;
+  actorLookups: string[];
 }
 
 function createFakeDeps(options: {
@@ -75,6 +78,8 @@ function createFakeDeps(options: {
   sendResults?: Record<string, SendPushResult>; // subscriptionId -> result
   claimShouldThrow?: Set<string>;
   sendShouldThrow?: Set<string>;
+  actorName?: string | null;
+  actorLookupShouldThrow?: boolean;
 }): { deps: DispatchDeps; calls: DepsCalls } {
   const calls: DepsCalls = {
     claimed: [],
@@ -83,6 +88,7 @@ function createFakeDeps(options: {
     expired: [],
     removed: [],
     sendPushCalls: [],
+    actorLookups: [],
   };
   const deps: DispatchDeps = {
     vapidConfigured: options.vapidConfigured ?? true,
@@ -93,6 +99,13 @@ function createFakeDeps(options: {
       : null),
     isRecipientActive: async () => options.active ?? true,
     fetchSubscriptions: async () => options.subscriptions ?? [],
+    fetchActorDisplayName: async (actorId) => {
+      calls.actorLookups.push(actorId);
+      if (options.actorLookupShouldThrow) {
+        throw new Error("simulated actor lookup failure");
+      }
+      return options.actorName ?? null;
+    },
     claimDelivery: async (notificationId, subscriptionId) => {
       calls.claimed.push([notificationId, subscriptionId]);
       if (options.claimShouldThrow?.has(subscriptionId)) {
@@ -543,6 +556,161 @@ Deno.test("M: exact approved payload for a reopened action_required notification
   });
 });
 
+// =====================================================================
+// T. Push actor name polish -- exact copy with a resolved actor, safe
+// fallback without one, actor never confused with the recipient, and
+// email never used as a stand-in for the display name.
+// =====================================================================
+Deno.test("T1: incident_assigned with a resolvable actor -> 'תקלה שויכה אליך · ע״י <name>'", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({
+      type: "incident_assigned",
+      category: "action_required",
+      actor_id: ACTOR_ID,
+    }),
+    subscriptions: [sub],
+    actorName: "דניאל דיוקרב",
+  });
+  await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.deepEqual(calls.sendPushCalls[0].payload, {
+    title: "AVARIA",
+    body: "תקלה שויכה אליך · ע״י דניאל דיוקרב",
+    incidentId: INCIDENT_ID,
+  });
+  assert.deepEqual(calls.actorLookups, [ACTOR_ID]);
+});
+
+Deno.test("T2: incident_opened with a resolvable actor -> 'נפתחה תקלה חדשה · ע״י <name>'", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({
+      type: "incident_opened",
+      category: "update",
+      actor_id: ACTOR_ID,
+    }),
+    subscriptions: [sub],
+    actorName: "דניאל דיוקרב",
+  });
+  await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.deepEqual(calls.sendPushCalls[0].payload, {
+    title: "AVARIA",
+    body: "נפתחה תקלה חדשה · ע״י דניאל דיוקרב",
+    incidentId: INCIDENT_ID,
+  });
+});
+
+Deno.test("T3: action_required incident_reopened with a resolvable actor -> 'תקלה שבאחריותך נפתחה מחדש · ע״י <name>'", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({
+      type: "incident_reopened",
+      category: "action_required",
+      actor_id: ACTOR_ID,
+    }),
+    subscriptions: [sub],
+    actorName: "דניאל דיוקרב",
+  });
+  await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.deepEqual(calls.sendPushCalls[0].payload, {
+    title: "AVARIA",
+    body: "תקלה שבאחריותך נפתחה מחדש · ע״י דניאל דיוקרב",
+    incidentId: INCIDENT_ID,
+  });
+});
+
+Deno.test("T4: missing actor_id -> no lookup attempted, falls back to the existing no-suffix copy, still sends", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({ actor_id: null }),
+    subscriptions: [sub],
+  });
+  const outcome = await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.equal(outcome.body.result, "ok");
+  assert.equal(outcome.body.sent, 1);
+  assert.deepEqual(calls.sendPushCalls[0].payload, {
+    title: "AVARIA",
+    body: "תקלה שויכה אליך",
+    incidentId: INCIDENT_ID,
+  });
+  assert.deepEqual(calls.actorLookups, []);
+});
+
+Deno.test("T5: an unresolvable actor (lookup returns null) falls back to the existing no-suffix copy, still sends", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({ actor_id: ACTOR_ID }),
+    subscriptions: [sub],
+    actorName: null,
+  });
+  const outcome = await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.equal(outcome.body.result, "ok");
+  assert.equal(outcome.body.sent, 1);
+  assert.deepEqual(calls.sendPushCalls[0].payload, {
+    title: "AVARIA",
+    body: "תקלה שויכה אליך",
+    incidentId: INCIDENT_ID,
+  });
+});
+
+Deno.test("T6: an unexpected error resolving the actor never fails or blocks delivery -- falls back to the no-suffix copy", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({ actor_id: ACTOR_ID }),
+    subscriptions: [sub],
+    actorLookupShouldThrow: true,
+  });
+  const outcome = await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.equal(outcome.status, 200);
+  assert.equal(outcome.body.result, "ok");
+  assert.equal(outcome.body.sent, 1);
+  assert.deepEqual(calls.sendPushCalls[0].payload, {
+    title: "AVARIA",
+    body: "תקלה שויכה אליך",
+    incidentId: INCIDENT_ID,
+  });
+});
+
+Deno.test("T7: the actor lookup is keyed by actor_id, never by the recipient's user_id -- recipient name is never substituted for the actor", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({ actor_id: ACTOR_ID }),
+    subscriptions: [sub],
+    actorName: "Actor Name",
+  });
+  await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.deepEqual(calls.actorLookups, [ACTOR_ID]);
+  assert.ok(!calls.actorLookups.includes(USER_ID));
+});
+
 Deno.test("buildPushBody: exact copy for every approved case", () => {
   assert.equal(
     buildPushBody({ category: "update", type: "incident_opened" }),
@@ -559,6 +727,55 @@ Deno.test("buildPushBody: exact copy for every approved case", () => {
   assert.equal(
     buildPushBody({ category: "action_required", type: "handover_pending" }),
     "תקלה שויכה אליך",
+  );
+});
+
+Deno.test("buildPushBody: appends the actor suffix when a non-blank name is given, for all three approved variants", () => {
+  assert.equal(
+    buildPushBody(
+      { category: "action_required", type: "incident_assigned" },
+      "דניאל דיוקרב",
+    ),
+    "תקלה שויכה אליך · ע״י דניאל דיוקרב",
+  );
+  assert.equal(
+    buildPushBody(
+      { category: "update", type: "incident_opened" },
+      "דניאל דיוקרב",
+    ),
+    "נפתחה תקלה חדשה · ע״י דניאל דיוקרב",
+  );
+  assert.equal(
+    buildPushBody(
+      { category: "action_required", type: "incident_reopened" },
+      "דניאל דיוקרב",
+    ),
+    "תקלה שבאחריותך נפתחה מחדש · ע״י דניאל דיוקרב",
+  );
+});
+
+Deno.test("buildPushBody: null/undefined/blank actor name leaves the copy exactly as before, no suffix", () => {
+  const expected = "תקלה שויכה אליך";
+  assert.equal(
+    buildPushBody(
+      { category: "action_required", type: "incident_assigned" },
+      null,
+    ),
+    expected,
+  );
+  assert.equal(
+    buildPushBody(
+      { category: "action_required", type: "incident_assigned" },
+      undefined,
+    ),
+    expected,
+  );
+  assert.equal(
+    buildPushBody(
+      { category: "action_required", type: "incident_assigned" },
+      "   ",
+    ),
+    expected,
   );
 });
 

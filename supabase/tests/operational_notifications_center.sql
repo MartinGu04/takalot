@@ -21,7 +21,7 @@ insert into auth.users (id, email, email_confirmed_at) values
   ('00000000-0000-0000-0000-000000005210', 'ntf-admin-optedin@test', now()),
   ('00000000-0000-0000-0000-000000005211', 'ntf-admin-actor@test', now()),
   ('00000000-0000-0000-0000-000000005212', 'ntf-admin-inactive@test', now()),
-  ('00000000-0000-0000-0000-000000005213', 'ntf-supervisor-stray-true@test', now());
+  ('00000000-0000-0000-0000-000000005213', 'ntf-viewer-stray-true@test', now());
 
 insert into profiles (id, full_name, role, active, operational_notifications_enabled) values
   ('00000000-0000-0000-0000-000000005201', 'PM Actor', 'professional_manager', true, false),
@@ -41,9 +41,12 @@ insert into profiles (id, full_name, role, active, operational_notifications_ena
   ('00000000-0000-0000-0000-000000005211', 'Admin Actor', 'system_admin', true, true),
   -- Opted-in but INACTIVE system_admin -- excluded by activity, not role.
   ('00000000-0000-0000-0000-000000005212', 'Admin Inactive OptedIn', 'system_admin', false, true),
-  -- A role that can NEVER be an operational recipient, with a stray true
-  -- value in the opt-in column -- proves the column is inert for it.
-  ('00000000-0000-0000-0000-000000005213', 'Supervisor Stray True', 'shift_supervisor', true, true);
+  -- A role that can NEVER be an operational recipient (viewer -- unlike
+  -- shift_supervisor, which migration 0057 makes an incident_opened
+  -- recipient specifically, viewer is never eligible for any broadcast
+  -- type), with a stray true value in the opt-in column -- proves the
+  -- column is inert for it.
+  ('00000000-0000-0000-0000-000000005213', 'Viewer Stray True', 'viewer', true, true);
 
 insert into systems (id, name, display_order, category) values
   ('00000000-0000-0000-0000-000000005221', 'Notif Sys', 1, 'other');
@@ -554,7 +557,7 @@ begin
     pg_temp.pm_count('00000000-0000-0000-0000-000000005212', v_incident.id, 'incident_opened') = 0
   );
   perform pg_temp.check_result(
-    'a role that can never be a recipient is excluded even when operational_notifications_enabled is stray-true',
+    'a role that can never be a recipient (viewer) is excluded even when operational_notifications_enabled is stray-true',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005213', v_incident.id, 'incident_opened') = 0
   );
 

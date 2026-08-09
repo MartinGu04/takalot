@@ -36,18 +36,28 @@ const TITLE = "AVARIA";
  * any approved copy rule (defense in depth alongside qualifiesForPush --
  * should be unreachable in normal operation since the caller already
  * checked qualifiesForPush first).
+ *
+ * `actorName`, when a non-blank string, appends " · ע״י <name>" -- the ONLY
+ * additional context approved for these notifications (Push actor name
+ * polish). Omitted/null/blank leaves the copy exactly as before: the caller
+ * must never fail, delay, or suppress delivery just because the actor could
+ * not be resolved (see handleDispatch).
  */
 export function buildPushBody(
   row: Pick<NotificationRow, "category" | "type">,
+  actorName?: string | null,
 ): string | null {
+  const suffix = actorName && actorName.trim().length > 0
+    ? ` · ע״י ${actorName.trim()}`
+    : "";
   if (row.category === "update" && row.type === "incident_opened") {
-    return "נפתחה תקלה חדשה";
+    return "נפתחה תקלה חדשה" + suffix;
   }
   if (row.category === "action_required" && row.type === "incident_reopened") {
-    return "תקלה שבאחריותך נפתחה מחדש";
+    return "תקלה שבאחריותך נפתחה מחדש" + suffix;
   }
   if (row.category === "action_required") {
-    return "תקלה שויכה אליך";
+    return "תקלה שויכה אליך" + suffix;
   }
   return null;
 }
@@ -226,7 +236,25 @@ export async function handleDispatch(
     };
   }
 
-  const body = buildPushBody(notification);
+  // Actor name resolution (Push actor name polish) -- best-effort only.
+  // notification.actor_id is null for legacy/unattributed rows, and any
+  // failure here (lookup error, missing/blank profile) must never block,
+  // delay, or otherwise affect delivery -- it only ever changes whether the
+  // copy gains the " · ע״י <name>" suffix below.
+  let actorName: string | null = null;
+  if (notification.actor_id) {
+    try {
+      actorName = await deps.fetchActorDisplayName(notification.actor_id);
+    } catch (err) {
+      console.error(
+        "send-push-notification: actor display-name lookup failed -- continuing without actor suffix",
+        err instanceof Error ? err.message : String(err),
+      );
+      actorName = null;
+    }
+  }
+
+  const body = buildPushBody(notification, actorName);
   if (!body) {
     // Unreachable in normal operation (qualifiesForPush already agreed),
     // kept as defense in depth -- never guess a fallback copy.
