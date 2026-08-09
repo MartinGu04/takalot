@@ -10,6 +10,10 @@ export interface NotificationRow {
   type: string;
   category: "action_required" | "update";
   incident_id: string | null;
+  /** The profile that caused this notification (migration 0056), when
+   *  known -- null for legacy rows and any notification-producing path
+   *  that predates that migration. Never the recipient (user_id). */
+  actor_id: string | null;
 }
 
 /** The subset of public.push_subscriptions this function ever reads.
@@ -56,6 +60,12 @@ export interface DispatchDeps {
   vapidConfigured: boolean;
   fetchNotification: (id: string) => Promise<NotificationRow | null>;
   isRecipientActive: (userId: string) => Promise<boolean>;
+  /** The actor's canonical display name (profiles.full_name) ONLY -- never
+   *  email, never any other field. Returns null when the profile is
+   *  missing or its full_name is blank; the caller (dispatch.ts) treats
+   *  that identically to "no actor_id at all" -- fall back to the
+   *  existing no-suffix copy, never fail/delay/suppress the Push. */
+  fetchActorDisplayName: (actorId: string) => Promise<string | null>;
   fetchSubscriptions: (userId: string) => Promise<SubscriptionRow[]>;
   /** Attempts the atomic (notification_id, subscription_id) claim via the
    *  push_deliveries unique constraint (migration 0053). Returns true when

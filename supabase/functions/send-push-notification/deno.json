@@ -4,7 +4,7 @@
     "web-push": "npm:web-push@3.6.7"
   },
   "tasks": {
-    "test": "deno test --allow-net --allow-env dispatch.test.ts webhookAuth.test.ts vapidConfig.test.ts webPushSender.test.ts",
+    "test": "deno test --allow-net --allow-env dispatch.test.ts webhookAuth.test.ts vapidConfig.test.ts webPushSender.test.ts databaseDeps.test.ts",
     "check": "deno check index.ts dispatch.ts webhookAuth.ts vapidConfig.ts webPushSender.ts databaseDeps.ts types.ts"
   }
 }

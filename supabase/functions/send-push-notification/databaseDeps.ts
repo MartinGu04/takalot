@@ -18,7 +18,7 @@ export function createDatabaseDeps(client: SupabaseClient) {
     async fetchNotification(id: string): Promise<NotificationRow | null> {
       const { data, error } = await client
         .from("notifications")
-        .select("id, user_id, type, category, incident_id")
+        .select("id, user_id, type, category, incident_id, actor_id")
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
@@ -32,6 +32,21 @@ export function createDatabaseDeps(client: SupabaseClient) {
       ).maybeSingle();
       if (error) throw error;
       return data?.active === true;
+    },
+
+    async fetchActorDisplayName(actorId: string): Promise<string | null> {
+      // full_name ONLY -- never email, never any other profile field. A
+      // missing profile or a blank name is not an error, just "unresolved".
+      const { data, error } = await client
+        .from("profiles")
+        .select("full_name")
+        .eq("id", actorId)
+        .maybeSingle();
+      if (error) throw error;
+      const name = data?.full_name;
+      return typeof name === "string" && name.trim().length > 0
+        ? name.trim()
+        : null;
     },
 
     async fetchSubscriptions(userId: string): Promise<SubscriptionRow[]> {
