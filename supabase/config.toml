@@ -1,0 +1,24 @@
+# Minimal, deliberately scoped Supabase CLI configuration -- this
+# repository did not previously have a config.toml at all (migrations are
+# applied manually, per the README, and the existing delete-user function
+# has always been deployed with an undocumented `--no-verify-jwt` flag).
+#
+# This file exists ONLY to version send-push-notification's
+# `verify_jwt = false` setting -- the repository-tracked, reproducible way
+# to configure it (per Supabase CLI convention), instead of depending on
+# whoever deploys remembering an undocumented command-line flag.
+# send-push-notification is invoked exclusively by migration 0054's
+# database trigger via pg_net, which sends no Supabase Auth JWT at all
+# (only the dedicated `x-avaria-push-secret` header -- see
+# supabase/functions/send-push-notification/webhookAuth.ts); with the
+# platform's default gateway JWT verification left on, every one of those
+# calls would be rejected before this function's own code ever runs.
+#
+# `project_id` is intentionally NOT set here -- this repository has no
+# hosted project reference checked in, and none is invented by this
+# change. Whoever performs Phase 5B's deploy step links the real project
+# first (`supabase link --project-ref <ref>`, which writes it here) or
+# passes `--project-ref` explicitly to `supabase functions deploy`.
+
+[functions.send-push-notification]
+verify_jwt = false
