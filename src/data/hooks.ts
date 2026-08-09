@@ -13,6 +13,7 @@ import {
 } from './repository';
 import type { IncidentDomain } from '../domain/types';
 import { canonicalizeAnalyticsFilters } from '../domain/analyticsSummary';
+import { normalizeAnalyticsModules } from '../domain/analyticsPreferences';
 import { useAuth, useSession } from '../auth/AuthContext';
 import { useToast } from '../components/ui';
 
@@ -128,7 +129,12 @@ export function useAnalyticsPreferences() {
   const session = useSession();
   return useQuery({
     queryKey: ['analyticsPreferences', session.userId],
-    queryFn: () => repo().getAnalyticsPreferences(session),
+    // Normalized against the currently supported module keys -- a stored
+    // preference from before a module was removed (e.g. a legacy
+    // 'externalInvolvement' entry) must never reach rendering or the
+    // personalization dialog's draft state. See
+    // domain/analyticsPreferences.ts's normalizeAnalyticsModules header.
+    queryFn: async () => normalizeAnalyticsModules(await repo().getAnalyticsPreferences(session)),
   });
 }
 

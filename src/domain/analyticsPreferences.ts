@@ -28,6 +28,27 @@ export function canPersonalizeAnalytics(role: Role): boolean {
   return ANALYTICS_PERSONALIZATION_ROLES.includes(role);
 }
 
+/** Normalizes a stored analytics module-visibility preference against the
+ *  CURRENTLY supported module keys, dropping anything no longer recognized
+ *  -- e.g. a preference persisted (in the hosted DB, or an older demo/local
+ *  snapshot) before a module was removed from this list, like the deleted
+ *  'externalInvolvement'. `null` (no stored preference at all) passes
+ *  through unchanged.
+ *
+ *  Applied at the READ boundary (useAnalyticsPreferences), so a legacy key
+ *  can never reach rendering, the personalization dialog's draft state, or
+ *  -- once the user next saves anything, even unrelated to the stale key --
+ *  get persisted right back into storage. The remaining known keys are
+ *  preserved exactly (order, membership); only unrecognized entries are
+ *  stripped, so a mixed preference like ['trend', 'closures',
+ *  'externalInvolvement'] normalizes to ['trend', 'closures'], never to
+ *  the whole preference being discarded. */
+export function normalizeAnalyticsModules(modules: readonly string[] | null): AnalyticsModuleKey[] | null {
+  if (modules === null) return null;
+  const known = new Set<string>(ANALYTICS_MODULE_KEYS);
+  return modules.filter((m): m is AnalyticsModuleKey => known.has(m));
+}
+
 /** Starting module set for a role that has never customized their view
  *  (no stored user_analytics_preferences row). Matches each role's stated
  *  operational focus: a shift_supervisor cares mainly about backlog/age/
