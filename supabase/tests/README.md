@@ -18,6 +18,23 @@ They are **never** run against the hosted database and touch no real data.
 - `harness/prelude.sql` — per-database setup applied **before** the
   migration chain: hosted-like schema grants + default ACLs, and the
   `auth` stub.
+- `harness/pg_net_stub/` — a LOCAL TEST DOUBLE for Supabase's real `pg_net`
+  extension (not installable outside the hosted Supabase Postgres image).
+  `run.sh` installs it as an actual Postgres extension named `pg_net`
+  before the migration chain runs, so migration 0054's own
+  `create extension if not exists pg_net;` and its `net.http_post(...)`
+  call run completely unmodified. Requests are recorded in
+  `net.http_request_queue` instead of ever performing a real HTTP call —
+  see that directory's `pg_net--0.1.sql` for exactly what is/isn't
+  reproduced. Never installed anywhere outside this local/CI verification
+  flow.
+- `harness/push_dispatch_stub.sql` — a LOCAL TEST DOUBLE for Supabase
+  Vault (the `vault` schema), applied **before** the migration chain
+  alongside `prelude.sql`. Real Vault ships pre-installed on every hosted
+  Supabase project (migrations only ever read/write it, never create it);
+  this stub reproduces `vault.decrypted_secrets` and `vault.create_secret`
+  with NO real encryption — it must never hold anything resembling an
+  actual secret.
 - `deactivated_user_enforcement.sql` — negative tests proving a
   DEACTIVATED user is blocked on every path hardened in 0011 (accept a
   handover, add a correction as a past author, read notifications, mark

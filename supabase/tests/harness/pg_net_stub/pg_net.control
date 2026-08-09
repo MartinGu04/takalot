@@ -1,0 +1,9 @@
+# LOCAL TEST DOUBLE for Supabase's real pg_net extension -- see the
+# adjacent pg_net--0.1.sql and supabase/tests/README.md for why this exists.
+# NEVER installed on any hosted database; migration 0054 issues the exact
+# same `create extension if not exists pg_net;` statement it would against
+# the real platform extension.
+comment = 'LOCAL TEST DOUBLE for Supabase pg_net -- queues requests in a table, never performs a real HTTP call'
+default_version = '0.1'
+relocatable = false
+schema = net
