@@ -586,3 +586,65 @@ describe('SupabaseRepository.clearNotifications (נקה הכל)', () => {
     await expect(repo.clearNotifications(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
+
+describe('SupabaseRepository push subscriptions (migration 0053)', () => {
+  function fakeClientCapturing() {
+    const calls: { fn: string; args: Record<string, unknown> }[] = [];
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calls.push({ fn, args });
+        if (fn === 'count_my_push_subscriptions') return { data: 3, error: null };
+        if (fn === 'is_my_push_subscription') return { data: true, error: null };
+        return { data: null, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    return { repo, calls };
+  }
+
+  it('savePushSubscription calls save_my_push_subscription with the endpoint and keys -- no user id parameter', async () => {
+    const { repo, calls } = fakeClientCapturing();
+    await repo.savePushSubscription(session, 'https://push.example.com/abc', { p256dh: 'p256', auth: 'auth' });
+    expect(calls[0]).toEqual({
+      fn: 'save_my_push_subscription',
+      args: { p_endpoint: 'https://push.example.com/abc', p_p256dh: 'p256', p_auth_key: 'auth' },
+    });
+  });
+
+  it('deletePushSubscription calls delete_my_push_subscription with the endpoint only', async () => {
+    const { repo, calls } = fakeClientCapturing();
+    await repo.deletePushSubscription(session, 'https://push.example.com/abc');
+    expect(calls[0]).toEqual({ fn: 'delete_my_push_subscription', args: { p_endpoint: 'https://push.example.com/abc' } });
+  });
+
+  it('deleteAllPushSubscriptions calls delete_all_my_push_subscriptions with no arguments', async () => {
+    const { repo, calls } = fakeClientCapturing();
+    await repo.deleteAllPushSubscriptions(session);
+    expect(calls[0]).toEqual({ fn: 'delete_all_my_push_subscriptions', args: {} });
+  });
+
+  it('countPushSubscriptions calls count_my_push_subscriptions and returns the bare count', async () => {
+    const { repo, calls } = fakeClientCapturing();
+    await expect(repo.countPushSubscriptions(session)).resolves.toBe(3);
+    expect(calls[0]).toEqual({ fn: 'count_my_push_subscriptions', args: {} });
+  });
+
+  it('isMyPushSubscription calls is_my_push_subscription with the endpoint and returns the bare boolean', async () => {
+    const { repo, calls } = fakeClientCapturing();
+    await expect(repo.isMyPushSubscription(session, 'https://push.example.com/abc')).resolves.toBe(true);
+    expect(calls[0]).toEqual({ fn: 'is_my_push_subscription', args: { p_endpoint: 'https://push.example.com/abc' } });
+  });
+
+  it('propagates a validation error (e.g. malformed endpoint) as a controlled AppError', async () => {
+    const repo = repoWithRpcError('validation: כתובת המנוי אינה תקינה');
+    await expect(repo.savePushSubscription(session, 'not-https', { p256dh: 'p', auth: 'a' })).rejects.toMatchObject({
+      code: 'VALIDATION',
+      message: 'כתובת המנוי אינה תקינה',
+    });
+  });
+
+  it('propagates a permission error as a controlled AppError, without swallowing the failure', async () => {
+    const repo = repoWithRpcError('permission: אין הרשאה');
+    await expect(repo.countPushSubscriptions(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+});

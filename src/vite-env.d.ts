@@ -7,6 +7,13 @@ interface ImportMetaEnv {
   /** 'true' enables the local demo repository. Development/tests only —
    *  production builds without Supabase config fail loudly instead. */
   readonly VITE_DEMO_MODE?: string;
+  /** Web Push application-server public key (VAPID), base64url-encoded.
+   *  Optional in v1.5.0 Phase 4 -- the real hosted keypair is a Phase 5
+   *  operational step. Absent/invalid resolves to the client's
+   *  'configuration-unavailable' Push state rather than a crash; see
+   *  src/push/vapidKey.ts. Never the PRIVATE key -- that must never exist
+   *  in a VITE_* variable, which ships to every browser. */
+  readonly VITE_VAPID_PUBLIC_KEY?: string;
 }
 
 interface ImportMeta {

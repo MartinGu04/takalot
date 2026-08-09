@@ -81,7 +81,7 @@ import type {
   Repository,
   Session,
 } from '../repository';
-import type { DemoDatabase, DemoStorage, StoredIncidentRelation } from './storage';
+import type { DemoDatabase, DemoStorage, StoredIncidentRelation, StoredPushSubscription } from './storage';
 import { emptyDatabase } from './storage';
 import { buildSeed } from './seed';
 
@@ -1376,6 +1376,83 @@ export class LocalDemoRepository implements Repository {
     actor.operationalNotificationsEnabled = enabled;
     this.persist();
     return { ...actor };
+  }
+
+  /**
+   * Demo-mode mirror of save_my_push_subscription (migration 0053):
+   * same validation, same shared-endpoint-reassignment behavior via an
+   * upsert keyed on the globally-unique endpoint. Deterministic and useful
+   * for tests -- it does NOT create a real browser PushSubscription or send
+   * anything; it is only the server-side bookkeeping half.
+   */
+  async savePushSubscription(session: Session, endpoint: string, keys: { p256dh: string; auth: string }): Promise<void> {
+    const actor = this.requireSession(session);
+    const trimmedEndpoint = endpoint.trim();
+    if (!trimmedEndpoint || trimmedEndpoint.length > 2048 || !/^https:\/\//.test(trimmedEndpoint)) {
+      throw new AppError('VALIDATION', 'כתובת המנוי אינה תקינה');
+    }
+    if (!keys.p256dh || keys.p256dh.length > 512) {
+      throw new AppError('VALIDATION', 'מפתח ההצפנה (p256dh) אינו תקין');
+    }
+    if (!keys.auth || keys.auth.length > 512) {
+      throw new AppError('VALIDATION', 'מפתח האימות (auth) אינו תקין');
+    }
+    this.db.pushSubscriptions ??= [];
+    const ts = this.now().toISOString();
+    const existing = this.db.pushSubscriptions.find((s) => s.endpoint === trimmedEndpoint);
+    if (existing) {
+      existing.userId = actor.id;
+      existing.p256dh = keys.p256dh;
+      existing.authKey = keys.auth;
+      existing.updatedAt = ts;
+    } else {
+      const row: StoredPushSubscription = {
+        id: newId(),
+        userId: actor.id,
+        endpoint: trimmedEndpoint,
+        p256dh: keys.p256dh,
+        authKey: keys.auth,
+        createdAt: ts,
+        updatedAt: ts,
+      };
+      this.db.pushSubscriptions.push(row);
+    }
+    this.persist();
+  }
+
+  /** Demo-mode mirror of delete_my_push_subscription: a no-op, not an
+   *  error, when the endpoint belongs to someone else or doesn't exist. */
+  async deletePushSubscription(session: Session, endpoint: string): Promise<void> {
+    const actor = this.requireSession(session);
+    this.db.pushSubscriptions ??= [];
+    this.db.pushSubscriptions = this.db.pushSubscriptions.filter(
+      (s) => !(s.endpoint === endpoint && s.userId === actor.id),
+    );
+    this.persist();
+  }
+
+  /** Demo-mode mirror of delete_all_my_push_subscriptions ("נתק את כל המכשירים"). */
+  async deleteAllPushSubscriptions(session: Session): Promise<void> {
+    const actor = this.requireSession(session);
+    this.db.pushSubscriptions ??= [];
+    this.db.pushSubscriptions = this.db.pushSubscriptions.filter((s) => s.userId !== actor.id);
+    this.persist();
+  }
+
+  /** Demo-mode mirror of count_my_push_subscriptions. */
+  async countPushSubscriptions(session: Session): Promise<number> {
+    const actor = this.requireSession(session);
+    return (this.db.pushSubscriptions ?? []).filter((s) => s.userId === actor.id).length;
+  }
+
+  /** Demo-mode mirror of is_my_push_subscription. */
+  async isMyPushSubscription(session: Session, endpoint: string): Promise<boolean> {
+    const actor = this.requireSession(session);
+    const trimmedEndpoint = endpoint.trim();
+    if (!trimmedEndpoint || trimmedEndpoint.length > 2048 || !/^https:\/\//.test(trimmedEndpoint)) {
+      throw new AppError('VALIDATION', 'כתובת המנוי אינה תקינה');
+    }
+    return (this.db.pushSubscriptions ?? []).some((s) => s.endpoint === trimmedEndpoint && s.userId === actor.id);
   }
 
   async bootstrapFirstAdmin(): Promise<Profile | null> {

@@ -536,6 +536,33 @@ export class SupabaseRepository implements Repository {
     return mapProfile(data);
   }
 
+  async savePushSubscription(_session: Session, endpoint: string, keys: { p256dh: string; auth: string }): Promise<void> {
+    // No user id parameter -- save_my_push_subscription derives auth.uid()
+    // itself; there is no argument a client could pass to attach a
+    // subscription to anyone else.
+    await this.rpc('save_my_push_subscription', {
+      p_endpoint: endpoint,
+      p_p256dh: keys.p256dh,
+      p_auth_key: keys.auth,
+    });
+  }
+
+  async deletePushSubscription(_session: Session, endpoint: string): Promise<void> {
+    await this.rpc('delete_my_push_subscription', { p_endpoint: endpoint });
+  }
+
+  async deleteAllPushSubscriptions(_session: Session): Promise<void> {
+    await this.rpc('delete_all_my_push_subscriptions', {});
+  }
+
+  async countPushSubscriptions(_session: Session): Promise<number> {
+    return this.rpc<number>('count_my_push_subscriptions', {});
+  }
+
+  async isMyPushSubscription(_session: Session, endpoint: string): Promise<boolean> {
+    return this.rpc<boolean>('is_my_push_subscription', { p_endpoint: endpoint });
+  }
+
   async deleteUser(_s: Session, userId: string): Promise<void> {
     // The shared client (src/data/supabase/client.ts) automatically attaches
     // the current session's access token to every function invocation --
