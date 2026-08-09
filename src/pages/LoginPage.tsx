@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { getRepository, isDemoMode } from '../data';
 import { APP_NAME, APP_TAGLINE } from '../domain/labels';
@@ -9,6 +9,15 @@ import { Spinner } from '../components/ui';
 import { RoleBadge } from '../components/RoleBadge';
 import { AvariaAuthBrandPanel, AvariaLoginAtmosphere, AvariaUnitLogosCorner } from '../components/AvariaBrand';
 import { IconLock, IconShield } from '../components/icons';
+import { sanitizeInternalReturnPath } from '../lib/returnPath';
+
+/** Extracts the path RequireAuth stashed on `location.state.from` (the route
+ *  a signed-out user was actually trying to reach), if any. */
+function returnPathFromLocationState(state: unknown): string | null {
+  const from = (state as { from?: { pathname: string; search: string; hash: string } } | null)?.from;
+  if (!from) return null;
+  return `${from.pathname}${from.search}${from.hash}`;
+}
 
 /** Reads an OAuth provider error forwarded back on the redirect URL
  *  (Supabase passes failures as error/error_description in the query or
@@ -38,6 +47,7 @@ function GoogleGlyph() {
 export default function LoginPage() {
   const { login, loginWithGoogle, sessionExpired } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [error, setError] = useState('');
   const [redirecting, setRedirecting] = useState(false);
   const demo = isDemoMode();
@@ -48,6 +58,17 @@ export default function LoginPage() {
   useEffect(() => {
     if (oauthError) setError(oauthError);
   }, [oauthError]);
+
+  // The page a signed-out user was actually trying to reach (e.g. an
+  // incident deep link) -- from RequireAuth's `state.from` when this page
+  // was reached via the auth guard, or from an already-present `?next=` when
+  // `/login` was opened directly. Re-validated here regardless of source; a
+  // value AVARIA itself generated is never trusted merely for that reason.
+  const returnPath = useMemo(() => {
+    const fromState = returnPathFromLocationState(location.state);
+    const fromQuery = new URLSearchParams(location.search).get('next');
+    return sanitizeInternalReturnPath(fromState ?? fromQuery);
+  }, [location.state, location.search]);
 
   // In demo mode the login screen doubles as the demo-user picker. This is an
   // explicitly labeled demo control, not real authentication.
@@ -65,7 +86,7 @@ export default function LoginPage() {
   const handleDemoLogin = async (userId: string) => {
     try {
       await login(userId);
-      navigate('/');
+      navigate(returnPath ?? '/');
     } catch {
       setError('לא ניתן להתחבר עם משתמש זה.');
     }
@@ -75,7 +96,7 @@ export default function LoginPage() {
     setError('');
     setRedirecting(true);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(returnPath);
       // The browser navigates away to Google; the spinner covers the gap.
     } catch {
       setRedirecting(false);

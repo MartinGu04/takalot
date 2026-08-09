@@ -17,6 +17,7 @@ import type { Profile } from '../domain/types';
 import type { Session } from '../data/repository';
 import { getRepository, isDemoMode } from '../data';
 import { getSupabaseClient } from '../data/supabase/client';
+import { sanitizeInternalReturnPath } from '../lib/returnPath';
 
 const DEMO_SESSION_KEY = 'takalot-demo-session-user';
 
@@ -85,8 +86,13 @@ interface AuthState {
   avatarUrl: string | null;
   /** Demo mode only: sign in as a fictional user. */
   login: (userId: string) => Promise<void>;
-  /** Supabase mode only: start the Google OAuth redirect. */
-  loginWithGoogle: () => Promise<void>;
+  /**
+   * Supabase mode only: start the Google OAuth redirect. `returnPath`, when
+   * a safe internal AVARIA destination (see sanitizeInternalReturnPath), is
+   * carried through the redirect so the caller lands back there -- e.g. an
+   * incident deep link opened while signed out. Anything else is dropped.
+   */
+  loginWithGoogle: (returnPath?: string | null) => Promise<void>;
   logout: () => void;
   /** Demo-only role switching (switches the demo user). */
   switchUser: (userId: string) => Promise<void>;
@@ -307,11 +313,17 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     };
   }, [resolveProfile, queryClient]);
 
-  const loginWithGoogle = useCallback(async () => {
+  const loginWithGoogle = useCallback(async (returnPath?: string | null) => {
     const supabase = getSupabaseClient();
+    // Re-validated here (not just trusted from the caller) since this value
+    // is about to be embedded in a URL handed to an external redirect.
+    const safeReturnPath = sanitizeInternalReturnPath(returnPath);
+    const redirectTo = safeReturnPath
+      ? `${window.location.origin}/login?next=${encodeURIComponent(safeReturnPath)}`
+      : `${window.location.origin}/login`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/login` },
+      options: { redirectTo },
     });
     if (error) throw new Error(error.message);
     // On success the browser navigates away to Google; nothing more to do.

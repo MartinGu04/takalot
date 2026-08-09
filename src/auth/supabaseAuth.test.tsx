@@ -71,10 +71,22 @@ vi.mock('../data', () => ({
     countClosedIncidents: async () => 0,
     listNotifications: async () => [],
     canExport: async () => false,
+    // IncidentDetailPage's remaining data hooks -- resolved to empty/null so
+    // a deep link into /incidents/:id renders its clean "not found" state
+    // (getIncident: null) rather than throwing on a missing mock method.
+    getIncident: async () => null,
+    getIncidentEvents: async () => [],
+    getIncidentUpdates: async () => [],
+    getIncidentCauseAssessments: async () => [],
+    getIncidentTreatmentActions: async () => [],
+    getIncidentClosures: async () => [],
+    getIncidentRelations: async () => [],
   }),
 }));
 
 import App from '../App';
+
+const INCIDENT_ID = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
 
 const ACTIVE_PROFILE = {
   id: 'auth-user-1',
@@ -391,6 +403,92 @@ describe('supabase mode: logout from the app', () => {
     expect(mockAuth.signOut).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'מצב נוכחי' })).not.toBeInTheDocument());
     expect(await screen.findByTestId('google-login-button')).toBeInTheDocument();
+  });
+});
+
+describe('supabase mode: incident deep link through Google OAuth', () => {
+  it('A. preserves an unauthenticated incident deep link into the OAuth redirect', async () => {
+    const user = userEvent.setup();
+    window.history.pushState({}, '', `/incidents/${INCIDENT_ID}`);
+
+    render(<App />);
+    await user.click(await screen.findByTestId('google-login-button'));
+
+    expect(mockAuth.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'google',
+        options: expect.objectContaining({
+          redirectTo: expect.stringContaining(`next=${encodeURIComponent(`/incidents/${INCIDENT_ID}`)}`),
+        }),
+      }),
+    );
+  });
+
+  it('B. returns the authenticated user to the original incident after the OAuth round trip', async () => {
+    window.history.pushState({}, '', `/login?next=${encodeURIComponent(`/incidents/${INCIDENT_ID}`)}`);
+    state.session = { user: { id: 'auth-user-1', email: 'real@example.com' } };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+
+    // IncidentDetailPage's clean not-found state (getIncident stub resolves
+    // null) -- reaching it proves the incident route rendered, not the
+    // dashboard.
+    await screen.findByText('התקלה לא נמצאה');
+    expect(window.location.pathname).toBe(`/incidents/${INCIDENT_ID}`);
+  });
+
+  it('E. preserves query and hash on the incident deep link through the round trip', async () => {
+    const target = `/incidents/${INCIDENT_ID}?tab=timeline#comments`;
+    window.history.pushState({}, '', `/login?next=${encodeURIComponent(target)}`);
+    state.session = { user: { id: 'auth-user-1', email: 'real@example.com' } };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+
+    await screen.findByText('התקלה לא נמצאה');
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(target);
+  });
+
+  it.each([
+    ['an absolute https URL', 'https://evil.example/steal'],
+    ['a protocol-relative URL', '//evil.example/steal'],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['a malformed internal-looking external-redirect attempt', '/\\evil.example'],
+  ])('C. rejects %s in next and falls back to the dashboard', async (_label, malicious) => {
+    window.history.pushState({}, '', `/login?next=${encodeURIComponent(malicious)}`);
+    state.session = { user: { id: 'auth-user-1', email: 'real@example.com' } };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('D. a normal login with no next continues to land on the dashboard, unchanged', async () => {
+    window.history.pushState({}, '', '/login');
+    state.session = { user: { id: 'auth-user-1', email: 'real@example.com' } };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('F. a malicious next planted directly on the login URL is rejected even without going through RequireAuth first', async () => {
+    // An attacker-crafted link straight to /login?next=... never touches
+    // RequireAuth's own capture -- this proves the /login route itself
+    // re-validates independently, not just LoginPage on the way out.
+    window.history.pushState({}, '', '/login?next=https%3A%2F%2Fevil.example%2Fsteal');
+    state.session = { user: { id: 'auth-user-1', email: 'real@example.com' } };
+    state.getProfile.mockResolvedValue(ACTIVE_PROFILE);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'מצב נוכחי' });
+    expect(window.location.pathname).toBe('/');
   });
 });
 
