@@ -30,6 +30,20 @@ export default defineConfig({
       // script into index.html.
       injectRegister: false,
       registerType: 'prompt',
+      // injectManifest (not generateSW): a hand-authored Service Worker
+      // (src/sw.ts) is required starting AVARIA v1.5.0 so it can host
+      // Push/notificationclick handlers -- generateSW only ever produces a
+      // precache-and-navigation-fallback worker with no room to add
+      // arbitrary event listeners. `registerType`/`injectRegister` above are
+      // unaffected by this switch: both are consumed by the plugin's
+      // strategy-agnostic client register script (virtual:pwa-register),
+      // never by the generated/injected worker file itself -- confirmed
+      // against node_modules/vite-plugin-pwa/dist/client/build/register.js,
+      // which branches on `registerType` before ever knowing which strategy
+      // built the worker it's talking to.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       manifest: {
         id: '/',
         name: 'AVARIA — מערכת ניהול ומעקב תקלות',
@@ -55,7 +69,15 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      // injectManifest's build-time config -- ONLY controls what is fed
+      // into src/sw.ts's `self.__WB_MANIFEST` at build time, via
+      // globPatterns (the identical set the previous generateSW config
+      // used). navigateFallback/navigateFallbackDenylist/
+      // cleanupOutdatedCaches have no equivalent option here -- unlike
+      // generateSW, injectManifest does not generate that routing logic for
+      // you; it is hand-authored in src/sw.ts instead (NavigationRoute +
+      // cleanupOutdatedCaches(), matching this exact denylist).
+      injectManifest: {
         // App shell only: the built JS/CSS/HTML and the self-hosted font
         // the shell renders with. Deliberately excludes public/branding
         // marketing art and the favicon/apple-touch-icon set -- those are
@@ -68,13 +90,6 @@ export default defineConfig({
         // so a broad ttf glob would precache build assets nothing actually
         // requests.
         globPatterns: ['**/*.{js,css,html}', 'fonts/Heebo-Regular.ttf'],
-        navigateFallback: '/index.html',
-        // Defense in depth: this app has no same-origin API routes (Supabase
-        // is a separate origin, untouched by this SW either way), but keep
-        // any local /api-shaped path from ever being served the app-shell
-        // fallback instead of a real network response.
-        navigateFallbackDenylist: [/^\/api\//, /^\/rest\//, /^\/auth\//, /^\/storage\//, /^\/functions\//],
-        cleanupOutdatedCaches: true,
       },
     }),
   ],
