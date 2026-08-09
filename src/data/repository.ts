@@ -302,13 +302,15 @@ export interface Repository {
    */
   getIncidentOpenBacklog(session: Session, filters: AnalyticsEntityFilters): Promise<IncidentOpenBacklog>;
   /**
-   * Confirmed-cause / treatment-outcome breakdown and closure-scoped
-   * external-involvement counts for the ניתוחים page's closure-insights
-   * module. Backed by get_incident_closure_insights (migration 0051) in
-   * production; src/domain/analyticsClosureInsights.ts in demo mode. The
-   * one analytics fetch the frontend genuinely skips when both of its
-   * personalizable modules ('closures'/'externalInvolvement') are hidden --
-   * see useIncidentClosureInsights.
+   * Confirmed-cause / treatment-outcome breakdown for the ניתוחים page's
+   * closure-insights module. The response also carries closure-scoped
+   * external-involvement counts, kept as-is in the data contract though the
+   * frontend's external-involvement module (and its use of those fields)
+   * was removed -- see analyticsPreferences.ts. Backed by
+   * get_incident_closure_insights (migration 0051) in production;
+   * src/domain/analyticsClosureInsights.ts in demo mode. The one analytics
+   * fetch the frontend genuinely skips when its personalizable module
+   * ('closures') is hidden -- see useIncidentClosureInsights.
    */
   getIncidentClosureInsights(session: Session, filters: AnalyticsFilters): Promise<IncidentClosureInsights>;
   /**

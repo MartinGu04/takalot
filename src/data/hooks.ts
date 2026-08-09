@@ -99,12 +99,13 @@ export function useIncidentOpenBacklog(entityFilters: AnalyticsEntityFilters, op
   });
 }
 
-/** Confirmed-cause/treatment-outcome breakdown and closure-scoped external-
- *  involvement counts. `enabled` should be
- *  `visibleModules.has('closures') || visibleModules.has('externalInvolvement')`
- *  -- the one analytics fetch genuinely skipped (zero network call, zero
- *  server-side computation) when both of its personalizable modules are
- *  hidden. */
+/** Confirmed-cause/treatment-outcome breakdown (and closure-scoped
+ *  external-involvement counts the payload still carries, unused by the
+ *  frontend since the external-involvement module was removed -- see
+ *  analyticsPreferences.ts). `enabled` should be
+ *  `visibleModules.has('closures')` -- the one analytics fetch genuinely
+ *  skipped (zero network call, zero server-side computation) when its
+ *  personalizable module is hidden. */
 export function useIncidentClosureInsights(filters: AnalyticsFilters, options: { enabled?: boolean } = {}) {
   const session = useSession();
   const canonical = canonicalizeAnalyticsFilters(filters);

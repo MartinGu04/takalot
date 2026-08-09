@@ -1,6 +1,6 @@
 // Focused coverage of the drill-down's PRESENTATIONAL logic
 // (TrendBucketDrilldownContent, bucketRangeLabel) via plain props -- the
-// same strategy ClosureBreakdownPanel/ExternalInvolvementPanel already use.
+// same strategy ClosureBreakdownPanel already uses.
 // The outer TrendBucketDrilldown wrapper's own data-fetching and the actual
 // chart click that opens it are NOT exercised here: recharts renders zero
 // bars in jsdom (ResponsiveContainer measures a 0x0 container, so there is

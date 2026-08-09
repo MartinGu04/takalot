@@ -414,5 +414,4 @@ export const analyticsModuleLabels: Record<AnalyticsModuleKey, string> = {
   topSystems: 'מערכות עם הכי הרבה תקלות',
   topLocations: 'מיקומים עם הכי הרבה תקלות',
   closures: 'סיווג סגירות',
-  externalInvolvement: 'מעורבות גורם חיצוני',
 };

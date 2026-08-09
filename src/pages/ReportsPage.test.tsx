@@ -371,7 +371,7 @@ describe('Analytics page: personalization ("התאמת התצוגה")', () => {
     else expect(trigger).not.toBeInTheDocument();
   });
 
-  it('a shift_supervisor with no stored preference sees exactly their role default modules (trend + age distribution, not the rankings/closures/external panels)', async () => {
+  it('a shift_supervisor with no stored preference sees exactly their role default modules (trend + age distribution, not the rankings/closures panels)', async () => {
     const user = userEvent.setup();
     render(<App />);
     await login(user, 'login-u-supervisor-1');
@@ -382,7 +382,6 @@ describe('Analytics page: personalization ("התאמת התצוגה")', () => {
     expect(screen.queryByRole('heading', { name: 'מערכות עם הכי הרבה תקלות' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'מיקומים עם הכי הרבה תקלות' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'סיווג סגירות' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'מעורבות גורם חיצוני' })).not.toBeInTheDocument();
 
     // The KPI row itself is never personalizable -- always present regardless.
     expect(screen.getAllByText('נפתחו בתקופה').length).toBeGreaterThan(0);
@@ -411,7 +410,8 @@ describe('Analytics page: personalization ("התאמת התצוגה")', () => {
     render(<App />);
     await screen.findByRole('heading', { name: 'ניתוח תקלות' });
     expect(screen.queryByRole('heading', { name: 'סיווג סגירות' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'מעורבות גורם חיצוני' })).toBeInTheDocument();
+    // An unrelated module untouched by this toggle must remain visible.
+    expect(screen.getByRole('heading', { name: 'גיל תקלות פתוחות' })).toBeInTheDocument();
   });
 
   // Deliberately does NOT assume system_admin starts with every module
@@ -440,7 +440,6 @@ describe('Analytics page: personalization ("התאמת התצוגה")', () => {
       'מערכות עם הכי הרבה תקלות',
       'מיקומים עם הכי הרבה תקלות',
       'סיווג סגירות',
-      'מעורבות גורם חיצוני',
     ]) {
       expect(within(dialog).getByRole('switch', { name: label })).toHaveAttribute('aria-checked', 'true');
     }
@@ -448,7 +447,6 @@ describe('Analytics page: personalization ("התאמת התצוגה")', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'סיווג סגירות' })).toBeInTheDocument());
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'מעורבות גורם חיצוני' })).toBeInTheDocument();
   });
 
   // Uses professional_manager (u-manager), not system_admin -- a user no

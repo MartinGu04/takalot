@@ -8,13 +8,7 @@
 // combination via the RPC. See that migration's header for the full split.
 import type { Role } from './types';
 
-export type AnalyticsModuleKey =
-  | 'trend'
-  | 'ageDistribution'
-  | 'topSystems'
-  | 'topLocations'
-  | 'closures'
-  | 'externalInvolvement';
+export type AnalyticsModuleKey = 'trend' | 'ageDistribution' | 'topSystems' | 'topLocations' | 'closures';
 
 export const ANALYTICS_MODULE_KEYS: AnalyticsModuleKey[] = [
   'trend',
@@ -22,7 +16,6 @@ export const ANALYTICS_MODULE_KEYS: AnalyticsModuleKey[] = [
   'topSystems',
   'topLocations',
   'closures',
-  'externalInvolvement',
 ];
 
 /** Roles that may personalize their analytics view at all -- must match

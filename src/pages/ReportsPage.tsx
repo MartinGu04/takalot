@@ -33,7 +33,6 @@ import { AgeDistributionChart } from '../components/analytics/AgeDistributionCha
 import { TopSystemsList } from '../components/analytics/TopSystemsList';
 import { TopLocationsList } from '../components/analytics/TopLocationsList';
 import { ClosureBreakdownPanel } from '../components/analytics/ClosureBreakdownPanel';
-import { ExternalInvolvementPanel } from '../components/analytics/ExternalInvolvementPanel';
 import { Button, ErrorState, Spinner } from '../components/ui';
 import {
   IconAlertTriangle,
@@ -171,16 +170,16 @@ export default function ReportsPage() {
   // query key stable across a period change, so it never refetches for one.
   const { periodDays: _periodDays, ...entityFilters } = filters;
   // The two genuinely skippable fetches (see the RPC-architecture note in
-  // supabase/migrations/0051_incident_analytics_v2_rpcs.sql): hiding both
-  // of closures/externalInvolvement means useIncidentClosureInsights never
-  // fires at all, and hiding ageDistribution means useIncidentOpenBacklog
-  // never fires. trend/topSystems/topLocations have no hook of their own to
-  // gate -- their data already arrives inside useIncidentAnalytics's
-  // always-fetched response, so hiding those three only gates rendering
-  // below, never a request.
+  // supabase/migrations/0051_incident_analytics_v2_rpcs.sql): hiding
+  // closures means useIncidentClosureInsights never fires at all, and
+  // hiding ageDistribution means useIncidentOpenBacklog never fires.
+  // trend/topSystems/topLocations have no hook of their own to gate --
+  // their data already arrives inside useIncidentAnalytics's always-fetched
+  // response, so hiding those three only gates rendering below, never a
+  // request.
   const { data: backlog } = useIncidentOpenBacklog(entityFilters, { enabled: visibleModules.has('ageDistribution') });
   const { data: closureInsights } = useIncidentClosureInsights(filters, {
-    enabled: visibleModules.has('closures') || visibleModules.has('externalInvolvement'),
+    enabled: visibleModules.has('closures'),
   });
 
   // Trend chart drill-down ("לחץ לצפייה בתקלות"): the selected bucket is a
@@ -412,23 +411,6 @@ export default function ReportsPage() {
                   />
                 ) : (
                   <Spinner label="טוען נתוני סיווג סגירות…" />
-                )}
-              </div>
-            </section>
-          )}
-
-          {visibleModules.has('externalInvolvement') && (
-            <section className="mt-8">
-              <h2 className="section-title">מעורבות גורם חיצוני</h2>
-              <div className="mt-3">
-                {closureInsights ? (
-                  <ExternalInvolvementPanel
-                    causeExternalClosedCount={closureInsights.causeExternalClosedCount}
-                    resolutionAttributionExternalCount={closureInsights.resolutionAttributionExternalCount}
-                    externallyHandledOpenCount={data.externallyHandledOpenCount}
-                  />
-                ) : (
-                  <Spinner label="טוען נתוני מעורבות גורם חיצוני…" />
                 )}
               </div>
             </section>
