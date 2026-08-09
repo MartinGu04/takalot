@@ -13,6 +13,7 @@ import {
 } from './components/AuthScreens';
 import { getAppMode } from './data/appMode';
 import { hasCapability, type Capability } from './domain/permissions';
+import { sanitizeInternalReturnPath } from './lib/returnPath';
 import LoginPage from './pages/LoginPage';
 import { OfflineBanner } from './pwa/OfflineBanner';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
@@ -60,6 +61,7 @@ function RequireAuth({ children, cap }: { children: React.ReactNode; cap?: Capab
 
 function AppRoutes() {
   const { user, status, identityEmail, logout, retryAuthorization } = useAuth();
+  const location = useLocation();
 
   // Gate ALL routing on the auth lifecycle so the login page never flashes
   // while a persisted session is being restored, and an authenticated but
@@ -68,11 +70,16 @@ function AppRoutes() {
   if (status === 'unauthorized') return <UnauthorizedScreen email={identityEmail} onLogout={logout} />;
   if (status === 'error') return <AuthErrorScreen onRetry={retryAuthorization} onLogout={logout} />;
 
+  // Re-validated independently of whatever LoginPage did before sending the
+  // user to Google -- a `next` value must never be trusted just because
+  // AVARIA itself is the one that generated it earlier in the round trip.
+  const postLoginTarget = sanitizeInternalReturnPath(new URLSearchParams(location.search).get('next')) ?? '/';
+
   return (
     <Layout>
       <Suspense fallback={<Spinner />}>
         <Routes>
-          <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+          <Route path="/login" element={user ? <Navigate to={postLoginTarget} replace /> : <LoginPage />} />
           <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
           <Route path="/incidents" element={<RequireAuth><IncidentsPage /></RequireAuth>} />
           <Route
