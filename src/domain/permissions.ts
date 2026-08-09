@@ -35,7 +35,18 @@ export type Capability =
    *  incident (link_incident_on_creation, migration 0050), never a standing
    *  permission. Real enforcement is the database RPC's own role check
    *  (manage_incident_relation); this only controls frontend visibility. */
-  | 'manage_incident_relations';
+  | 'manage_incident_relations'
+  /** Personalize which ניתוחים (analytics) page modules are visible
+   *  ("התאמת התצוגה") -- shift_supervisor and above, matching the database's
+   *  own is_operational_role() exactly (migration 0052). No existing
+   *  capability covers exactly this role set for the right reason (e.g.
+   *  manage_personnel happens to match the same three roles, but is a
+   *  different concept -- same reasoning manage_incident_relations above
+   *  already used to justify its own narrowly-scoped capability rather than
+   *  overloading an unrelated one). Real enforcement is the database's own
+   *  RLS + set_my_analytics_visible_modules role check; this only controls
+   *  whether the "התאמת התצוגה" affordance renders. */
+  | 'personalize_analytics';
 
 /**
  * Backend policy flags. In demo mode these mirror what would be secure
@@ -71,6 +82,7 @@ const matrix: Record<Role, Capability[]> = {
     'view_audit_log',
     'complete_follow_up',
     'manage_incident_relations',
+    'personalize_analytics',
   ],
   professional_manager: [
     'view_all_incidents',
@@ -87,6 +99,7 @@ const matrix: Record<Role, Capability[]> = {
     'view_audit_log',
     'complete_follow_up',
     'manage_incident_relations',
+    'personalize_analytics',
   ],
   shift_supervisor: [
     'view_all_incidents',
@@ -101,6 +114,7 @@ const matrix: Record<Role, Capability[]> = {
     'manage_personnel',
     'complete_follow_up',
     'manage_incident_relations',
+    'personalize_analytics',
     // 'reopen_incident' is granted only via PolicyFlags.allowSupervisorReopen
   ],
   technician: ['view_all_incidents', 'technical_update', 'create_incident', 'close_incident', 'assign_incident'],

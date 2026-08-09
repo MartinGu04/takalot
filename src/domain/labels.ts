@@ -17,6 +17,7 @@ import type {
   TreatmentOutcome,
   ResolutionAttribution,
 } from './types';
+import type { AnalyticsModuleKey } from './analyticsPreferences';
 
 export const APP_NAME = 'AVARIA';
 export const APP_TAGLINE = 'מערכת ניהול ומעקב תקלות';
@@ -401,4 +402,16 @@ export const fieldLabels: Record<string, string> = {
   reported_to_ops_recipient: 'למי דווח',
   current_status_text: 'סטטוס נוכחי',
   current_suspected_cause: 'חשד נוכחי',
+};
+
+/** Labels for the ניתוחים page's personalizable module toggles ("התאמת
+ *  התצוגה") -- mirrors each module's own section heading on the page
+ *  itself, so the settings dialog and the page always describe the same
+ *  module the same way. */
+export const analyticsModuleLabels: Record<AnalyticsModuleKey, string> = {
+  trend: 'פתיחת וסגירת תקלות',
+  ageDistribution: 'גיל תקלות פתוחות',
+  topSystems: 'מערכות עם הכי הרבה תקלות',
+  topLocations: 'מיקומים עם הכי הרבה תקלות',
+  closures: 'סיווג סגירות',
 };

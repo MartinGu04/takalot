@@ -168,8 +168,8 @@ describe('mobile bottom-nav overflow (עוד)', () => {
   });
 });
 
-describe('AVARIA v1.2.0 version display', () => {
-  it('renders "AVARIA v1.2.0" in the desktop sidebar, above the user/divider section, using the shared version source', async () => {
+describe('AVARIA version display', () => {
+  it('renders the shared "AVARIA v<version>" label in the desktop sidebar, above the user/divider section, using the shared version source', async () => {
     const user = userEvent.setup();
     render(<App />);
     await login(user, 'login-u-admin');
@@ -177,7 +177,7 @@ describe('AVARIA v1.2.0 version display', () => {
     const sidebar = screen.getByRole('navigation', { name: 'ניווט ראשי' }).closest('aside') as HTMLElement;
     const versionEl = within(sidebar).getByTestId('app-version');
     expect(versionEl).toHaveTextContent(APP_VERSION_LABEL);
-    expect(versionEl.textContent).toBe('AVARIA v1.2.0');
+    expect(versionEl.textContent).toBe(APP_VERSION_LABEL);
 
     // "Directly above the divider/user section": the version element and the
     // bordered user-section container are adjacent siblings, in that order.
@@ -185,7 +185,7 @@ describe('AVARIA v1.2.0 version display', () => {
     expect(versionEl.nextElementSibling).toBe(userSectionDiv);
   });
 
-  it('renders the same "AVARIA v1.2.0" version at the bottom of the mobile עוד screen', async () => {
+  it('renders the same version label at the bottom of the mobile עוד screen', async () => {
     const user = userEvent.setup();
     render(<App />);
     await login(user, 'login-u-admin');
@@ -194,7 +194,7 @@ describe('AVARIA v1.2.0 version display', () => {
     const sheet = screen.getByRole('dialog', { name: 'עוד' });
     const versionEl = within(sheet).getByTestId('app-version');
     expect(versionEl).toHaveTextContent(APP_VERSION_LABEL);
-    expect(versionEl.textContent).toBe('AVARIA v1.2.0');
+    expect(versionEl.textContent).toBe(APP_VERSION_LABEL);
   });
 });
 

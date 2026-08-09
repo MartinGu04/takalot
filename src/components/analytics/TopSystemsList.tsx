@@ -12,7 +12,7 @@ export function TopSystemsList({ rows }: { rows: AnalyticsSystemRow[] }) {
         name: row.systemName,
         openedInPeriod: row.openedInPeriod,
         currentlyOpen: row.currentlyOpen,
-        avgCloseMinutes: row.avgCloseMinutes,
+        medianCloseMinutes: row.medianCloseMinutes,
       }))}
       emptyTitle="אין מערכות עם תקלות בתקופה שנבחרה"
     />

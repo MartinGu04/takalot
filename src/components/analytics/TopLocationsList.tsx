@@ -13,7 +13,7 @@ export function TopLocationsList({ rows }: { rows: AnalyticsLocationRow[] }) {
         name: row.locationName,
         openedInPeriod: row.openedInPeriod,
         currentlyOpen: row.currentlyOpen,
-        avgCloseMinutes: row.avgCloseMinutes,
+        medianCloseMinutes: row.medianCloseMinutes,
       }))}
       emptyTitle="אין מיקומים עם תקלות בתקופה שנבחרה"
     />

@@ -1,6 +1,18 @@
 // RankingList (and its TopSystemsList/TopLocationsList adapters): the
 // compact ranking panel for the ניתוחים analytics page's top-5 system and
 // location lists, replacing the former one-large-card-per-entity layout.
+//
+// v1.4.0 mobile fix: below sm:, the name column used to get squeezed to
+// 1-2 visible Hebrew characters by three fixed-width metric columns. The
+// fix renders two parallel layouts per row -- a desktop one (unchanged,
+// single line, `data-testid="ranking-row-desktop"`) and a mobile one (two
+// lines, name never truncated, `data-testid="ranking-row-mobile"`) --
+// toggled via `hidden sm:flex` / `sm:hidden` CSS, which Testing Library
+// can't evaluate as a real media query. Every assertion below is scoped to
+// one variant's testid so it isn't accidentally satisfied by the other
+// (both are always present in jsdom's DOM at once), matching how the rest
+// of this app's dual desktop/mobile layouts are already tested (see
+// Layout.test.tsx's `within(sidebar)`/`within(bottomNav())` scoping).
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { RankingList, type RankingRow } from './RankingList';
@@ -14,21 +26,29 @@ function makeRow(overrides: Partial<RankingRow> = {}): RankingRow {
     name: 'ישות לדוגמה',
     openedInPeriod: 7,
     currentlyOpen: 1,
-    avgCloseMinutes: 3320, // 2 days, 7h20m -> formatDurationMinutes caps at 2 components
+    medianCloseMinutes: 3320, // 2 days, 7h20m -> formatDurationMinutes caps at 2 components
     ...overrides,
   };
 }
 
+function desktopRows() {
+  return screen.getAllByTestId('ranking-row-desktop');
+}
+
+function mobileRows() {
+  return screen.getAllByTestId('ranking-row-mobile');
+}
+
 describe('RankingList: compact rows, not one large card per entity', () => {
-  it('shows the three metric labels exactly once each (as column headers), not once per row', () => {
+  it('shows the three metric labels exactly once each (as desktop column headers), not once per row', () => {
     const rows = [makeRow({ id: 'a', name: 'A' }), makeRow({ id: 'b', name: 'B' }), makeRow({ id: 'c', name: 'C' })];
     render(<RankingList rows={rows} emptyTitle="אין נתונים" />);
     expect(screen.getAllByText('נפתחו בתקופה')).toHaveLength(1);
     expect(screen.getAllByText('פתוחות כעת')).toHaveLength(1);
-    expect(screen.getAllByText('זמן סגירה ממוצע')).toHaveLength(1);
+    expect(screen.getAllByText('זמן טיפול חציוני')).toHaveLength(1);
   });
 
-  it('renders rank, name and the three values for each row', () => {
+  it('renders rank, name and the three values for each row on the desktop layout', () => {
     // Metric values deliberately avoid 1/2 so they can't collide with the
     // rank badges themselves when queried by exact text.
     const rows = [
@@ -36,14 +56,15 @@ describe('RankingList: compact rows, not one large card per entity', () => {
       makeRow({ id: 'sys-2', name: 'מערכת שנייה', openedInPeriod: 9, currentlyOpen: 5 }),
     ];
     render(<RankingList rows={rows} emptyTitle="אין נתונים" />);
-    const firstRow = screen.getByText('מערכת ראשונה').closest('div') as HTMLElement;
+    const [firstRow, secondRow] = desktopRows();
+    expect(within(firstRow).getByText('מערכת ראשונה')).toBeInTheDocument();
     expect(within(firstRow).getByText('1')).toBeInTheDocument(); // rank
-    const secondRow = screen.getByText('מערכת שנייה').closest('div') as HTMLElement;
+    expect(within(firstRow).getByText('7')).toBeInTheDocument();
+    expect(within(firstRow).getByText('4')).toBeInTheDocument();
+    expect(within(secondRow).getByText('מערכת שנייה')).toBeInTheDocument();
     expect(within(secondRow).getByText('2')).toBeInTheDocument(); // rank
-    expect(screen.getByText('7')).toBeInTheDocument();
-    expect(screen.getByText('4')).toBeInTheDocument();
-    expect(screen.getByText('9')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(within(secondRow).getByText('9')).toBeInTheDocument();
+    expect(within(secondRow).getByText('5')).toBeInTheDocument();
   });
 
   it('does not render one surface card per row -- exactly one shared surface container for the whole panel', () => {
@@ -52,18 +73,18 @@ describe('RankingList: compact rows, not one large card per entity', () => {
     expect(container.querySelectorAll('.surface')).toHaveLength(1);
   });
 
-  it('a long entity name truncates with an accessible title tooltip, rather than breaking the row layout', () => {
+  it('desktop: a long entity name truncates with an accessible title tooltip, rather than breaking the row layout', () => {
     const longName = 'שם מערכת ארוך מאוד מאוד מאוד שאמור להיחתך ולא לשבור את הפריסה של השורה הקומפקטית';
     render(<RankingList rows={[makeRow({ name: longName })]} emptyTitle="אין נתונים" />);
-    const nameEl = screen.getByText(longName);
+    const nameEl = within(desktopRows()[0]).getByText(longName);
     expect(nameEl).toHaveClass('truncate');
     expect(nameEl).toHaveAttribute('title', longName);
   });
 
-  it('a duration value is never truncated -- the full formatted string is always present in the DOM', () => {
+  it('desktop: a duration value is never truncated -- the full formatted string is always present in the DOM', () => {
     // formatDurationMinutes(3320) = "2 ימים, 7 שעות" (see src/lib/time.ts).
-    render(<RankingList rows={[makeRow({ avgCloseMinutes: 3320 })]} emptyTitle="אין נתונים" />);
-    const durationEl = screen.getByText('2 ימים, 7 שעות');
+    render(<RankingList rows={[makeRow({ medianCloseMinutes: 3320 })]} emptyTitle="אין נתונים" />);
+    const durationEl = within(desktopRows()[0]).getByText('2 ימים, 7 שעות');
     expect(durationEl).not.toHaveClass('truncate');
   });
 
@@ -73,9 +94,50 @@ describe('RankingList: compact rows, not one large card per entity', () => {
     expect(screen.queryByText('נפתחו בתקופה')).not.toBeInTheDocument();
   });
 
-  it('null avgCloseMinutes renders the standard placeholder, matching every other duration display on the page', () => {
-    render(<RankingList rows={[makeRow({ avgCloseMinutes: null })]} emptyTitle="אין נתונים" />);
-    expect(screen.getByText('—')).toBeInTheDocument();
+  it('null medianCloseMinutes renders the standard placeholder, matching every other duration display on the page', () => {
+    render(<RankingList rows={[makeRow({ medianCloseMinutes: null })]} emptyTitle="אין נתונים" />);
+    expect(within(desktopRows()[0]).getByText('—')).toBeInTheDocument();
+    expect(within(mobileRows()[0]).getByText('—')).toBeInTheDocument();
+  });
+});
+
+describe('RankingList: mobile layout (below sm:) never truncates the identifying name', () => {
+  it('renders a long entity name in full, wrapped rather than truncated, with no title fallback', () => {
+    const longName = 'שם מערכת ארוך מאוד מאוד מאוד שאמור להיחתך ולא לשבור את הפריסה של השורה הקומפקטית';
+    render(<RankingList rows={[makeRow({ name: longName })]} emptyTitle="אין נתונים" />);
+    const nameEl = within(mobileRows()[0]).getByText(longName);
+    expect(nameEl).toHaveClass('break-words');
+    expect(nameEl).not.toHaveClass('truncate');
+    expect(nameEl).not.toHaveAttribute('title');
+  });
+
+  it('shows the rank badge and all three metrics, self-labeled, on a second line under the name', () => {
+    render(
+      <RankingList
+        rows={[makeRow({ name: 'מערכת אלפא', openedInPeriod: 7, currentlyOpen: 4, medianCloseMinutes: 3320 })]}
+        emptyTitle="אין נתונים"
+      />,
+    );
+    const mobileRow = mobileRows()[0];
+    expect(within(mobileRow).getByText('מערכת אלפא')).toBeInTheDocument();
+    expect(within(mobileRow).getByText('1')).toBeInTheDocument(); // rank badge
+    expect(within(mobileRow).getByText(/נפתחו בתקופה/)).toBeInTheDocument();
+    expect(within(mobileRow).getByText('7')).toBeInTheDocument();
+    expect(within(mobileRow).getByText(/פתוחות כעת/)).toBeInTheDocument();
+    expect(within(mobileRow).getByText('4')).toBeInTheDocument();
+    expect(within(mobileRow).getByText(/זמן טיפול חציוני/)).toBeInTheDocument();
+    expect(within(mobileRow).getByText('2 ימים, 7 שעות')).toBeInTheDocument();
+  });
+
+  it('renders one mobile row per ranking row, in rank order', () => {
+    const rows = [
+      makeRow({ id: 'a', name: 'ראשון' }),
+      makeRow({ id: 'b', name: 'שני' }),
+      makeRow({ id: 'c', name: 'שלישי' }),
+    ];
+    render(<RankingList rows={rows} emptyTitle="אין נתונים" />);
+    const names = mobileRows().map((row) => within(row).getByText(/^(ראשון|שני|שלישי)$/).textContent);
+    expect(names).toEqual(['ראשון', 'שני', 'שלישי']);
   });
 });
 
@@ -86,7 +148,7 @@ describe('TopSystemsList / TopLocationsList: thin adapters over RankingList', ()
       systemName: 'מערכת אלפא',
       openedInPeriod: 5,
       currentlyOpen: 2,
-      avgCloseMinutes: 120,
+      medianCloseMinutes: 120,
       ...overrides,
     };
   }
@@ -96,14 +158,14 @@ describe('TopSystemsList / TopLocationsList: thin adapters over RankingList', ()
       locationName: 'אתר 1',
       openedInPeriod: 4,
       currentlyOpen: 1,
-      avgCloseMinutes: 90,
+      medianCloseMinutes: 90,
       ...overrides,
     };
   }
 
   it('TopSystemsList renders each system row with its own empty-state text', () => {
     render(<TopSystemsList rows={[makeSystemRow()]} />);
-    expect(screen.getByText('מערכת אלפא')).toBeInTheDocument();
+    expect(screen.getAllByText('מערכת אלפא').length).toBeGreaterThan(0);
 
     render(<TopSystemsList rows={[]} />);
     expect(screen.getByText('אין מערכות עם תקלות בתקופה שנבחרה')).toBeInTheDocument();
@@ -111,7 +173,7 @@ describe('TopSystemsList / TopLocationsList: thin adapters over RankingList', ()
 
   it('TopLocationsList renders each location row with its own empty-state text', () => {
     render(<TopLocationsList rows={[makeLocationRow()]} />);
-    expect(screen.getByText('אתר 1')).toBeInTheDocument();
+    expect(screen.getAllByText('אתר 1').length).toBeGreaterThan(0);
 
     render(<TopLocationsList rows={[]} />);
     expect(screen.getByText('אין מיקומים עם תקלות בתקופה שנבחרה')).toBeInTheDocument();
@@ -129,6 +191,6 @@ describe('TopSystemsList / TopLocationsList: thin adapters over RankingList', ()
       </div>,
     );
     expect(within(screen.getByTestId('systems-panel')).getByText('אין מערכות עם תקלות בתקופה שנבחרה')).toBeInTheDocument();
-    expect(within(screen.getByTestId('locations-panel')).getByText('אתר עם תקלות')).toBeInTheDocument();
+    expect(within(screen.getByTestId('locations-panel')).getAllByText('אתר עם תקלות').length).toBeGreaterThan(0);
   });
 });

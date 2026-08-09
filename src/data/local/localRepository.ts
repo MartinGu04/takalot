@@ -29,7 +29,17 @@ import type {
 import { selectSimilarIncidentSuggestions, incidentToSimilarityCandidate } from '../../domain/similarity';
 import type { TreatmentActionInput } from '../../domain/schemas';
 import { isOpen } from '../../domain/types';
-import { computeIncidentAnalytics, type AnalyticsFilters, type IncidentAnalytics } from '../../domain/analyticsSummary';
+import {
+  computeIncidentAnalytics,
+  type AnalyticsBucketUnit,
+  type AnalyticsEntityFilters,
+  type AnalyticsFilters,
+  type IncidentAnalytics,
+} from '../../domain/analyticsSummary';
+import { computeIncidentOpenBacklog, type IncidentOpenBacklog } from '../../domain/analyticsOpenBacklog';
+import { computeIncidentClosureInsights, type IncidentClosureInsights } from '../../domain/analyticsClosureInsights';
+import { computeTrendBucketIncidents, type TrendBucketIncidents } from '../../domain/analyticsTrendDrilldown';
+import { ANALYTICS_MODULE_KEYS, type AnalyticsModuleKey } from '../../domain/analyticsPreferences';
 import { LOCATION_CATEGORY_ORDER, SYSTEM_CATEGORY_ORDER, reportedToOpsLabels } from '../../domain/labels';
 import { hasCapability, canTechnicianUpdate, allowedAssignRoles, allowedManageRoles, type Capability } from '../../domain/permissions';
 import { canTransition, transitionError } from '../../domain/transitions';
@@ -1528,9 +1538,70 @@ export class LocalDemoRepository implements Repository {
       this.db.incidentEvents,
       this.db.systems,
       this.db.locations,
+      this.closureRows(),
       filters,
       this.now(),
     );
+  }
+
+  async getIncidentOpenBacklog(session: Session, filters: AnalyticsEntityFilters): Promise<IncidentOpenBacklog> {
+    this.requireCap(session, 'view_all_incidents');
+    return computeIncidentOpenBacklog(this.db.incidents, this.closureRows(), filters, this.now());
+  }
+
+  async getIncidentClosureInsights(session: Session, filters: AnalyticsFilters): Promise<IncidentClosureInsights> {
+    this.requireCap(session, 'view_all_incidents');
+    return computeIncidentClosureInsights(
+      this.db.incidents,
+      this.db.incidentEvents,
+      this.closureRows(),
+      filters,
+      this.now(),
+    );
+  }
+
+  private analyticsPreferencesMap(): Record<string, AnalyticsModuleKey[]> {
+    if (!this.db.analyticsPreferences) this.db.analyticsPreferences = {};
+    return this.db.analyticsPreferences;
+  }
+
+  async getAnalyticsPreferences(session: Session): Promise<AnalyticsModuleKey[] | null> {
+    // Mirrors the RLS-scoped read: any active member may issue the read,
+    // but only an eligible (personalize_analytics) role ever gets back a
+    // stored preference -- an ineligible role reads null (their row, if one
+    // somehow existed, is invisible to them), never a FORBIDDEN error, same
+    // as a real RLS policy silently excluding a row rather than erroring.
+    const actor = this.requireCap(session, 'view_all_incidents');
+    if (!hasCapability(actor.role, 'personalize_analytics', this.db.policy, actor.id)) return null;
+    return this.analyticsPreferencesMap()[actor.id] ?? null;
+  }
+
+  async setAnalyticsVisibleModules(session: Session, modules: AnalyticsModuleKey[] | null): Promise<void> {
+    // Self-only by construction (no target-user parameter exists) and
+    // eligibility-gated exactly like set_my_analytics_visible_modules
+    // (migration 0052) -- being an active member is not sufficient.
+    const actor = this.requireCap(session, 'personalize_analytics');
+    const map = this.analyticsPreferencesMap();
+    if (modules === null) {
+      delete map[actor.id];
+      this.persist();
+      return;
+    }
+    if (!modules.every((m) => (ANALYTICS_MODULE_KEYS as string[]).includes(m))) {
+      throw new AppError('VALIDATION', 'מודול לא מוכר.');
+    }
+    map[actor.id] = modules;
+    this.persist();
+  }
+
+  async getAnalyticsTrendBucketIncidents(
+    session: Session,
+    bucketStart: string,
+    bucketUnit: AnalyticsBucketUnit,
+    filters: AnalyticsEntityFilters,
+  ): Promise<TrendBucketIncidents> {
+    this.requireCap(session, 'view_all_incidents');
+    return computeTrendBucketIncidents(this.db.incidents, this.closureRows(), bucketStart, bucketUnit, filters);
   }
 
   async getIncident(session: Session, id: string): Promise<Incident | null> {

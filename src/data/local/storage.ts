@@ -14,6 +14,7 @@ import type {
   SystemRecord,
 } from '../../domain/types';
 import type { PolicyFlags } from '../../domain/permissions';
+import type { AnalyticsModuleKey } from '../../domain/analyticsPreferences';
 
 export interface StoredNotification extends AppNotification {
   dedupeKey?: string;
@@ -63,6 +64,12 @@ export interface DemoDatabase {
   auditLogs: AuditLog[];
   /** Optional for databases persisted before 0008's model existed. */
   pendingPersonnel?: PendingPersonnel[];
+  /** Per-user analytics module-visibility preference ("התאמת התצוגה"), keyed
+   *  by userId -- mirrors user_analytics_preferences (migration 0052).
+   *  Absence of a key (or the whole map, for a database persisted before
+   *  this feature existed) means "use the role default," exactly like the
+   *  hosted table's "no row" state -- see src/domain/analyticsPreferences.ts. */
+  analyticsPreferences?: Record<string, AnalyticsModuleKey[]>;
   sequences: Record<string, number>; // year -> last allocated number
   policy: PolicyFlags;
 }
@@ -84,6 +91,7 @@ export function emptyDatabase(): DemoDatabase {
     notifications: [],
     auditLogs: [],
     pendingPersonnel: [],
+    analyticsPreferences: {},
     sequences: {},
     policy: { allowSupervisorReopen: false, viewerExportUserIds: [] },
   };

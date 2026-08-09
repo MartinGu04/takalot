@@ -1,8 +1,19 @@
 // TanStack Query hooks over the repository abstraction.
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepository } from './index';
-import { AppError, type AnalyticsFilters, type AuditFilters, type IncidentFilters, type IncidentSort } from './repository';
+import {
+  AppError,
+  type AnalyticsBucketUnit,
+  type AnalyticsEntityFilters,
+  type AnalyticsFilters,
+  type AnalyticsModuleKey,
+  type AuditFilters,
+  type IncidentFilters,
+  type IncidentSort,
+} from './repository';
 import type { IncidentDomain } from '../domain/types';
+import { canonicalizeAnalyticsFilters } from '../domain/analyticsSummary';
+import { normalizeAnalyticsModules } from '../domain/analyticsPreferences';
 import { useAuth, useSession } from '../auth/AuthContext';
 import { useToast } from '../components/ui';
 
@@ -59,10 +70,105 @@ export function useClosedIncidentCount() {
  *  state, the same reasoning as useIncidents. */
 export function useIncidentAnalytics(filters: AnalyticsFilters) {
   const session = useSession();
+  const canonical = canonicalizeAnalyticsFilters(filters);
   return useQuery({
-    queryKey: ['analytics', filters],
-    queryFn: () => repo().getIncidentAnalytics(session, filters),
+    queryKey: ['analytics', canonical],
+    queryFn: () => repo().getIncidentAnalytics(session, canonical),
     placeholderData: keepPreviousData,
+  });
+}
+
+/** Open-incident age distribution for the ניתוחים page's backlog module.
+ *  `entityFilters` deliberately excludes periodDays -- backlog age is not
+ *  period-bound, matching getIncidentAnalytics's own currentlyOpen/
+ *  avgOpenMinutes semantics, so a period change never refetches this. The
+ *  `trend`/`topSystems`/`topLocations` module toggles have no equivalent
+ *  hook of their own: their data already arrives inside
+ *  useIncidentAnalytics's always-fetched response (see ReportsPage), so
+ *  hiding those modules only gates rendering, never the request -- this
+ *  hook and useIncidentClosureInsights below are the two genuinely
+ *  skippable fetches (see the RPC-architecture note in
+ *  supabase/migrations/0051_incident_analytics_v2_rpcs.sql). */
+export function useIncidentOpenBacklog(entityFilters: AnalyticsEntityFilters, options: { enabled?: boolean } = {}) {
+  const session = useSession();
+  const canonical = canonicalizeAnalyticsFilters(entityFilters);
+  return useQuery({
+    queryKey: ['analyticsOpenBacklog', canonical],
+    queryFn: () => repo().getIncidentOpenBacklog(session, canonical),
+    enabled: options.enabled ?? true,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Confirmed-cause/treatment-outcome breakdown (and closure-scoped
+ *  external-involvement counts the payload still carries, unused by the
+ *  frontend since the external-involvement module was removed -- see
+ *  analyticsPreferences.ts). `enabled` should be
+ *  `visibleModules.has('closures')` -- the one analytics fetch genuinely
+ *  skipped (zero network call, zero server-side computation) when its
+ *  personalizable module is hidden. */
+export function useIncidentClosureInsights(filters: AnalyticsFilters, options: { enabled?: boolean } = {}) {
+  const session = useSession();
+  const canonical = canonicalizeAnalyticsFilters(filters);
+  return useQuery({
+    queryKey: ['analyticsClosureInsights', canonical],
+    queryFn: () => repo().getIncidentClosureInsights(session, canonical),
+    enabled: options.enabled ?? true,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** The caller's own stored analytics module-visibility preference ("התאמת
+ *  התצוגה"), or `null` when none is stored -- callers fall back to
+ *  defaultAnalyticsModules(role) in that case (see
+ *  src/domain/analyticsPreferences.ts). Not gated by role here: an
+ *  ineligible role's read simply resolves to null (no stored row is ever
+ *  visible to them), so the caller doesn't need to branch on role before
+ *  calling this. */
+export function useAnalyticsPreferences() {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['analyticsPreferences', session.userId],
+    // Normalized against the currently supported module keys -- a stored
+    // preference from before a module was removed (e.g. a legacy
+    // 'externalInvolvement' entry) must never reach rendering or the
+    // personalization dialog's draft state. See
+    // domain/analyticsPreferences.ts's normalizeAnalyticsModules header.
+    queryFn: async () => normalizeAnalyticsModules(await repo().getAnalyticsPreferences(session)),
+  });
+}
+
+/** Sets (or, with `null`, resets to the role default) the caller's own
+ *  analytics module visibility. Self-only and eligibility-gated server-side
+ *  (migration 0052) -- an ineligible role's call is rejected with a
+ *  controlled FORBIDDEN error via useAppMutation's normal error toast, not
+ *  merely hidden in the UI. */
+export function useSetAnalyticsPreferences() {
+  const session = useSession();
+  return useAppMutation((modules: AnalyticsModuleKey[] | null) => repo().setAnalyticsVisibleModules(session, modules), {
+    invalidate: [['analyticsPreferences', session.userId]],
+  });
+}
+
+/** Bounded, on-demand incident summaries for exactly ONE trend-chart bucket
+ *  ("לחץ לצפייה בתקלות"). `bucketStart` is `null` while no bucket is
+ *  selected -- `enabled: bucketStart !== null` means this never fires as
+ *  part of the normal analytics page load, only once the user actually
+ *  clicks a bar. `entityFilters` must be the SAME entity filters the trend
+ *  chart's own data was computed from (no periodDays -- the bucket itself
+ *  already pins the window), so the returned list can never disagree with
+ *  the chart's own opened/closed counts for that bucket. */
+export function useAnalyticsTrendBucketIncidents(
+  bucketStart: string | null,
+  bucketUnit: AnalyticsBucketUnit,
+  entityFilters: AnalyticsEntityFilters,
+) {
+  const session = useSession();
+  const canonical = canonicalizeAnalyticsFilters(entityFilters);
+  return useQuery({
+    queryKey: ['analyticsTrendBucketIncidents', bucketStart, bucketUnit, canonical],
+    queryFn: () => repo().getAnalyticsTrendBucketIncidents(session, bucketStart!, bucketUnit, canonical),
+    enabled: bucketStart !== null,
   });
 }
 

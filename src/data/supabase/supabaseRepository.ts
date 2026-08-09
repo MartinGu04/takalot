@@ -40,19 +40,27 @@ import type {
 } from '../../domain/schemas';
 import { AppError } from '../repository';
 import type {
+  AnalyticsBucketUnit,
+  AnalyticsEntityFilters,
   AnalyticsFilters,
+  AnalyticsModuleKey,
   AuditFilters,
   AuditLogPage,
   ExportAuditInfo,
   IncidentAnalytics,
+  IncidentClosureInsights,
   IncidentFilters,
+  IncidentOpenBacklog,
   IncidentSort,
   ReferenceDataDeleteOutcome,
   ReferenceDataMoveDirection,
   Repository,
   Session,
+  TrendBucketIncidents,
 } from '../repository';
 import { sortByPriority } from '../../domain/overdue';
+import { addDays, jerusalemMidnightIso } from '../../domain/analyticsSummary';
+import { TREND_BUCKET_DRILLDOWN_LIMIT } from '../../domain/analyticsTrendDrilldown';
 
 // Maps a failed delete-user Edge Function invocation to an AppError. The
 // function's response body is JSON ({ error, message, retryable? }); a
@@ -317,6 +325,20 @@ export const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
 
 export const mapIncidentSummary = (r: Record<string, unknown>): IncidentSummary => ({
   id: r.incident_id as string,
+  number: r.number as string,
+  severity: r.severity as Severity,
+  status: r.status as IncidentStatus,
+  systemId: r.system_id as string,
+  locationId: r.location_id as string,
+  description: r.description as string,
+});
+
+// Same IncidentSummary shape as mapIncidentSummary above, but for a row read
+// directly from the `incidents` table (primary key column `id`) rather than
+// from search_incidents_for_relation's RPC result (which aliases it as
+// `incident_id`) -- used by getAnalyticsTrendBucketIncidents.
+const mapIncidentSummaryRow = (r: Record<string, unknown>): IncidentSummary => ({
+  id: r.id as string,
   number: r.number as string,
   severity: r.severity as Severity,
   status: r.status as IncidentStatus,
@@ -694,12 +716,151 @@ export class SupabaseRepository implements Repository {
    * needed here, unlike mapIncident() below for the incidents table.
    */
   async getIncidentAnalytics(_session: Session, filters: AnalyticsFilters): Promise<IncidentAnalytics> {
-    return this.rpc<IncidentAnalytics>('get_incident_analytics', {
+    // Calls get_incident_analytics_v2 (migration 0051), NOT the original
+    // get_incident_analytics -- a new, distinctly-named function, deployed
+    // this way specifically so it never becomes an ambiguous PostgREST
+    // overload of the original (see that migration's header). The original
+    // 4-parameter function is left in the database, untouched, as a
+    // compatibility path for any client still calling it by name -- this
+    // repository method's NAME and SHAPE stay stable across that change;
+    // only the RPC it targets underneath does not.
+    return this.rpc<IncidentAnalytics>('get_incident_analytics_v2', {
       p_period_days: filters.periodDays,
       p_system_id: filters.systemId ?? null,
       p_location_id: filters.locationId ?? null,
-      p_severity: filters.severity ?? null,
+      p_severities: filters.severities ?? null,
+      p_domains: filters.domains ?? null,
+      p_include_unclassified_domain: filters.includeUnclassifiedDomain ?? false,
+      p_confirmed_causes: filters.confirmedCauses ?? null,
+      p_treatment_outcomes: filters.treatmentOutcomes ?? null,
     });
+  }
+
+  async getIncidentOpenBacklog(_session: Session, filters: AnalyticsEntityFilters): Promise<IncidentOpenBacklog> {
+    return this.rpc<IncidentOpenBacklog>('get_incident_open_backlog', {
+      p_system_id: filters.systemId ?? null,
+      p_location_id: filters.locationId ?? null,
+      p_severities: filters.severities ?? null,
+      p_domains: filters.domains ?? null,
+      p_include_unclassified_domain: filters.includeUnclassifiedDomain ?? false,
+      p_confirmed_causes: filters.confirmedCauses ?? null,
+      p_treatment_outcomes: filters.treatmentOutcomes ?? null,
+    });
+  }
+
+  async getIncidentClosureInsights(_session: Session, filters: AnalyticsFilters): Promise<IncidentClosureInsights> {
+    return this.rpc<IncidentClosureInsights>('get_incident_closure_insights', {
+      p_period_days: filters.periodDays,
+      p_system_id: filters.systemId ?? null,
+      p_location_id: filters.locationId ?? null,
+      p_severities: filters.severities ?? null,
+      p_domains: filters.domains ?? null,
+      p_include_unclassified_domain: filters.includeUnclassifiedDomain ?? false,
+      p_confirmed_causes: filters.confirmedCauses ?? null,
+      p_treatment_outcomes: filters.treatmentOutcomes ?? null,
+    });
+  }
+
+  /**
+   * Direct RLS-scoped read (no RPC needed for reads -- migration 0052):
+   * returns null both when the caller has never customized their view AND
+   * when the caller is not personalize_analytics-eligible (the RLS policy
+   * silently excludes their row either way, even if one somehow existed --
+   * never a thrown error for the ineligible case, matching how the RPC's
+   * own reset path treats "no row" as "use the role default").
+   */
+  async getAnalyticsPreferences(session: Session): Promise<AnalyticsModuleKey[] | null> {
+    const { data, error } = await this.client
+      .from('user_analytics_preferences')
+      .select('visible_modules')
+      .eq('user_id', session.userId)
+      .maybeSingle();
+    wrap(error);
+    return (data?.visible_modules as AnalyticsModuleKey[] | undefined) ?? null;
+  }
+
+  async setAnalyticsVisibleModules(_session: Session, modules: AnalyticsModuleKey[] | null): Promise<void> {
+    await this.rpc<void>('set_my_analytics_visible_modules', { p_modules: modules });
+  }
+
+  /**
+   * Bounded, on-demand incidents for ONE trend-chart bucket ("לחץ לצפייה
+   * בתקלות"). Deliberately NOT a dedicated RPC/migration: `incidents` and
+   * `incident_closures` already carry `select using (is_active_member())`
+   * RLS (migrations 0003/0046) -- the exact same gate every analytics RPC
+   * enforces explicitly -- so a direct, narrowly-bounded read through this
+   * client is just as safe as the existing listIncidents/getIncidentClosures
+   * methods below, which already read these same tables this way.
+   *
+   * Semantics are pinned to match the trend chart EXACTLY, not
+   * approximated:
+   *  - the [rangeStart, rangeEnd) bucket boundary is computed with the same
+   *    jerusalemMidnightIso/addDays helpers analyticsSummary.ts itself uses
+   *    to build periodStartIso and the bucket scaffold -- not re-derived;
+   *  - "opened"/"closed" are exactly discovered_at / closed_at falling in
+   *    that range, the same two columns get_incident_analytics_v2 groups
+   *    buckets on;
+   *  - the confirmed-cause/treatment-outcome filter is applied as an
+   *    unbounded-by-period incident_id EXISTS-equivalent (a first bounded
+   *    query narrowing to matching ids, mirroring matchesEntityFilters'/the
+   *    RPC's own `exists (select 1 from incident_closures ...)` clause) --
+   *    never row-bounded to the clicked bucket itself, which would silently
+   *    diverge from how every other analytics module treats this filter.
+   *
+   * Capped at TREND_BUCKET_DRILLDOWN_LIMIT rows per section -- a single
+   * bucket's incident count is always small in practice, and this must
+   * never become a path for pulling unbounded incident history into the
+   * browser.
+   */
+  async getAnalyticsTrendBucketIncidents(
+    _session: Session,
+    bucketStart: string,
+    bucketUnit: AnalyticsBucketUnit,
+    filters: AnalyticsEntityFilters,
+  ): Promise<TrendBucketIncidents> {
+    const rangeStart = jerusalemMidnightIso(bucketStart);
+    const rangeEnd = jerusalemMidnightIso(addDays(bucketStart, bucketUnit === 'week' ? 7 : 1));
+
+    let qualifyingIds: string[] | null = null;
+    const hasCauseOrOutcomeFilter = (filters.confirmedCauses?.length ?? 0) > 0 || (filters.treatmentOutcomes?.length ?? 0) > 0;
+    if (hasCauseOrOutcomeFilter) {
+      let cq = this.client.from('incident_closures').select('incident_id');
+      if (filters.confirmedCauses?.length) cq = cq.in('confirmed_cause', filters.confirmedCauses);
+      if (filters.treatmentOutcomes?.length) cq = cq.in('treatment_outcome', filters.treatmentOutcomes);
+      const { data, error } = await cq;
+      wrap(error);
+      qualifyingIds = [...new Set((data ?? []).map((r) => r.incident_id as string))];
+      // Short-circuit: no closure anywhere matches, so no incident ever
+      // could -- skip both incidents queries below entirely.
+      if (qualifyingIds.length === 0) return { opened: [], closed: [] };
+    }
+
+    const baseQuery = () => {
+      let q = this.client.from('incidents').select('id, number, severity, status, system_id, location_id, description');
+      if (filters.systemId) q = q.eq('system_id', filters.systemId);
+      if (filters.locationId) q = q.eq('location_id', filters.locationId);
+      if (filters.severities?.length) q = q.in('severity', filters.severities);
+      if (filters.domains?.length && filters.includeUnclassifiedDomain) {
+        q = q.or(`reported_domain.in.(${filters.domains.join(',')}),reported_domain.is.null`);
+      } else if (filters.domains?.length) {
+        q = q.in('reported_domain', filters.domains);
+      } else if (filters.includeUnclassifiedDomain) {
+        q = q.is('reported_domain', null);
+      }
+      if (qualifyingIds) q = q.in('id', qualifyingIds);
+      return q;
+    };
+
+    const [openedRes, closedRes] = await Promise.all([
+      baseQuery().gte('discovered_at', rangeStart).lt('discovered_at', rangeEnd).order('discovered_at').limit(TREND_BUCKET_DRILLDOWN_LIMIT),
+      baseQuery().gte('closed_at', rangeStart).lt('closed_at', rangeEnd).order('closed_at').limit(TREND_BUCKET_DRILLDOWN_LIMIT),
+    ]);
+    wrap(openedRes.error);
+    wrap(closedRes.error);
+    return {
+      opened: (openedRes.data ?? []).map(mapIncidentSummaryRow),
+      closed: (closedRes.data ?? []).map(mapIncidentSummaryRow),
+    };
   }
 
   async getIncident(_s: Session, id: string): Promise<Incident | null> {

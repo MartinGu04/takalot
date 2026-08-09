@@ -322,3 +322,16 @@ export function IconSettings(props: IconProps) {
     </svg>
   );
 }
+
+/** Info-circle icon -- the ⓘ trigger for AnalyticsInfoTooltip. Used sparingly,
+ *  only where a metric genuinely benefits from a short plain-language
+ *  explanation (median vs. average, a module that ignores the period filter). */
+export function IconInfo(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="10" cy="10" r="7.3" />
+      <path d="M10 9.3v4.4" />
+      <circle cx="10" cy="6.6" r="0.15" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
