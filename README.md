@@ -253,8 +253,9 @@ npm run dev
 | `VITE_SUPABASE_URL` | Supabase mode | Project URL, must be `https:`. |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase mode | Public (publishable) key only. **Never** put a service-role key, database password, or OAuth client secret in a `VITE_*` variable — it ships to every browser. |
 | `VITE_DEMO_MODE` | Demo mode | Must be exactly `true` to explicitly enable the local demo repository. The Playwright config sets this for e2e runs. |
+| `VITE_VAPID_PUBLIC_KEY` | Push notifications (optional, v1.5.0 Phase 4+) | Web Push application-server public key (VAPID), base64url-encoded. Optional — unset or invalid resolves to a calm "not available" Push state rather than an error. **Never** put the matching private key in a `VITE_*` variable or anywhere client-side; the real hosted keypair and server-side dispatch are a Phase 5 concern. |
 
-No `.env.example` file exists in the repository yet — the two Supabase
+No `.env.example` file exists in the repository yet — the Supabase and Push
 variables above are the complete set needed for `.env.local`.
 
 ### First administrator (one-time, Supabase mode only)

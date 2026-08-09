@@ -38,6 +38,20 @@ export interface StoredIncidentRelation {
   operationId: string;
 }
 
+/** Demo-mode mirror of push_subscriptions (migration 0053): one row per
+ *  browser/device Web Push subscription. endpoint is globally unique here
+ *  too, exactly like the hosted table's unique constraint -- LocalDemoRepository
+ *  reassigns ownership on a shared-endpoint save rather than allowing two rows. */
+export interface StoredPushSubscription {
+  id: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  authKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DemoDatabase {
   seededAt: string | null;
   /** 1: reference-data ordering (displayOrder) backfilled. 2: reference-data
@@ -72,6 +86,10 @@ export interface DemoDatabase {
   analyticsPreferences?: Record<string, AnalyticsModuleKey[]>;
   sequences: Record<string, number>; // year -> last allocated number
   policy: PolicyFlags;
+  /** Optional for databases persisted before this feature existed --
+   *  LocalDemoRepository treats a missing array as empty, same pattern as
+   *  incidentCauseAssessments etc. above. */
+  pushSubscriptions?: StoredPushSubscription[];
 }
 
 export function emptyDatabase(): DemoDatabase {
@@ -94,6 +112,7 @@ export function emptyDatabase(): DemoDatabase {
     analyticsPreferences: {},
     sequences: {},
     policy: { allowSupervisorReopen: false, viewerExportUserIds: [] },
+    pushSubscriptions: [],
   };
 }
 

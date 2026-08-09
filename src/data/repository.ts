@@ -266,6 +266,39 @@ export interface Repository {
    */
   setMyOperationalNotificationsEnabled(session: Session, enabled: boolean): Promise<Profile>;
 
+  // --- push subscriptions (self-service, device-local; see migration 0053) ---
+  /**
+   * Attaches (or, on a shared browser reusing an endpoint another AVARIA
+   * account previously owned, reassigns) a Web Push subscription to the
+   * CALLER's own account. endpoint/p256dh/auth are taken verbatim from the
+   * browser's own PushSubscription -- never generated or altered here.
+   * Idempotent: saving the same endpoint again (e.g. a refreshed key)
+   * simply updates the existing row.
+   */
+  savePushSubscription(session: Session, endpoint: string, keys: { p256dh: string; auth: string }): Promise<void>;
+  /**
+   * Detaches exactly the CALLER's own subscription matching this endpoint.
+   * A no-op (not an error) when the endpoint belongs to someone else or no
+   * longer exists -- mirrors delete_my_push_subscription's WHERE-scoped
+   * delete, which can never touch another account's row.
+   */
+  deletePushSubscription(session: Session, endpoint: string): Promise<void>;
+  /** Detaches every Push subscription the caller owns, across every device
+   *  ("נתק את כל המכשירים"). Never touches another account's subscriptions. */
+  deleteAllPushSubscriptions(session: Session): Promise<void>;
+  /** Count of the caller's own Push subscriptions, across every device --
+   *  never endpoints or key material, and never another user's count. */
+  countPushSubscriptions(session: Session): Promise<number>;
+  /**
+   * True only when this exact browser endpoint is CURRENTLY attached to the
+   * caller's own account. Guards the shared-browser case: a browser can
+   * hold a real PushSubscription whose endpoint is registered to a
+   * DIFFERENT AVARIA account (e.g. a previous, incompletely-logged-out
+   * user on the same device) -- the UI must not report the current device
+   * as enabled for this caller unless this returns true.
+   */
+  isMyPushSubscription(session: Session, endpoint: string): Promise<boolean>;
+
   // --- incidents ---
   listIncidents(session: Session, filters?: IncidentFilters, sort?: IncidentSort): Promise<Incident[]>;
   /**

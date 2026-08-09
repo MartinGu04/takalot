@@ -18,6 +18,7 @@ import type { Session } from '../data/repository';
 import { getRepository, isDemoMode } from '../data';
 import { getSupabaseClient } from '../data/supabase/client';
 import { sanitizeInternalReturnPath } from '../lib/returnPath';
+import { runLogoutPushCleanup } from './pushLogoutCleanup';
 
 const DEMO_SESSION_KEY = 'takalot-demo-session-user';
 
@@ -117,6 +118,12 @@ function DemoAuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
   const queryClient = useQueryClient();
+  // Read by logout() below without making its identity depend on `user` --
+  // logout is a stable callback prop across renders (Sidebar/Layout/
+  // AuthScreens all pass it directly to onClick), so it must keep reading
+  // the LATEST signed-in user via a ref rather than a stale closure.
+  const userRef = useRef<Profile | null>(null);
+  userRef.current = user;
 
   const loadUser = useCallback(async (userId: string): Promise<boolean> => {
     const profile = await getRepository().getProfile(userId);
@@ -152,6 +159,13 @@ function DemoAuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    // Explicit logout only (never markSessionExpired below): a bounded,
+    // best-effort attempt to detach this device's Push subscription while
+    // the demo "session" is still considered active, before clearing it.
+    const signedInUser = userRef.current;
+    if (signedInUser) {
+      void runLogoutPushCleanup(getRepository(), { userId: signedInUser.id, role: signedInUser.role });
+    }
     localStorage.removeItem(DEMO_SESSION_KEY);
     setUser(null);
     setSessionExpired(false);
@@ -206,6 +220,10 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   // written by a newer auth event (e.g. SIGNED_OUT racing a slow fetch).
   const checkSeq = useRef(0);
   const lastAuthUserId = useRef<string | null>(null);
+  // Read by logout() below without making its identity depend on `user` --
+  // see the identical DemoAuthProvider ref for why.
+  const userRef = useRef<Profile | null>(null);
+  userRef.current = user;
 
   const resolveProfile = useCallback(async (authUserId: string, email: string | null, avatar: string | null) => {
     const seq = ++checkSeq.current;
@@ -330,6 +348,16 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // A bounded, best-effort attempt to detach THIS device's Push
+    // subscription while the JWT is still valid -- must run BEFORE
+    // signOut() invalidates it. Captured before local state is cleared
+    // below (signedInUser), but its own outcome never gates the UI
+    // transition, which stays immediate exactly as before.
+    const signedInUser = userRef.current;
+    const cleanup = signedInUser
+      ? runLogoutPushCleanup(getRepository(), { userId: signedInUser.id, role: signedInUser.role })
+      : Promise.resolve();
+
     // Clear local state immediately -- the UI must not wait on the network
     // round-trip -- then revoke the session server-side.
     checkSeq.current++;
@@ -340,7 +368,13 @@ function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     setStatus('signed_out');
     setSessionExpired(false);
     queryClient.clear();
-    void getSupabaseClient().auth.signOut();
+    // Push cleanup ALWAYS resolves (it never throws -- see
+    // detachCurrentDevicePush) and is itself time-bounded, so this never
+    // delays signOut() beyond that bound, and signOut() always fires
+    // regardless of the cleanup's outcome.
+    void cleanup.finally(() => {
+      void getSupabaseClient().auth.signOut();
+    });
   }, [queryClient]);
 
   const markSessionExpired = useCallback(() => {

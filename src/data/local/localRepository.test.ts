@@ -3565,3 +3565,94 @@ describe('setMyOperationalNotificationsEnabled: self-only, system_admin-only pre
     expect(raw?.profiles.find((p) => p.id === 'u-admin-inactive-caller')?.operationalNotificationsEnabled).toBe(false);
   });
 });
+
+describe('LocalDemoRepository push subscriptions (demo mirror of migration 0053)', () => {
+  const ENDPOINT = 'https://push.example.com/device-1';
+  const KEYS = { p256dh: 'p256dh-key', auth: 'auth-key' };
+
+  it('savePushSubscription creates a new row owned by the caller', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.savePushSubscription(tech1, ENDPOINT, KEYS);
+    await expect(repo.isMyPushSubscription(tech1, ENDPOINT)).resolves.toBe(true);
+    await expect(repo.countPushSubscriptions(tech1)).resolves.toBe(1);
+  });
+
+  it('savePushSubscription is idempotent: saving the same endpoint again updates rather than duplicates', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.savePushSubscription(tech1, ENDPOINT, KEYS);
+    await repo.savePushSubscription(tech1, ENDPOINT, { p256dh: 'new-p256dh', auth: 'new-auth' });
+    await expect(repo.countPushSubscriptions(tech1)).resolves.toBe(1);
+  });
+
+  it('savePushSubscription on a shared-browser endpoint reassigns ownership to the new caller', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.savePushSubscription(tech1, ENDPOINT, KEYS);
+    await repo.savePushSubscription(tech2, ENDPOINT, KEYS);
+
+    await expect(repo.isMyPushSubscription(tech1, ENDPOINT)).resolves.toBe(false);
+    await expect(repo.isMyPushSubscription(tech2, ENDPOINT)).resolves.toBe(true);
+    await expect(repo.countPushSubscriptions(tech1)).resolves.toBe(0);
+    await expect(repo.countPushSubscriptions(tech2)).resolves.toBe(1);
+  });
+
+  it('savePushSubscription rejects a malformed endpoint (not https, empty, or too long)', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.savePushSubscription(tech1, 'http://insecure.example', KEYS)).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+    await expect(repo.savePushSubscription(tech1, '', KEYS)).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('savePushSubscription rejects malformed encryption/auth keys', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.savePushSubscription(tech1, ENDPOINT, { p256dh: '', auth: 'auth' })).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+    await expect(repo.savePushSubscription(tech1, ENDPOINT, { p256dh: 'p256', auth: '' })).rejects.toMatchObject({
+      code: 'VALIDATION',
+    });
+  });
+
+  it('deletePushSubscription removes only the caller\'s own row for that endpoint', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.savePushSubscription(tech1, ENDPOINT, KEYS);
+    await repo.deletePushSubscription(tech1, ENDPOINT);
+    await expect(repo.countPushSubscriptions(tech1)).resolves.toBe(0);
+  });
+
+  it('deletePushSubscription is a silent no-op when the endpoint belongs to someone else', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.savePushSubscription(tech1, ENDPOINT, KEYS);
+    await repo.deletePushSubscription(tech2, ENDPOINT);
+    await expect(repo.countPushSubscriptions(tech1)).resolves.toBe(1);
+  });
+
+  it('deleteAllPushSubscriptions removes every subscription the caller owns, across devices, and no one else\'s', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.savePushSubscription(tech1, 'https://push.example.com/device-a', KEYS);
+    await repo.savePushSubscription(tech1, 'https://push.example.com/device-b', KEYS);
+    await repo.savePushSubscription(tech2, 'https://push.example.com/device-c', KEYS);
+
+    await repo.deleteAllPushSubscriptions(tech1);
+
+    await expect(repo.countPushSubscriptions(tech1)).resolves.toBe(0);
+    await expect(repo.countPushSubscriptions(tech2)).resolves.toBe(1);
+  });
+
+  it('isMyPushSubscription rejects a malformed endpoint the same way save does', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.isMyPushSubscription(tech1, 'not-a-url')).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+
+  it('isMyPushSubscription returns false for an endpoint that was never saved', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(repo.isMyPushSubscription(tech1, ENDPOINT)).resolves.toBe(false);
+  });
+
+  it('rejects every operation for a session that no longer resolves to a profile (session expired)', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const ghost = session('does-not-exist', 'technician');
+    await expect(repo.savePushSubscription(ghost, ENDPOINT, KEYS)).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+    await expect(repo.countPushSubscriptions(ghost)).rejects.toMatchObject({ code: 'SESSION_EXPIRED' });
+  });
+});

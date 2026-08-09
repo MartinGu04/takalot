@@ -14,6 +14,7 @@ import { formatRelative } from '../lib/time';
 import { FloatingPopover } from './FloatingPopover';
 import { Dialog } from './ui';
 import { OperationalNotificationsSwitch } from './OperationalNotificationsSwitch';
+import { PushSubscriptionSettings } from './PushSubscriptionSettings';
 import {
   IconBell,
   IconPulse,
@@ -172,7 +173,7 @@ export function NotificationsMenu() {
         <div className="flex items-center justify-between gap-2 border-b border-hairline px-3 py-2">
           <span className="card-title">התראות</span>
           <div className="flex items-center gap-1">
-            {user?.role === 'system_admin' && (
+            {user && (
               <button
                 type="button"
                 aria-label="הגדרות התראות"
@@ -236,9 +237,16 @@ export function NotificationsMenu() {
           ))}
         </div>
       </FloatingPopover>
-      {user?.role === 'system_admin' && (
+      {user && (
         <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} title="הגדרות התראות">
-          <OperationalNotificationsSwitch />
+          <div className="flex flex-col gap-4">
+            <PushSubscriptionSettings />
+            {user.role === 'system_admin' && (
+              <div className="border-t border-hairline pt-4">
+                <OperationalNotificationsSwitch />
+              </div>
+            )}
+          </div>
         </Dialog>
       )}
     </>

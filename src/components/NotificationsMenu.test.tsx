@@ -176,19 +176,20 @@ describe('NotificationsMenu: bell badge and popover', () => {
   });
 });
 
-// The system_admin-only "עדכונים תפעוליים" preference now lives behind a
-// gear button inside this popover's own header, opening a separate
-// "הגדרות התראות" Dialog -- not the Sidebar account card or the mobile
-// user menu (see Sidebar.tsx / Layout.tsx, which no longer reference
-// OperationalNotificationsSwitch at all).
-describe('NotificationsMenu: system_admin operational-notifications settings gear', () => {
-  it('the gear renders only for system_admin, and is absent for every other role', async () => {
-    for (const [testId, expectGear] of [
-      ['login-u-admin', true],
-      ['login-u-manager', false],
-      ['login-u-supervisor-1', false],
-      ['login-u-tech-1', false],
-      ['login-u-viewer', false],
+// The "הגדרות התראות" gear/Dialog now hosts two independent settings: Push
+// device controls (PushSubscriptionSettings -- every signed-in user, v1.5.0
+// Phase 4) and the system_admin-only "עדכונים תפעוליים" preference
+// (OperationalNotificationsSwitch, unchanged). Not the Sidebar account card
+// or the mobile user menu (see Sidebar.tsx / Layout.tsx, which never
+// reference either component).
+describe('NotificationsMenu: הגדרות התראות settings gear', () => {
+  it('the gear renders for every role, since Push device settings apply to everyone', async () => {
+    for (const testId of [
+      'login-u-admin',
+      'login-u-manager',
+      'login-u-supervisor-1',
+      'login-u-tech-1',
+      'login-u-viewer',
     ] as const) {
       localStorage.clear();
       window.history.pushState({}, '', '/');
@@ -200,8 +201,37 @@ describe('NotificationsMenu: system_admin operational-notifications settings gea
       await screen.findByRole('heading', { name: 'מצב נוכחי' });
       await user.click(screen.getByTestId('notifications-button'));
       const gear = within(panel()).queryByRole('button', { name: 'הגדרות התראות' });
-      if (expectGear) expect(gear).toBeVisible();
-      else expect(gear).not.toBeInTheDocument();
+      expect(gear).toBeVisible();
+      rendered.unmount();
+    }
+  });
+
+  it('the עדכונים תפעוליים preference is visible only for system_admin; the Push section stays hidden entirely without a configured VAPID key (Phase 4 rollout state)', async () => {
+    for (const [testId, expectOperationalToggle] of [
+      ['login-u-admin', true],
+      ['login-u-manager', false],
+      ['login-u-tech-1', false],
+    ] as const) {
+      localStorage.clear();
+      window.history.pushState({}, '', '/');
+      vi.resetModules();
+      App = (await import('../App')).default;
+      const user = userEvent.setup();
+      const rendered = render(<App />);
+      await user.click(await screen.findByTestId(testId));
+      await screen.findByRole('heading', { name: 'מצב נוכחי' });
+      await user.click(screen.getByTestId('notifications-button'));
+      await user.click(within(panel()).getByRole('button', { name: 'הגדרות התראות' }));
+      const dialog = screen.getByRole('dialog', { name: 'הגדרות התראות' });
+      // No VITE_VAPID_PUBLIC_KEY is configured in this test environment --
+      // PushSubscriptionSettings' own rollout gate (see that component)
+      // hides the entire Push section, for every role, until Phase 5
+      // configures a real hosted key. This is the actual state a
+      // production user sees immediately after Phase 4 merges.
+      expect(within(dialog).queryByText('התראות במכשיר')).not.toBeInTheDocument();
+      const toggle = within(dialog).queryByRole('switch', { name: 'עדכונים תפעוליים' });
+      if (expectOperationalToggle) expect(toggle).toBeVisible();
+      else expect(toggle).not.toBeInTheDocument();
       rendered.unmount();
     }
   });
