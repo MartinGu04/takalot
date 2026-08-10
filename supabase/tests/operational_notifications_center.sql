@@ -1,10 +1,21 @@
 -- Focused verification for migrations 0043/0044 (operational notifications
--- center, including the system_admin opt-in): role-based broadcasts
--- (professional_manager unconditionally, system_admin only when opted in)
--- alongside the existing personal notifications, category classification,
--- dedup/rollback safety, RLS, and the self-only preference RPC. Runs only
--- against the local scratch database created by tests/run.sh, in one
--- transaction that rolls back at the end.
+-- center) as they stand after migration 0058 (AVARIA v1.6.0, per-user
+-- operational notification preferences): role-based broadcasts to
+-- professional_manager and system_admin, alongside the existing personal
+-- notifications, category classification, dedup/rollback safety, and RLS.
+--
+-- Sections 13/14/16 were rewritten for v1.6.0 -- the old coarse
+-- system_admin operational_notifications_enabled gate this file originally
+-- verified is superseded (every active system_admin is now an eligible
+-- recipient by default, and the legacy column/RPC -- still callable,
+-- deliberately not dropped, see migration 0058's own header -- no longer
+-- have any effect on notification generation, which those sections now
+-- prove directly). Per-event default/override coverage (the actual v1.6
+-- preference model) lives in operational_notification_preferences.sql, a
+-- dedicated new file, not here.
+--
+-- Runs only against the local scratch database created by tests/run.sh, in
+-- one transaction that rolls back at the end.
 \pset pager off
 begin;
 
@@ -137,10 +148,13 @@ begin
     pg_temp.pm_count('00000000-0000-0000-0000-000000005204', v_incident.id, 'incident_opened') = 0
   );
   perform pg_temp.check_result(
-    'create_incident excludes non-professional_manager roles (supervisor actor, viewer, system_admin)',
+    'create_incident excludes the acting shift_supervisor (actor self-exclusion, not a role exclusion) and the ineligible viewer role',
     (select count(*) from notifications where incident_id = v_incident.id
-       and user_id in ('00000000-0000-0000-0000-000000005205', '00000000-0000-0000-0000-000000005207',
-                        '00000000-0000-0000-0000-000000005208')) = 0
+       and user_id in ('00000000-0000-0000-0000-000000005205', '00000000-0000-0000-0000-000000005207')) = 0
+  );
+  perform pg_temp.check_result(
+    'create_incident now ALSO notifies an active system_admin by default (v1.6.0 -- system_admin is a full eligible operational role, not gated by the legacy opt-in column)',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident.id, 'incident_opened') = 1
   );
   perform pg_temp.check_result(
     'create_incident: the operational broadcast text carries the incident number, system, and location',
@@ -528,69 +542,80 @@ select pg_temp.check_result(
 );
 
 -- =====================================================================
--- 13. system_admin opt-in: recipient rule.
+-- 13. system_admin recipient rule -- v1.6.0 (migration 0058) REWRITE.
+--
+--     Superseded premise: this section originally proved the OLD coarse
+--     operational_notifications_enabled gate (opted-in admin receives,
+--     opted-out admin does not). Migration 0058 replaces that gate
+--     entirely with the per-event default/override model -- EVERY active
+--     system_admin is now an eligible recipient by default, REGARDLESS of
+--     their (now inert, legacy) operational_notifications_enabled value.
+--     Fixture ids/values are left exactly as section header comments
+--     originally described them (5210/5211 "opted-in", 5208 "opted-out")
+--     specifically so this rewrite can prove the legacy value truly no
+--     longer matters either way -- not just for the true case.
 -- =====================================================================
 do $$
 declare
   v_incident incidents;
 begin
-  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205'); -- actor: shift_supervisor (not eligible)
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005205'); -- actor: shift_supervisor
   set local role authenticated;
   select * into v_incident from create_incident(
     pg_temp.base_create_input('00000000-0000-0000-0000-000000005206'));
   reset role;
 
   perform pg_temp.check_result(
-    'active professional managers still receive operational notifications regardless of the opt-in field',
+    'active professional managers still receive operational notifications',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005201', v_incident.id, 'incident_opened') = 1
   );
   perform pg_temp.check_result(
-    'an active opted-in system_admin receives an operational notification for another user''s successful operation',
+    'an active system_admin with the legacy opt-in column TRUE receives the broadcast by default (v1.6 default matrix)',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_opened') = 1
   );
   perform pg_temp.check_result(
-    'an active but opted-OUT system_admin does not receive operational notifications',
-    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident.id, 'incident_opened') = 0
+    'an active system_admin with the legacy opt-in column FALSE ALSO receives the broadcast by default -- the legacy column no longer gates anything (v1.6.0)',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident.id, 'incident_opened') = 1
   );
   perform pg_temp.check_result(
-    'an INACTIVE opted-in system_admin does not receive operational notifications',
+    'an INACTIVE system_admin does not receive operational notifications regardless of the legacy column',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005212', v_incident.id, 'incident_opened') = 0
   );
   perform pg_temp.check_result(
-    'a role that can never be a recipient (viewer) is excluded even when operational_notifications_enabled is stray-true',
+    'a role that can never be a recipient (viewer) is excluded even when the legacy operational_notifications_enabled column is stray-true',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005213', v_incident.id, 'incident_opened') = 0
   );
 
-  -- An opted-in system_admin as the ACTOR: never notifies itself, but a
-  -- different opted-in system_admin still receives the broadcast.
-  perform pg_temp.as_user('00000000-0000-0000-0000-000000005211'); -- actor: Admin Actor (opted in)
+  -- A system_admin as the ACTOR: never notifies itself, but a different
+  -- active system_admin still receives the broadcast.
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000005211'); -- actor: Admin Actor
   set local role authenticated;
   select * into v_incident from create_incident(
     pg_temp.base_create_input('00000000-0000-0000-0000-000000005206'));
   reset role;
 
   perform pg_temp.check_result(
-    'an opted-in system_admin never receives a notification for its own action',
+    'a system_admin never receives a notification for its own action',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005211', v_incident.id, 'incident_opened') = 0
   );
   perform pg_temp.check_result(
-    'a different opted-in system_admin still receives the broadcast for that same operation',
+    'a different active system_admin still receives the broadcast for that same operation',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_opened') = 1
   );
 end $$;
 
 -- =====================================================================
--- 14. system_admin opt-in: no duplicate personal + operational notification.
---     Same dedup/exclusion mechanism already proven for a professional-
---     manager owner (sections 2 and 6), now exercised with an opted-in
---     system_admin as the personal-notification recipient -- both a fresh
---     assignment (create_incident) and a reopen-and-assign.
+-- 14. system_admin recipient: no duplicate personal + operational
+--     notification. Same dedup/exclusion mechanism already proven for a
+--     professional-manager owner (sections 2 and 6), now exercised with an
+--     active system_admin as the personal-notification recipient -- both a
+--     fresh assignment (create_incident) and a reopen-and-assign.
 -- =====================================================================
 do $$
 declare
   v_incident incidents;
 begin
-  -- Assignment: create_incident with the opted-in admin as owner.
+  -- Assignment: create_incident with an active admin as owner.
   perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
   set local role authenticated;
   select * into v_incident from create_incident(
@@ -598,12 +623,12 @@ begin
   reset role;
 
   perform pg_temp.check_result(
-    'an opted-in system_admin owner gets only the personal assignment notification, never also the operational one',
+    'a system_admin owner gets only the personal assignment notification, never also the operational one',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_assigned') = 1
     and pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_opened') = 0
   );
 
-  -- Reopen-and-assign: close, then reopen straight to the opted-in admin.
+  -- Reopen-and-assign: close, then reopen straight to the admin.
   perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
   set local role authenticated;
   select * into v_incident from close_incident(v_incident.id, jsonb_build_object(
@@ -614,13 +639,13 @@ begin
   perform pg_temp.as_user('00000000-0000-0000-0000-000000005201'); -- PM Actor
   set local role authenticated;
   select * into v_incident from reopen_incident(v_incident.id, jsonb_build_object(
-    'expectedVersion', v_incident.version, 'reason', 'reopen to opted-in admin',
+    'expectedVersion', v_incident.version, 'reason', 'reopen to admin',
     'ownerUserId', '00000000-0000-0000-0000-000000005210'
   ));
   reset role;
 
   perform pg_temp.check_result(
-    'an opted-in system_admin reopened-and-assigned gets only the personal notification, never also the operational one',
+    'a system_admin reopened-and-assigned gets only the personal notification, never also the operational one',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005210', v_incident.id, 'incident_reopened') = 1
     and (select category from notifications where user_id = '00000000-0000-0000-0000-000000005210'
            and incident_id = v_incident.id and type = 'incident_reopened') = 'action_required'
@@ -725,14 +750,24 @@ begin
 end $$;
 
 -- =====================================================================
--- 16. Enabling the preference does not backfill historical notifications.
+-- 16. v1.6.0 (migration 0058) REWRITE: the legacy preference RPC/column
+--     are now fully inert for notification generation -- toggling
+--     operational_notifications_enabled via the still-callable legacy RPC
+--     has NO observable effect on who receives an operational broadcast,
+--     in either direction. (The original version of this section proved
+--     the OLD "enabling does not retroactively backfill" behavior, which
+--     no longer applies now that the column does not gate receipt at all
+--     -- see operational_notification_preferences.sql for the v1.6
+--     preference-model coverage this section's old assertions moved to.)
 -- =====================================================================
 do $$
 declare
   v_incident_before incidents;
   v_incident_after incidents;
 begin
-  -- Notif Admin is opted-out at this point (restored at the end of section 15).
+  -- Notif Admin's legacy column is false at this point (restored at the
+  -- end of section 15) -- already proven in section 13 to receive by
+  -- default regardless. Confirmed again here as this section's baseline.
   perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
   set local role authenticated;
   select * into v_incident_before from create_incident(
@@ -740,21 +775,22 @@ begin
   reset role;
 
   perform pg_temp.check_result(
-    'fixture: the opted-out admin received no notification for the pre-opt-in incident',
-    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_before.id, 'incident_opened') = 0
+    'baseline: the admin receives the broadcast while the legacy column is false (v1.6 default, not the legacy flag)',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_before.id, 'incident_opened') = 1
   );
 
+  -- Flip the legacy (still-callable, still-writable) RPC to true.
   perform pg_temp.as_user('00000000-0000-0000-0000-000000005208');
   set local role authenticated;
   perform set_my_operational_notifications_enabled(true);
   reset role;
 
   perform pg_temp.check_result(
-    'enabling the preference does not backfill a notification for the earlier, pre-opt-in incident',
-    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_before.id, 'incident_opened') = 0
+    'flipping the legacy RPC to true does not retroactively touch the earlier notification',
+    pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_before.id, 'incident_opened') = 1
   );
 
-  -- Confirms the opt-in genuinely took effect going forward.
+  -- Confirms the legacy RPC's new value genuinely changes nothing going forward either.
   perform pg_temp.as_user('00000000-0000-0000-0000-000000005205');
   set local role authenticated;
   select * into v_incident_after from create_incident(
@@ -762,7 +798,7 @@ begin
   reset role;
 
   perform pg_temp.check_result(
-    'the newly-opted-in admin receives the operational notification for a subsequent operation',
+    'the admin still receives the operational notification for a subsequent operation with the legacy RPC now true (no behavior change either way)',
     pg_temp.pm_count('00000000-0000-0000-0000-000000005208', v_incident_after.id, 'incident_opened') = 1
   );
 

@@ -524,8 +524,44 @@ describe('SupabaseRepository: profile mapping includes operationalNotificationsE
   });
 });
 
-describe('SupabaseRepository.setMyOperationalNotificationsEnabled', () => {
-  it('calls set_my_operational_notifications_enabled with only p_enabled (no user id), and maps the returned profile', async () => {
+describe('SupabaseRepository.getMyOperationalNotificationPreferences / setMyOperationalNotificationPreference (AVARIA v1.6.0)', () => {
+  const fiveRows = [
+    { event_type: 'incident_opened', in_app_enabled: true, push_enabled: true },
+    { event_type: 'incident_updated', in_app_enabled: true, push_enabled: false },
+    { event_type: 'incident_closed', in_app_enabled: true, push_enabled: false },
+    { event_type: 'incident_cancelled', in_app_enabled: true, push_enabled: false },
+    { event_type: 'incident_reopened', in_app_enabled: true, push_enabled: false },
+  ];
+
+  it('getMyOperationalNotificationPreferences calls get_my_operational_notification_preferences with no arguments and maps all five rows', async () => {
+    let calledFn = '';
+    let calledArgs: Record<string, unknown> = {};
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calledFn = fn;
+        calledArgs = args;
+        return { data: fiveRows, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    const prefs = await repo.getMyOperationalNotificationPreferences(session);
+
+    expect(calledFn).toBe('get_my_operational_notification_preferences');
+    expect(calledArgs).toEqual({});
+    expect(prefs).toHaveLength(5);
+    expect(prefs.find((p) => p.eventType === 'incident_opened')).toEqual({
+      eventType: 'incident_opened',
+      inAppEnabled: true,
+      pushEnabled: true,
+    });
+  });
+
+  it('getMyOperationalNotificationPreferences maps a permission: prefixed rejection (non-operational-role caller) to a controlled AppError', async () => {
+    const repo = repoWithRpcError('permission: ההעדפה זמינה לתפקידים תפעוליים בלבד');
+    await expect(repo.getMyOperationalNotificationPreferences(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('setMyOperationalNotificationPreference calls set_my_operational_notification_preference with only the event/prefs (no user id), and maps the returned five-row set', async () => {
     let calledFn = '';
     let calledArgs: Record<string, unknown> = {};
     const fakeClient = {
@@ -533,33 +569,37 @@ describe('SupabaseRepository.setMyOperationalNotificationsEnabled', () => {
         calledFn = fn;
         calledArgs = args;
         return {
-          data: {
-            id: session.userId,
-            full_name: 'מנהל מערכת',
-            role: 'system_admin',
-            active: true,
-            created_at: '2026-01-01T00:00:00.000Z',
-            avatar_url: null,
-            operational_notifications_enabled: true,
-          },
+          data: fiveRows.map((r) =>
+            r.event_type === 'incident_updated' ? { ...r, in_app_enabled: false, push_enabled: false } : r,
+          ),
           error: null,
         };
       },
     };
     const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
-    const profile = await repo.setMyOperationalNotificationsEnabled(session, true);
+    const prefs = await repo.setMyOperationalNotificationPreference(session, 'incident_updated', {
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
 
-    expect(calledFn).toBe('set_my_operational_notifications_enabled');
-    expect(calledArgs).toEqual({ p_enabled: true });
-    expect(profile.id).toBe(session.userId);
-    expect(profile.operationalNotificationsEnabled).toBe(true);
+    expect(calledFn).toBe('set_my_operational_notification_preference');
+    expect(calledArgs).toEqual({
+      p_event_type: 'incident_updated',
+      p_in_app_enabled: false,
+      p_push_enabled: false,
+    });
+    expect(prefs.find((p) => p.eventType === 'incident_updated')).toEqual({
+      eventType: 'incident_updated',
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
   });
 
-  it('maps a permission: prefixed rejection (non-admin caller) to a controlled AppError', async () => {
-    const repo = repoWithRpcError('permission: ההעדפה זמינה למנהלי מערכת בלבד');
-    await expect(repo.setMyOperationalNotificationsEnabled(session, true)).rejects.toMatchObject({
-      code: 'FORBIDDEN',
-    });
+  it('setMyOperationalNotificationPreference maps a permission: prefixed rejection to a controlled AppError', async () => {
+    const repo = repoWithRpcError('permission: ההעדפה זמינה לתפקידים תפעוליים בלבד');
+    await expect(
+      repo.setMyOperationalNotificationPreference(session, 'incident_opened', { inAppEnabled: false, pushEnabled: false }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
 

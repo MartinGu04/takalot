@@ -206,11 +206,13 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
     }
   });
 
-  it('the עדכונים תפעוליים preference is visible only for system_admin; the Push section stays hidden entirely without a configured VAPID key (Phase 4 rollout state)', async () => {
-    for (const [testId, expectOperationalToggle] of [
+  it('the עדכונים תפעוליים section is visible for every operational role (system_admin/professional_manager/shift_supervisor), not just system_admin; the Push section stays hidden entirely without a configured VAPID key (Phase 4 rollout state)', async () => {
+    for (const [testId, expectOperationalSection] of [
       ['login-u-admin', true],
-      ['login-u-manager', false],
+      ['login-u-manager', true],
+      ['login-u-supervisor-1', true],
       ['login-u-tech-1', false],
+      ['login-u-viewer', false],
     ] as const) {
       localStorage.clear();
       window.history.pushState({}, '', '/');
@@ -229,9 +231,12 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
       // configures a real hosted key. This is the actual state a
       // production user sees immediately after Phase 4 merges.
       expect(within(dialog).queryByText('התראות במכשיר')).not.toBeInTheDocument();
-      const toggle = within(dialog).queryByRole('switch', { name: 'עדכונים תפעוליים' });
-      if (expectOperationalToggle) expect(toggle).toBeVisible();
-      else expect(toggle).not.toBeInTheDocument();
+      if (expectOperationalSection) {
+        expect(within(dialog).getByText('עדכונים תפעוליים')).toBeVisible();
+        expect(await within(dialog).findByRole('switch', { name: 'בפעמון: פתיחת תקלה' })).toBeVisible();
+      } else {
+        expect(within(dialog).queryByText('עדכונים תפעוליים')).not.toBeInTheDocument();
+      }
       rendered.unmount();
     }
   });
@@ -244,7 +249,7 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
     expect(p.getByRole('button', { name: 'הגדרות התראות' })).toBeVisible();
   });
 
-  it('clicking the gear closes the bell popover and opens the הגדרות התראות dialog, with the current OFF state', async () => {
+  it('clicking the gear closes the bell popover and opens the הגדרות התראות dialog, showing the fixed v1.6 default matrix and the action-required distinction note', async () => {
     const user = await loginAs('login-u-admin');
     await user.click(screen.getByTestId('notifications-button'));
     await user.click(within(panel()).getByRole('button', { name: 'הגדרות התראות' }));
@@ -252,12 +257,23 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
     expect(document.querySelector('.popover-panel')).not.toBeInTheDocument();
     const dialog = screen.getByRole('dialog', { name: 'הגדרות התראות' });
     expect(within(dialog).getByText('עדכונים תפעוליים')).toBeVisible();
-    expect(within(dialog).getByText('פתיחה, עדכון, סגירה, פתיחה מחדש וביטול תקלות')).toBeVisible();
-    const toggle = within(dialog).getByRole('switch', { name: 'עדכונים תפעוליים' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(within(dialog).getByText('בחר אילו עדכונים יופיעו בפעמון ואילו יישלחו גם למכשירים שלך.')).toBeVisible();
+    expect(
+      within(dialog).getByText('התראות שדורשות פעולה ממך (כגון תקלה שהוקצתה אליך) תמיד מוצגות ואינן חלק מהעדפות אלו.'),
+    ).toBeVisible();
+
+    // Default matrix: incident_opened is on for both bell and Push; every
+    // other event type is on for the bell only.
+    expect(await within(dialog).findByRole('switch', { name: 'בפעמון: פתיחת תקלה' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(within(dialog).getByRole('switch', { name: 'במכשיר: פתיחת תקלה' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(dialog).getByRole('switch', { name: 'בפעמון: עדכון תקלה' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(dialog).getByRole('switch', { name: 'במכשיר: עדכון תקלה' })).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('shows the persisted ON state when the profile already has the preference enabled', async () => {
+  it('shows the persisted OFF state when the profile already has an explicit override', async () => {
     const seedUser = userEvent.setup();
     const seeding = render(<App />);
     await seedUser.click(await screen.findByTestId('login-u-admin'));
@@ -265,7 +281,9 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
     seeding.unmount();
 
     const raw = JSON.parse(localStorage.getItem('takalot-demo-db-v1')!);
-    raw.profiles.find((p: { id: string }) => p.id === 'u-admin').operationalNotificationsEnabled = true;
+    raw.operationalNotificationPreferences = {
+      'u-admin': { incident_updated: { inAppEnabled: false, pushEnabled: false } },
+    };
     localStorage.setItem('takalot-demo-db-v1', JSON.stringify(raw));
     window.history.pushState({}, '', '/');
     vi.resetModules();
@@ -277,25 +295,33 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
     await user.click(screen.getByTestId('notifications-button'));
     await user.click(within(panel()).getByRole('button', { name: 'הגדרות התראות' }));
 
-    const toggle = within(screen.getByRole('dialog', { name: 'הגדרות התראות' })).getByRole('switch', {
-      name: 'עדכונים תפעוליים',
-    });
-    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    const dialog = screen.getByRole('dialog', { name: 'הגדרות התראות' });
+    const toggle = await within(dialog).findByRole('switch', { name: 'בפעמון: עדכון תקלה' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('a successful toggle inside the dialog persists through the repository and updates immediately', async () => {
+  it('a successful toggle inside the dialog persists through the repository and updates immediately, and disables the Push switch for that row', async () => {
     const user = await loginAs('login-u-admin');
     await user.click(screen.getByTestId('notifications-button'));
     await user.click(within(panel()).getByRole('button', { name: 'הגדרות התראות' }));
     const dialog = screen.getByRole('dialog', { name: 'הגדרות התראות' });
-    const toggle = within(dialog).getByRole('switch', { name: 'עדכונים תפעוליים' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    const bellToggle = await within(dialog).findByRole('switch', { name: 'בפעמון: עדכון תקלה' });
+    const pushToggle = within(dialog).getByRole('switch', { name: 'במכשיר: עדכון תקלה' });
+    expect(bellToggle).toHaveAttribute('aria-checked', 'true');
+    expect(pushToggle).not.toBeDisabled(); // bell is on, so Push CAN be turned on for this row
 
-    await user.click(toggle);
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
+    await user.click(bellToggle);
+    await waitFor(() => expect(bellToggle).toHaveAttribute('aria-checked', 'false'));
+    // Turning the event off also disables (and, per the server invariant,
+    // turns off) its Push switch -- "push requires in-app".
+    expect(pushToggle).toBeDisabled();
+    expect(pushToggle).toHaveAttribute('aria-checked', 'false');
 
     const raw = JSON.parse(localStorage.getItem('takalot-demo-db-v1')!);
-    expect(raw.profiles.find((p: { id: string }) => p.id === 'u-admin').operationalNotificationsEnabled).toBe(true);
+    expect(raw.operationalNotificationPreferences['u-admin'].incident_updated).toEqual({
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
   });
 
   it('a failed toggle restores the previous state and surfaces the app error toast', async () => {
@@ -303,18 +329,16 @@ describe('NotificationsMenu: הגדרות התראות settings gear', () => {
     await user.click(screen.getByTestId('notifications-button'));
     await user.click(within(panel()).getByRole('button', { name: 'הגדרות התראות' }));
     const dialog = screen.getByRole('dialog', { name: 'הגדרות התראות' });
-    const toggle = within(dialog).getByRole('switch', { name: 'עדכונים תפעוליים' });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    const toggle = await within(dialog).findByRole('switch', { name: 'בפעמון: עדכון תקלה' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
 
     const failure = new AppError('NETWORK', 'אירעה שגיאה בלתי צפויה מול השרת. הנתונים לא נשמרו — ניתן לנסות שוב.');
-    const spy = vi
-      .spyOn(hooks.repo(), 'setMyOperationalNotificationsEnabled')
-      .mockRejectedValueOnce(failure);
+    const spy = vi.spyOn(hooks.repo(), 'setMyOperationalNotificationPreference').mockRejectedValueOnce(failure);
 
     await user.click(toggle);
     await screen.findByText(failure.message);
 
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
     expect(spy).toHaveBeenCalledTimes(1);
   });
 

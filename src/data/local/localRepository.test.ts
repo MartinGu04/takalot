@@ -3416,8 +3416,8 @@ describe('listNotifications: historical update_overdue rows stay stored but excl
   });
 });
 
-describe('operational notifications: recipient rules including the system_admin opt-in', () => {
-  it('a professional_manager receives the operational broadcast regardless of the opt-in field (it has no meaning for that role)', async () => {
+describe('operational notifications: recipient rules (AVARIA v1.6.0 per-event preference model)', () => {
+  it('a professional_manager receives the operational broadcast by default', async () => {
     const repo = newRepo({ now: FIXED_NOW });
     const incident = await repo.createIncident(supervisor1, baseCreateInput());
     const notifications = await repo.listNotifications(manager);
@@ -3426,73 +3426,62 @@ describe('operational notifications: recipient rules including the system_admin 
     ).toBe(true);
   });
 
-  it('an active but opted-OUT system_admin (the default) does not receive operational notifications', async () => {
+  it('an active system_admin now receives operational notifications BY DEFAULT -- the legacy opt-in column no longer gates this', async () => {
     const repo = newRepo({ now: FIXED_NOW });
     const incident = await repo.createIncident(supervisor1, baseCreateInput());
     const notifications = await repo.listNotifications(admin);
-    expect(notifications.some((n) => n.type === 'incident_opened' && n.incidentId === incident.id)).toBe(false);
+    expect(notifications.some((n) => n.type === 'incident_opened' && n.incidentId === incident.id)).toBe(true);
   });
 
-  it('an active, opted-in system_admin receives the operational broadcast for another user\'s successful operation', async () => {
+  it('an active shift_supervisor now receives ALL FIVE broadcast types by default (v1.6.0 widening beyond the old incident_opened-only special case)', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    await repo.setMyOperationalNotificationsEnabled(admin, true);
-    const incident = await repo.createIncident(supervisor1, baseCreateInput());
-    const notifications = await repo.listNotifications(admin);
-    expect(
-      notifications.some((n) => n.type === 'incident_opened' && n.category === 'update' && n.incidentId === incident.id),
-    ).toBe(true);
+    const incident = await repo.createIncident(manager, baseCreateInput({ ownerUserId: DEMO_USERS.tech1 }));
+    const opened = await repo.listNotifications(supervisor2);
+    expect(opened.some((n) => n.type === 'incident_opened' && n.incidentId === incident.id)).toBe(true);
+
+    await repo.cancelIncident(manager, incident.id, {
+      expectedVersion: (await repo.getIncident(manager, incident.id))!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'test',
+    });
+    const afterCancel = await repo.listNotifications(supervisor2);
+    expect(afterCancel.some((n) => n.type === 'incident_cancelled' && n.incidentId === incident.id)).toBe(true);
   });
 
-  it('an opted-in system_admin never receives a notification for its own action', async () => {
+  it('a system_admin never receives a notification for its own action', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    await repo.setMyOperationalNotificationsEnabled(admin, true);
     const incident = await repo.createIncident(admin, baseCreateInput());
     const notifications = await repo.listNotifications(admin);
     expect(notifications.some((n) => n.incidentId === incident.id)).toBe(false);
   });
 
-  it('an INACTIVE, opted-in system_admin does not receive operational notifications', async () => {
+  it('an INACTIVE system_admin does not receive operational notifications', async () => {
     const storage = new MemoryStorage();
     const seeded = buildSeed(FIXED_NOW);
     seeded.profiles.push({
-      id: 'u-admin-inactive-optedin',
+      id: 'u-admin-inactive',
       fullName: 'מנהל מערכת לא פעיל',
       role: 'system_admin',
       active: false,
       createdAt: FIXED_NOW.toISOString(),
-      operationalNotificationsEnabled: true,
     });
     storage.save(seeded);
     const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
     const incident = await repo.createIncident(supervisor1, baseCreateInput());
     // requireSession rejects an inactive caller, so assert against storage directly.
     const raw = storage.load();
-    expect(
-      raw?.notifications.some((n) => n.userId === 'u-admin-inactive-optedin' && n.incidentId === incident.id),
-    ).toBe(false);
+    expect(raw?.notifications.some((n) => n.userId === 'u-admin-inactive' && n.incidentId === incident.id)).toBe(false);
   });
 
-  it('a role that can never be an operational recipient stays excluded even with a stray-true opt-in field', async () => {
-    const storage = new MemoryStorage();
-    const seeded = buildSeed(FIXED_NOW);
-    seeded.profiles.push({
-      id: 'u-supervisor-stray-true',
-      fullName: 'אחמ״ש עם דגל שגוי',
-      role: 'shift_supervisor',
-      active: true,
-      createdAt: FIXED_NOW.toISOString(),
-      operationalNotificationsEnabled: true,
-    });
-    storage.save(seeded);
-    const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
+  it('a role that can never be an operational recipient (viewer) stays excluded', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
     const incident = await repo.createIncident(supervisor1, baseCreateInput());
-    const notifications = await repo.listNotifications(session('u-supervisor-stray-true', 'shift_supervisor'));
+    const notifications = await repo.listNotifications(viewer);
     expect(notifications.some((n) => n.incidentId === incident.id)).toBe(false);
   });
 
-  it('an opted-in system_admin owner gets only the personal assignment notification, never also the operational one, for the same operation', async () => {
+  it('a system_admin owner gets only the personal assignment notification, never also the operational one, for the same operation', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    await repo.setMyOperationalNotificationsEnabled(admin, true);
     const incident = await repo.createIncident(supervisor1, baseCreateInput({ ownerUserId: DEMO_USERS.admin }));
     const notifications = (await repo.listNotifications(admin)).filter((n) => n.incidentId === incident.id);
     expect(notifications.filter((n) => n.type === 'incident_assigned').length).toBe(1);
@@ -3500,49 +3489,124 @@ describe('operational notifications: recipient rules including the system_admin 
     expect(notifications.some((n) => n.type === 'incident_opened')).toBe(false);
   });
 
-  it('enabling the preference does not backfill a notification for an earlier, pre-opt-in operation', async () => {
+  it('a per-event in_app override suppresses ONLY that event type -- other event types and other recipients are unaffected', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    const before = await repo.createIncident(supervisor1, baseCreateInput());
-    await repo.setMyOperationalNotificationsEnabled(admin, true);
-    const notifications = await repo.listNotifications(admin);
-    expect(notifications.some((n) => n.incidentId === before.id)).toBe(false);
+    await repo.setMyOperationalNotificationPreference(supervisor1, 'incident_opened', {
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
+    const incident = await repo.createIncident(manager, baseCreateInput());
+    const supervisorNotifications = await repo.listNotifications(supervisor1);
+    expect(supervisorNotifications.some((n) => n.type === 'incident_opened' && n.incidentId === incident.id)).toBe(
+      false,
+    );
+    // A different recipient with no override still gets it normally.
+    const adminNotifications = await repo.listNotifications(admin);
+    expect(adminNotifications.some((n) => n.type === 'incident_opened' && n.incidentId === incident.id)).toBe(true);
+  });
 
-    // Confirms the opt-in genuinely took effect going forward.
-    const after = await repo.createIncident(supervisor1, baseCreateInput());
-    const notificationsAfter = await repo.listNotifications(admin);
-    expect(notificationsAfter.some((n) => n.incidentId === after.id && n.type === 'incident_opened')).toBe(true);
+  it('action_required notifications are created regardless of any operational preference state', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    // The owner (tech1) has no operational preferences at all (not an
+    // eligible role) -- the personal incident_assigned notification must
+    // still be created unconditionally.
+    const incident = await repo.createIncident(manager, baseCreateInput({ ownerUserId: DEMO_USERS.tech1 }));
+    const notifications = await repo.listNotifications(tech1);
+    expect(
+      notifications.some(
+        (n) => n.incidentId === incident.id && n.type === 'incident_assigned' && n.category === 'action_required',
+      ),
+    ).toBe(true);
   });
 });
 
-describe('setMyOperationalNotificationsEnabled: self-only, system_admin-only preference RPC', () => {
-  it('lets an active system_admin change their own preference and persists it', async () => {
+describe('operational notification preferences (AVARIA v1.6.0, mirrors migration 0058)', () => {
+  it('resolves to exactly the fixed default matrix when no override exists', async () => {
     const repo = newRepo({ now: FIXED_NOW });
-    const result = await repo.setMyOperationalNotificationsEnabled(admin, true);
-    expect(result.id).toBe(DEMO_USERS.admin);
-    expect(result.operationalNotificationsEnabled).toBe(true);
-    const profile = await repo.getProfile(DEMO_USERS.admin);
-    expect(profile?.operationalNotificationsEnabled).toBe(true);
+    const prefs = await repo.getMyOperationalNotificationPreferences(supervisor1);
+    expect(prefs).toHaveLength(5);
+    const opened = prefs.find((p) => p.eventType === 'incident_opened');
+    expect(opened).toMatchObject({ inAppEnabled: true, pushEnabled: true });
+    for (const type of ['incident_updated', 'incident_closed', 'incident_cancelled', 'incident_reopened'] as const) {
+      expect(prefs.find((p) => p.eventType === type)).toMatchObject({ inAppEnabled: true, pushEnabled: false });
+    }
+  });
+
+  it('setting one event type never touches the others (sparse override)', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setMyOperationalNotificationPreference(supervisor1, 'incident_updated', {
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
+    const prefs = await repo.getMyOperationalNotificationPreferences(supervisor1);
+    expect(prefs.find((p) => p.eventType === 'incident_updated')).toMatchObject({
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
+    expect(prefs.find((p) => p.eventType === 'incident_opened')).toMatchObject({
+      inAppEnabled: true,
+      pushEnabled: true,
+    });
+  });
+
+  it('push is silently normalized to false whenever in_app is false ("push requires in-app")', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    const result = await repo.setMyOperationalNotificationPreference(manager, 'incident_opened', {
+      inAppEnabled: false,
+      pushEnabled: true,
+    });
+    expect(result.find((p) => p.eventType === 'incident_opened')).toMatchObject({
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
+  });
+
+  it('rejects an unsupported event type', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await expect(
+      repo.setMyOperationalNotificationPreference(
+        manager,
+        // @ts-expect-error deliberately invalid for this test
+        'incident_assigned',
+        { inAppEnabled: false, pushEnabled: false },
+      ),
+    ).rejects.toMatchObject({ code: 'VALIDATION' });
   });
 
   it.each([
-    ['professional_manager', () => manager],
-    ['shift_supervisor', () => supervisor1],
     ['technician', () => tech1],
     ['viewer', () => viewer],
-  ])('rejects a non-system_admin caller (%s) and leaves the stored preference unchanged', async (_role, getSession) => {
+  ])('rejects a non-operational-role caller (%s) from reading preferences', async (_role, getSession) => {
     const repo = newRepo({ now: FIXED_NOW });
-    const s = getSession();
-    await expect(repo.setMyOperationalNotificationsEnabled(s, true)).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    const profile = await repo.getProfile(s.userId);
-    expect(profile?.operationalNotificationsEnabled ?? false).toBe(false);
+    await expect(repo.getMyOperationalNotificationPreferences(getSession())).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
   });
 
-  it('changes only the calling admin\'s own row -- there is no way to pass another user\'s id', async () => {
+  it.each([
+    ['technician', () => tech1],
+    ['viewer', () => viewer],
+  ])('rejects a non-operational-role caller (%s) from writing preferences', async (_role, getSession) => {
     const repo = newRepo({ now: FIXED_NOW });
-    await repo.setMyOperationalNotificationsEnabled(admin, true);
-    // No other profile is touched by a call this method has no way to target.
-    const other = await repo.getProfile(DEMO_USERS.manager);
-    expect(other?.operationalNotificationsEnabled ?? false).toBe(false);
+    await expect(
+      repo.setMyOperationalNotificationPreference(getSession(), 'incident_opened', {
+        inAppEnabled: false,
+        pushEnabled: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('changes only the calling user\'s own preferences -- there is no way to pass another user\'s id', async () => {
+    const repo = newRepo({ now: FIXED_NOW });
+    await repo.setMyOperationalNotificationPreference(admin, 'incident_opened', {
+      inAppEnabled: false,
+      pushEnabled: false,
+    });
+    const other = await repo.getMyOperationalNotificationPreferences(manager);
+    expect(other.find((p) => p.eventType === 'incident_opened')).toMatchObject({
+      inAppEnabled: true,
+      pushEnabled: true,
+    });
   });
 
   it('rejects an inactive caller entirely (requireSession fails closed before the role check)', async () => {
@@ -3554,15 +3618,15 @@ describe('setMyOperationalNotificationsEnabled: self-only, system_admin-only pre
       role: 'system_admin',
       active: false,
       createdAt: FIXED_NOW.toISOString(),
-      operationalNotificationsEnabled: false,
     });
     storage.save(seeded);
     const repo = new LocalDemoRepository(storage, { now: () => FIXED_NOW });
     await expect(
-      repo.setMyOperationalNotificationsEnabled(session('u-admin-inactive-caller', 'system_admin'), true),
+      repo.setMyOperationalNotificationPreference(session('u-admin-inactive-caller', 'system_admin'), 'incident_opened', {
+        inAppEnabled: false,
+        pushEnabled: false,
+      }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-    const raw = storage.load();
-    expect(raw?.profiles.find((p) => p.id === 'u-admin-inactive-caller')?.operationalNotificationsEnabled).toBe(false);
   });
 });
 

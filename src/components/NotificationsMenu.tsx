@@ -10,10 +10,11 @@ import { useAuth, useSession } from '../auth/AuthContext';
 import { useNotifications, useAppMutation, repo } from '../data/hooks';
 import { notificationTypeLabels, notificationFilterLabels, type NotificationFilter } from '../domain/labels';
 import type { AppNotification, NotificationType } from '../domain/types';
+import { hasCapability } from '../domain/permissions';
 import { formatRelative } from '../lib/time';
 import { FloatingPopover } from './FloatingPopover';
 import { Dialog } from './ui';
-import { OperationalNotificationsSwitch } from './OperationalNotificationsSwitch';
+import { OperationalNotificationPreferences } from './OperationalNotificationPreferences';
 import { PushSubscriptionSettings } from './PushSubscriptionSettings';
 import {
   IconBell,
@@ -241,9 +242,9 @@ export function NotificationsMenu() {
         <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} title="הגדרות התראות">
           <div className="flex flex-col gap-4">
             <PushSubscriptionSettings />
-            {user.role === 'system_admin' && (
+            {hasCapability(user.role, 'manage_operational_notification_preferences') && (
               <div className="border-t border-hairline pt-4">
-                <OperationalNotificationsSwitch />
+                <OperationalNotificationPreferences />
               </div>
             )}
           </div>

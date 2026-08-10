@@ -152,14 +152,15 @@ export interface Profile {
    *  before this field existed, and always null/absent in demo mode
    *  (no OAuth session to read a picture from). */
   avatarUrl?: string | null;
-  /** Personal, self-managed opt-in to role-based operational notifications
-   *  (see NotificationCategory) -- meaningful only for `system_admin`
-   *  (`professional_manager` always receives them regardless of this
-   *  field, and every other role never does, even if this were somehow
-   *  true). Optional like `avatarUrl`: absent/undefined is equivalent to
-   *  false everywhere it is read, so fixtures and data shaped before this
-   *  field existed never need an explicit value. Changed only via
-   *  setMyOperationalNotificationsEnabled, never directly. */
+  /** @deprecated as of AVARIA v1.6.0 (migration 0058) -- superseded by the
+   *  per-event OperationalNotificationPreference model
+   *  (getMyOperationalNotificationPreferences /
+   *  setMyOperationalNotificationPreference). The backing DB column and
+   *  its RPC are still physically present (kept for a later cleanup
+   *  migration after production verification -- see 0058's own header),
+   *  and this field still mirrors that column so existing data stays
+   *  visible, but nothing in the current UI reads or writes it anymore.
+   *  Do not use in new code. */
   operationalNotificationsEnabled?: boolean;
 }
 
@@ -543,6 +544,31 @@ export type NotificationType =
  *  produced the row -- category is what disambiguates them, not the type
  *  alone. Always server-set; never accepted from the client. */
 export type NotificationCategory = 'action_required' | 'update';
+
+/** The five operational broadcast event types a user can set a per-event
+ *  notification preference for (AVARIA v1.6.0, migration 0058) -- a fixed
+ *  subset of NotificationType. Every other NotificationType (incident_assigned,
+ *  handover_pending, update_overdue) is either action_required (mandatory,
+ *  no preference exists) or historical-only. */
+export type OperationalNotificationEventType =
+  | 'incident_opened'
+  | 'incident_updated'
+  | 'incident_closed'
+  | 'incident_cancelled'
+  | 'incident_reopened';
+
+/** One resolved, EFFECTIVE preference row for one event type -- always the
+ *  merge of the fixed v1.6 default matrix with any explicit per-user
+ *  override, never the raw override alone (see
+ *  get_my_operational_notification_preferences). pushEnabled implies
+ *  inAppEnabled -- a combination of pushEnabled=true with inAppEnabled=false
+ *  can never be returned (enforced server-side by a DB CHECK constraint,
+ *  migration 0058). */
+export interface OperationalNotificationPreference {
+  eventType: OperationalNotificationEventType;
+  inAppEnabled: boolean;
+  pushEnabled: boolean;
+}
 
 export interface AppNotification {
   id: string;

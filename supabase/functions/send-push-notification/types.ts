@@ -14,6 +14,14 @@ export interface NotificationRow {
    *  known -- null for legacy rows and any notification-producing path
    *  that predates that migration. Never the recipient (user_id). */
   actor_id: string | null;
+  /** Resolved and stamped once at INSERT time (migration 0058) -- always
+   *  true for category "action_required" (mandatory, unconditional). For
+   *  category "update", the recipient's resolved per-event Push preference
+   *  at the moment this row was created (see
+   *  resolve_operational_notification_prefs/notify_operational_recipients
+   *  in migration 0058) -- NOT re-evaluated here. Replaces the old
+   *  hardcoded `type === "incident_opened"` rule in qualifiesForPush. */
+  push_eligible: boolean;
 }
 
 /** The subset of public.push_subscriptions this function ever reads.

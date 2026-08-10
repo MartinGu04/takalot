@@ -16,6 +16,8 @@ import type {
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
+  OperationalNotificationEventType,
+  OperationalNotificationPreference,
   PendingPersonnel,
   PersonnelEntry,
   Profile,
@@ -153,6 +155,31 @@ function externalHandlerSnapshot(
   if (contactDetails) parts.push(`פרטי קשר: ${contactDetails}`);
   return parts.join(' · ');
 }
+
+/** Fixed v1.6.0 default matrix (AVARIA, migration 0058's
+ *  operational_notification_defaults) -- the starting effective preference
+ *  for every operational user who has not set an explicit override. Kept
+ *  in sync with the seed rows in migration 0058 by construction (the exact
+ *  same task-spec table); not administratively configurable, exactly like
+ *  its DB counterpart. */
+const OPERATIONAL_NOTIFICATION_EVENT_TYPES: OperationalNotificationEventType[] = [
+  'incident_opened',
+  'incident_updated',
+  'incident_closed',
+  'incident_cancelled',
+  'incident_reopened',
+];
+
+const OPERATIONAL_NOTIFICATION_DEFAULTS: Record<
+  OperationalNotificationEventType,
+  { inAppEnabled: boolean; pushEnabled: boolean }
+> = {
+  incident_opened: { inAppEnabled: true, pushEnabled: true },
+  incident_updated: { inAppEnabled: true, pushEnabled: false },
+  incident_closed: { inAppEnabled: true, pushEnabled: false },
+  incident_cancelled: { inAppEnabled: true, pushEnabled: false },
+  incident_reopened: { inAppEnabled: true, pushEnabled: false },
+};
 
 export interface LocalRepositoryOptions {
   now?: () => Date;
@@ -376,32 +403,34 @@ export class LocalDemoRepository implements Repository {
   }
 
   /**
-   * Role-based operational broadcast: every active professional_manager
-   * (unconditionally), PLUS every active system_admin who has personally
-   * opted in (operationalNotificationsEnabled) -- except the acting user
-   * and anyone in excludeUserIds (used to skip a recipient who already got
-   * a personal, action_required notification for this exact operation --
-   * e.g. the professional_manager or opted-in system_admin who becomes the
-   * incident's owner during create/reopen; see the product's dedup rule).
-   * Always category 'update'. Mirrors notify_operational_recipients()
-   * (migrations 0043/0044): recipients are derived from active profiles
-   * server-side (here, in-process) -- never client-supplied. Every other
-   * role is never a recipient, even if operationalNotificationsEnabled
-   * were somehow true on its row.
+   * Role-based operational broadcast: every active operational-role profile
+   * (system_admin/professional_manager/shift_supervisor -- exactly
+   * is_operational_role()'s set) whose resolved per-event in-app preference
+   * for THIS type is on -- except the acting user and anyone in
+   * excludeUserIds (used to skip a recipient who already got a personal,
+   * action_required notification for this exact operation -- e.g. the
+   * professional_manager who becomes the incident's owner during
+   * create/reopen; see the product's dedup rule). Always category
+   * 'update'. Mirrors notify_operational_recipients() as rewritten by
+   * migration 0058 (AVARIA v1.6.0): the OLD three different, role-specific
+   * gates (professional_manager unconditional; system_admin gated by one
+   * coarse boolean; shift_supervisor gated to incident_opened only,
+   * migration 0057) are replaced by ONE uniform per-event preference
+   * check, resolved via resolveOperationalNotificationPreference below.
    */
   private notifyOperationalRecipients(
     actorId: string,
-    type: AppNotification['type'],
+    type: OperationalNotificationEventType,
     text: string,
     opts: { incidentId: string; operationId: string; excludeUserIds?: string[] },
   ): void {
     const exclude = new Set([actorId, ...(opts.excludeUserIds ?? [])]);
+    const eligibleRoles: Role[] = ['system_admin', 'professional_manager', 'shift_supervisor'];
     for (const profile of this.db.profiles) {
-      const eligible =
-        profile.role === 'professional_manager' ||
-        (profile.role === 'system_admin' && profile.operationalNotificationsEnabled);
-      if (!eligible || !profile.active) continue;
+      if (!eligibleRoles.includes(profile.role) || !profile.active) continue;
       if (exclude.has(profile.id)) continue;
+      const pref = this.resolveOperationalNotificationPreference(profile.id, type);
+      if (!pref.inAppEnabled) continue;
       this.notify(profile.id, type, 'update', text, {
         incidentId: opts.incidentId,
         dedupeKey: `opn-${opts.operationId}-${profile.id}`,
@@ -1362,20 +1391,59 @@ export class LocalDemoRepository implements Repository {
     // persist -- AuthContext's DemoAuthProvider never calls this method.
   }
 
+  /** Mirrors resolve_operational_notification_prefs(): the override row
+   *  (if any) for (userId, eventType), merged with the fixed default --
+   *  absence of a stored override for that key means "use the default",
+   *  exactly like the DB's LEFT JOIN + coalesce. */
+  private resolveOperationalNotificationPreference(
+    userId: string,
+    eventType: OperationalNotificationEventType,
+  ): { inAppEnabled: boolean; pushEnabled: boolean } {
+    const override = this.db.operationalNotificationPreferences?.[userId]?.[eventType];
+    return override ?? OPERATIONAL_NOTIFICATION_DEFAULTS[eventType];
+  }
+
   /**
-   * Self-only opt-in/out of role-based operational notifications. Mirrors
-   * set_my_operational_notifications_enabled(): the target is always the
-   * CALLER's own profile (session.userId), never a client-supplied id;
-   * restricted to an active system_admin.
+   * Self-only read of the CALLER's own EFFECTIVE per-event operational
+   * notification preferences (AVARIA v1.6.0). Mirrors
+   * get_my_operational_notification_preferences(): always exactly five
+   * rows, each the merge of the fixed default matrix with any explicit
+   * override; restricted to an active operational-role profile.
    */
-  async setMyOperationalNotificationsEnabled(session: Session, enabled: boolean): Promise<Profile> {
-    const actor = this.requireSession(session);
-    if (actor.role !== 'system_admin') {
-      throw new AppError('FORBIDDEN', 'ההעדפה זמינה למנהלי מערכת בלבד.');
+  async getMyOperationalNotificationPreferences(session: Session): Promise<OperationalNotificationPreference[]> {
+    const actor = this.requireCap(session, 'manage_operational_notification_preferences');
+    return OPERATIONAL_NOTIFICATION_EVENT_TYPES.map((eventType) => ({
+      eventType,
+      ...this.resolveOperationalNotificationPreference(actor.id, eventType),
+    }));
+  }
+
+  /**
+   * Self-only write of ONE per-event preference override. Mirrors
+   * set_my_operational_notification_preference(): the target is always the
+   * CALLER's own profile (session.userId), never a client-supplied id;
+   * restricted to an active operational-role profile. pushEnabled is
+   * normalized to false whenever inAppEnabled is false ("Push requires
+   * in-app"), matching the DB's own CHECK constraint. Returns the caller's
+   * full, freshly-resolved five-row effective set.
+   */
+  async setMyOperationalNotificationPreference(
+    session: Session,
+    eventType: OperationalNotificationEventType,
+    prefs: { inAppEnabled: boolean; pushEnabled: boolean },
+  ): Promise<OperationalNotificationPreference[]> {
+    const actor = this.requireCap(session, 'manage_operational_notification_preferences');
+    if (!(OPERATIONAL_NOTIFICATION_EVENT_TYPES as string[]).includes(eventType)) {
+      throw new AppError('VALIDATION', 'סוג האירוע אינו נתמך להעדפה תפעולית.');
     }
-    actor.operationalNotificationsEnabled = enabled;
+    this.db.operationalNotificationPreferences ??= {};
+    this.db.operationalNotificationPreferences[actor.id] ??= {};
+    this.db.operationalNotificationPreferences[actor.id][eventType] = {
+      inAppEnabled: prefs.inAppEnabled,
+      pushEnabled: prefs.inAppEnabled && prefs.pushEnabled,
+    };
     this.persist();
-    return { ...actor };
+    return this.getMyOperationalNotificationPreferences(session);
   }
 
   /**

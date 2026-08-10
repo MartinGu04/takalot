@@ -17,6 +17,8 @@ import type {
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
+  OperationalNotificationEventType,
+  OperationalNotificationPreference,
   PendingPersonnel,
   PersonnelEntry,
   Profile,
@@ -298,6 +300,12 @@ export const mapProfile = (r: Record<string, unknown>): Profile => ({
   operationalNotificationsEnabled: r.operational_notifications_enabled as boolean,
 });
 
+const mapOperationalNotificationPreference = (r: Record<string, unknown>): OperationalNotificationPreference => ({
+  eventType: r.event_type as OperationalNotificationEventType,
+  inAppEnabled: r.in_app_enabled as boolean,
+  pushEnabled: r.push_enabled as boolean,
+});
+
 const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
   id: r.id as string,
   fullName: r.full_name as string,
@@ -527,13 +535,26 @@ export class SupabaseRepository implements Repository {
     await this.rpc('set_own_avatar_url', { p_avatar_url: avatarUrl });
   }
 
-  async setMyOperationalNotificationsEnabled(_session: Session, enabled: boolean): Promise<Profile> {
+  async getMyOperationalNotificationPreferences(_session: Session): Promise<OperationalNotificationPreference[]> {
     // Deliberately no user id parameter -- the RPC derives auth.uid() itself
-    // and rejects anything but an active system_admin.
-    const data = await this.rpc<Record<string, unknown>>('set_my_operational_notifications_enabled', {
-      p_enabled: enabled,
+    // and rejects anything but an active system_admin/professional_manager/
+    // shift_supervisor.
+    const rows = await this.rpc<Record<string, unknown>[]>('get_my_operational_notification_preferences', {});
+    return rows.map(mapOperationalNotificationPreference);
+  }
+
+  async setMyOperationalNotificationPreference(
+    _session: Session,
+    eventType: OperationalNotificationEventType,
+    prefs: { inAppEnabled: boolean; pushEnabled: boolean },
+  ): Promise<OperationalNotificationPreference[]> {
+    // Deliberately no user id parameter -- the RPC derives auth.uid() itself.
+    const rows = await this.rpc<Record<string, unknown>[]>('set_my_operational_notification_preference', {
+      p_event_type: eventType,
+      p_in_app_enabled: prefs.inAppEnabled,
+      p_push_enabled: prefs.pushEnabled,
     });
-    return mapProfile(data);
+    return rows.map(mapOperationalNotificationPreference);
   }
 
   async savePushSubscription(_session: Session, endpoint: string, keys: { p256dh: string; auth: string }): Promise<void> {

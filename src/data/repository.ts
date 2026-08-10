@@ -15,6 +15,8 @@ import type {
   IncidentUpdate,
   LocationCategory,
   LocationRecord,
+  OperationalNotificationEventType,
+  OperationalNotificationPreference,
   PendingPersonnel,
   PersonnelEntry,
   Profile,
@@ -255,16 +257,34 @@ export interface Repository {
    */
   setOwnAvatarUrl(avatarUrl: string | null): Promise<void>;
   /**
-   * Self-only opt-in/out of role-based operational notifications. Takes no
-   * user id: the target is always the CALLER's own profile, derived
-   * server-side from auth.uid() -- there is no admin-facing path to change
-   * this for someone else. Restricted to an active system_admin (a
-   * professional_manager already receives these unconditionally and has
-   * nothing to opt into; every other role is rejected). Returns the
-   * caller's own updated profile so the UI can refresh immediately without
-   * a full reload.
+   * Self-only read of the CALLER's own EFFECTIVE per-event operational
+   * notification preferences (AVARIA v1.6.0, migration 0058) -- always
+   * exactly five rows (one per OperationalNotificationEventType), each the
+   * merge of the fixed default matrix with any explicit override, never
+   * the raw override alone. Restricted server-side to an active
+   * system_admin/professional_manager/shift_supervisor (is_operational_role());
+   * every other role is rejected. Supersedes the removed
+   * setMyOperationalNotificationsEnabled -- see Profile.operationalNotificationsEnabled's
+   * own deprecation note.
    */
-  setMyOperationalNotificationsEnabled(session: Session, enabled: boolean): Promise<Profile>;
+  getMyOperationalNotificationPreferences(session: Session): Promise<OperationalNotificationPreference[]>;
+  /**
+   * Self-only write of ONE per-event preference override. Takes no user
+   * id: the target is always the CALLER's own profile, derived
+   * server-side from auth.uid(). action_required notifications are never
+   * covered by this -- eventType only ever accepts one of the five
+   * OperationalNotificationEventType values, never an action_required
+   * type. pushEnabled is server-normalized to false whenever inAppEnabled
+   * is false ("Push requires in-app", a hard DB invariant, not just a UI
+   * convention). Returns the caller's full, freshly-resolved five-row
+   * effective set, so the UI can refresh its cache from a single round
+   * trip.
+   */
+  setMyOperationalNotificationPreference(
+    session: Session,
+    eventType: OperationalNotificationEventType,
+    prefs: { inAppEnabled: boolean; pushEnabled: boolean },
+  ): Promise<OperationalNotificationPreference[]>;
 
   // --- push subscriptions (self-service, device-local; see migration 0053) ---
   /**

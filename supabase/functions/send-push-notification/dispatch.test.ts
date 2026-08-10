@@ -37,6 +37,11 @@ function baseNotification(
     category: "action_required",
     incident_id: INCIDENT_ID,
     actor_id: null,
+    // Matches the default category above (action_required is always
+    // push-eligible, unconditionally) -- any test overriding category to
+    // "update" must explicitly pass its own push_eligible value; see
+    // migration 0058 / dispatch.ts's qualifiesForPush.
+    push_eligible: true,
     ...overrides,
   };
 }
@@ -232,19 +237,24 @@ Deno.test("D: nonexistent notification -> 200 not_found, no send attempted", asy
 });
 
 // =====================================================================
-// E. Notification outside v1.5 policy -> skipped, no send.
+// E. Notification outside v1.6 policy (push_eligible=false, the
+// recipient's resolved Push preference for this event type was off at
+// creation time) -> skipped, no send. Includes incident_opened -- v1.6 no
+// longer hardcodes that type as always-eligible; push_eligible is what
+// decides, for every type equally (migration 0058).
 // =====================================================================
 for (
-  const [type, category] of [
-    ["incident_updated", "update"],
-    ["incident_closed", "update"],
-    ["incident_cancelled", "update"],
-    ["incident_reopened", "update"],
+  const type of [
+    "incident_opened",
+    "incident_updated",
+    "incident_closed",
+    "incident_cancelled",
+    "incident_reopened",
   ] as const
 ) {
-  Deno.test(`E: category=${category} type=${type} does not qualify -> skipped, no send`, async () => {
+  Deno.test(`E: category=update type=${type} push_eligible=false does not qualify -> skipped, no send`, async () => {
     const { deps, calls } = createFakeDeps({
-      notification: baseNotification({ type, category }),
+      notification: baseNotification({ type, category: "update", push_eligible: false }),
     });
     const outcome = await handleDispatch(
       { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
@@ -258,43 +268,58 @@ for (
   });
 }
 
-Deno.test("E: qualifiesForPush matches migration 0054's exact WHEN clause boundary", () => {
-  assert.equal(
-    qualifiesForPush({
-      category: "action_required",
-      type: "incident_assigned",
+// =====================================================================
+// E2. The mirror case: category=update, push_eligible=true DOES qualify,
+// for a non-opened type too -- proves the v1.6 policy is driven entirely
+// by push_eligible, not a hardcoded type comparison (incident_opened was
+// the only type that could ever reach a send under the old v1.5 policy;
+// incident_updated below could never have qualified before this
+// migration).
+// =====================================================================
+Deno.test("E2: category=update type=incident_updated push_eligible=true DOES qualify -> send attempted", async () => {
+  const sub = fakeSubscription();
+  const { deps, calls } = createFakeDeps({
+    notification: baseNotification({
+      type: "incident_updated",
+      category: "update",
+      push_eligible: true,
     }),
+    subscriptions: [sub],
+  });
+  const outcome = await handleDispatch(
+    { secretHeader: SECRET, body: { notification_id: NOTIFICATION_ID } },
+    deps,
+    SECRET,
+  );
+  assert.equal(outcome.status, 200);
+  assert.equal(outcome.body.result, "ok");
+  assert.equal(calls.sendPushCalls.length, 1);
+});
+
+Deno.test("qualifiesForPush matches migration 0058's exact WHEN clause boundary", () => {
+  // action_required: always true, unconditionally, regardless of
+  // push_eligible's stored value (mandatory -- see the notifications.push_eligible
+  // column comment; action_required rows are always stamped true anyway,
+  // but the policy itself does not even consult the column for this
+  // category).
+  assert.equal(
+    qualifiesForPush({ category: "action_required", push_eligible: true }),
     true,
   );
   assert.equal(
-    qualifiesForPush({
-      category: "action_required",
-      type: "incident_reopened",
-    }),
+    qualifiesForPush({ category: "action_required", push_eligible: false }),
+    true,
+  );
+  // update: driven entirely by push_eligible, for every type equally --
+  // v1.6 no longer hardcodes incident_opened as the one always-eligible
+  // type (see E/E2 above for the type-level exercise through the full
+  // handleDispatch flow).
+  assert.equal(
+    qualifiesForPush({ category: "update", push_eligible: true }),
     true,
   );
   assert.equal(
-    qualifiesForPush({ category: "action_required", type: "handover_pending" }),
-    true,
-  );
-  assert.equal(
-    qualifiesForPush({ category: "update", type: "incident_opened" }),
-    true,
-  );
-  assert.equal(
-    qualifiesForPush({ category: "update", type: "incident_updated" }),
-    false,
-  );
-  assert.equal(
-    qualifiesForPush({ category: "update", type: "incident_closed" }),
-    false,
-  );
-  assert.equal(
-    qualifiesForPush({ category: "update", type: "incident_cancelled" }),
-    false,
-  );
-  assert.equal(
-    qualifiesForPush({ category: "update", type: "incident_reopened" }),
+    qualifiesForPush({ category: "update", push_eligible: false }),
     false,
   );
 });
@@ -499,6 +524,7 @@ Deno.test("K: exact approved payload for incident_opened (category=update)", asy
     notification: baseNotification({
       type: "incident_opened",
       category: "update",
+      push_eligible: true,
     }),
     subscriptions: [sub],
   });
@@ -592,6 +618,7 @@ Deno.test("T2: incident_opened with a resolvable actor -> 'נפתחה תקלה �
       type: "incident_opened",
       category: "update",
       actor_id: ACTOR_ID,
+      push_eligible: true,
     }),
     subscriptions: [sub],
     actorName: "דניאל דיוקרב",
@@ -727,6 +754,25 @@ Deno.test("buildPushBody: exact copy for every approved case", () => {
   assert.equal(
     buildPushBody({ category: "action_required", type: "handover_pending" }),
     "תקלה שויכה אליך",
+  );
+});
+
+Deno.test("buildPushBody: v1.6 (migration 0058) copy for the four operational update types that were never push-eligible before", () => {
+  assert.equal(
+    buildPushBody({ category: "update", type: "incident_updated" }),
+    "עודכנה תקלה",
+  );
+  assert.equal(
+    buildPushBody({ category: "update", type: "incident_closed" }),
+    "נסגרה תקלה",
+  );
+  assert.equal(
+    buildPushBody({ category: "update", type: "incident_cancelled" }),
+    "בוטלה תקלה",
+  );
+  assert.equal(
+    buildPushBody({ category: "update", type: "incident_reopened" }),
+    "תקלה נפתחה מחדש",
   );
 });
 

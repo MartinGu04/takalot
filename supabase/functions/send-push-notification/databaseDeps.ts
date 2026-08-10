@@ -18,7 +18,7 @@ export function createDatabaseDeps(client: SupabaseClient) {
     async fetchNotification(id: string): Promise<NotificationRow | null> {
       const { data, error } = await client
         .from("notifications")
-        .select("id, user_id, type, category, incident_id, actor_id")
+        .select("id, user_id, type, category, incident_id, actor_id, push_eligible")
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
