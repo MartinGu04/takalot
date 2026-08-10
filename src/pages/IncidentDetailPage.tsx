@@ -428,6 +428,10 @@ export default function IncidentDetailPage() {
       <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
+            <dt className="text-xs text-muted">תיאור</dt>
+            <dd className="whitespace-pre-wrap break-words">{incident.description}</dd>
+          </div>
+          <div>
             <dt className="text-xs text-muted">בעל אחריות פנימי</dt>
             <dd className="font-medium">{ownerDisplay(incident, profiles)}</dd>
           </div>
@@ -485,10 +489,6 @@ export default function IncidentDetailPage() {
                 <span className="font-normal text-secondary"> — מספר תקלה: {incident.wisdomIncidentNumber}</span>
               )}
             </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">תיאור</dt>
-            <dd className="whitespace-pre-wrap break-words">{incident.description}</dd>
           </div>
         </dl>
       </div>

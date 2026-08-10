@@ -739,6 +739,70 @@ describe('incident details: internal owner and external handler render as two se
   });
 });
 
+// v1.5.1 information-hierarchy polish: תיאור moves to the top of the facts
+// card, ahead of the ownership/operational metadata, so the primary
+// explanation of what happened is visible immediately. Reorder only --
+// every field/condition/value below is identical to what the pre-existing
+// tests above already exercise.
+describe('incident detail information hierarchy (v1.5.1)', () => {
+  it('description (תיאור) renders before internal owner (בעל אחריות פנימי) in DOM order', async () => {
+    await openIncidentDetailByTextAsAdmin(INC1_TEXT);
+    const descriptionDt = within(main()).getByText('תיאור');
+    const ownerDt = within(main()).getByText('בעל אחריות פנימי');
+    const ownerFollowsDescription = Boolean(
+      descriptionDt.compareDocumentPosition(ownerDt) & Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(ownerFollowsDescription).toBe(true);
+  });
+
+  it('inc-1 (no external handler): the full approved field order, item 3 correctly absent', async () => {
+    await openIncidentDetailByTextAsAdmin(INC1_TEXT);
+    const facts = within(main()).getAllByText(
+      /^(תיאור|בעל אחריות פנימי|גורם מטפל חיצוני|השפעה מבצעית|תחום התקלה|חשד נוכחי|שעת גילוי|עדכון אחרון|תקשוב למבצעים|WISDOM|דווח למבצעים)$/,
+    );
+    expect(facts.map((el) => el.textContent)).toEqual([
+      'תיאור',
+      'בעל אחריות פנימי',
+      'השפעה מבצעית',
+      'תחום התקלה',
+      'חשד נוכחי',
+      'שעת גילוי',
+      'עדכון אחרון',
+      'דווח למבצעים',
+      'תקשוב למבצעים',
+      'WISDOM',
+    ]);
+  });
+
+  it('inc-3 (legacy external-only, external handler present): the full approved field order, all 11 facts in sequence', async () => {
+    await openIncidentDetailByTextAsAdmin(INC3_TEXT);
+    const facts = within(main()).getAllByText(
+      /^(תיאור|בעל אחריות פנימי|גורם מטפל חיצוני|השפעה מבצעית|תחום התקלה|חשד נוכחי|שעת גילוי|עדכון אחרון|תקשוב למבצעים|WISDOM|דווח למבצעים)$/,
+    );
+    expect(facts.map((el) => el.textContent)).toEqual([
+      'תיאור',
+      'בעל אחריות פנימי',
+      'גורם מטפל חיצוני',
+      'השפעה מבצעית',
+      'תחום התקלה',
+      'חשד נוכחי',
+      'שעת גילוי',
+      'עדכון אחרון',
+      'דווח למבצעים',
+      'תקשוב למבצעים',
+      'WISDOM',
+    ]);
+  });
+
+  it('preserves the existing responsive grid layout (mobile single-column, desktop two-column) -- no card redesign', async () => {
+    await openIncidentDetailByTextAsAdmin(INC1_TEXT);
+    const descriptionDt = within(main()).getByText('תיאור');
+    const factsList = descriptionDt.closest('dl') as HTMLElement;
+    expect(factsList.className).toContain('grid-cols-1');
+    expect(factsList.className).toContain('sm:grid-cols-2');
+  });
+});
+
 // inc-3 (seed.ts): a true legacy incident -- reportedDomain, currentSuspectedCause
 // and currentSuspectedCauseOtherDetail are all null, and it has no treatment-action
 // or closure-classification rows at all. The "הוספת פרטי טיפול" disclosure inside
