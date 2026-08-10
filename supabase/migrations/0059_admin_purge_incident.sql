@@ -39,13 +39,31 @@
 -- silently weakening protection for every future row, not just this
 -- one), this uses a transaction-local GUC flag,
 -- avaria.incident_purge_in_progress, checked inside reject_mutation()
--- itself. set_config(..., true) (is_local = true) is automatically and
--- unconditionally cleared by Postgres at end-of-transaction -- commit or
--- rollback -- with no code path that can forget to reset it, no DDL, no
--- table-wide lock. current_setting(name, missing_ok := true) returns NULL
--- (never raises) when the flag was never set, so every existing caller,
--- everywhere else in the system, sees NULL <> 'on' and hits the exact
--- same raise exception as today -- zero behavior change for anyone but
+-- itself.
+--
+-- The bypass is explicitly turned back 'off' by admin_purge_incident
+-- itself, immediately after the last guarded delete succeeds and before
+-- write_audit() runs (section 2) -- this is the NORMAL way the bypass
+-- ends on the successful path, so the flag is never left 'on' for any
+-- later statement in the same transaction (including a later call in the
+-- same transaction, or a subsequent RPC sharing it), regardless of
+-- whether the caller's transport happens to give this RPC its own
+-- transaction.
+--
+-- Transaction-end clearing remains in place as a fallback safety net, not
+-- the primary mechanism: set_config(..., true) (is_local = true) is
+-- automatically and unconditionally cleared by Postgres at
+-- end-of-transaction -- commit or rollback -- with no code path that can
+-- forget to reset it, no DDL, no table-wide lock. This still covers the
+-- one path the explicit reset cannot: an exception raised between setting
+-- the flag 'on' and reaching the explicit reset (e.g. a delete failing
+-- partway through the dependency graph), where the whole transaction
+-- rolls back and the flag reverts with it.
+--
+-- current_setting(name, missing_ok := true) returns NULL (never raises)
+-- when the flag was never set, so every existing caller, everywhere else
+-- in the system, sees NULL <> 'on' and hits the exact same raise
+-- exception as today -- zero behavior change for anyone but
 -- admin_purge_incident. The browser can never reach set_config()/
 -- current_setting() directly: PostgREST's /rpc/ surface only exposes
 -- functions explicitly GRANTed EXECUTE, and these are plain pg_catalog
@@ -117,7 +135,7 @@ end;
 $$;
 
 comment on function public.reject_mutation() is
-  'Unconditionally blocks UPDATE/DELETE on every append-only/no-delete table in this schema, EXCEPT for the single transaction-local escape hatch avaria.incident_purge_in_progress -- set ONLY inside admin_purge_incident (0059), and only for the duration of that one transaction (set_config(..., true) is transaction-scoped and clears automatically on commit or rollback, never leaking into any other transaction or session). Every other caller, everywhere, sees identical behavior to before this migration.';
+  'Unconditionally blocks UPDATE/DELETE on every append-only/no-delete table in this schema, EXCEPT for the single escape hatch avaria.incident_purge_in_progress -- set ONLY inside admin_purge_incident (0059). On the successful path, admin_purge_incident explicitly turns this back off itself as soon as the guarded deletes are done; transaction-scoped clearing (set_config(..., true) reverting at commit/rollback) is the fallback safety net for the exception/rollback path, not the primary mechanism, and never leaks into any other transaction or session either way. Every other caller, everywhere, sees identical behavior to before this migration.';
 
 -- =====================================================================
 -- 2. admin_purge_incident(): the RPC itself.
@@ -181,8 +199,10 @@ begin
     severity_override_reason = null
   where id = p_incident_id;
 
-  -- ----- Narrow, transaction-scoped bypass -- see section 1 and the file
-  --       header. Cleared automatically at commit or rollback; never set
+  -- ----- Narrow bypass -- see section 1 and the file header. Turned back
+  --       'off' explicitly below the moment the guarded deletes finish
+  --       (the normal successful-path close); end-of-transaction clearing
+  --       is only the fallback for the exception/rollback path. Never set
   --       anywhere else in this schema. -----
   perform set_config('avaria.incident_purge_in_progress', 'on', true);
 
@@ -206,6 +226,16 @@ begin
   delete from public.incident_updates where incident_id = p_incident_id;
   delete from public.incidents where id = p_incident_id;
 
+  -- ----- Close the bypass explicitly, on the successful path, the moment
+  --       it is no longer needed -- i.e. immediately after the last
+  --       guarded delete (incidents) has succeeded, and BEFORE
+  --       write_audit() below. This is the NORMAL way the bypass ends;
+  --       end-of-transaction clearing (see section 1) is a fallback safety
+  --       net for the exception/rollback path only, not the primary
+  --       mechanism -- the flag is not meant to still be 'on' for any
+  --       statement this function issues after the guarded section. -----
+  perform set_config('avaria.incident_purge_in_progress', 'off', true);
+
   -- ----- Minimal audit tombstone -- written ONLY after every delete
   --       above has succeeded (a failure anywhere aborts the whole
   --       transaction, including this call, per the atomicity guarantee).
@@ -226,7 +256,7 @@ end;
 $$;
 
 comment on function public.admin_purge_incident(uuid) is
-  'Permanently deletes an archived (closed/cancelled) incident and its entire live operational footprint -- system_admin only, fails closed for every other role/state. incident_sequences is never read or written: the deleted number is never reused. audit_logs history is preserved; exactly one minimal tombstone row is added on success. See migration 0059 for the full design rationale.';
+  'Permanently deletes an archived (closed/cancelled) incident and its entire live operational footprint -- system_admin only, fails closed for every other role/state. incident_sequences is never read or written: the deleted number is never reused. audit_logs history is preserved; exactly one minimal tombstone row is added on success. The reject_mutation() bypass it uses is explicitly turned back off on the successful path, before write_audit() runs -- end-of-transaction clearing is only a fallback for the exception/rollback path. See migration 0059 for the full design rationale.';
 
 -- Direct table deletion stays unavailable regardless of this RPC: RLS on
 -- every table above still has no INSERT/UPDATE/DELETE policy at all (only

@@ -13,7 +13,10 @@
 -- minimal tombstone row with no operational payload, and that
 -- reject_mutation() still blocks a plain direct mutation on every guarded
 -- table OUTSIDE the purge transaction (proving the bypass is genuinely
--- scoped, not a global weakening).
+-- scoped, not a global weakening), and (section 8) that a successful
+-- purge explicitly closes its own bypass immediately on return -- not
+-- merely at end-of-transaction -- so a later statement in the SAME
+-- transaction is never left exposed.
 --
 -- Runs in one transaction and rolls back; leaves the database unchanged.
 \pset pager off
@@ -290,7 +293,12 @@ end $$;
 --    separate PostgREST requests never would in production. Proving the
 --    underlying set_config/current_setting mechanism directly, via an
 --    explicit SAVEPOINT boundary, is what actually verifies the safety
---    property without that test-harness artifact.
+--    property without that test-harness artifact. Section 8, below,
+--    proves the migration's fix for this exact leak DIRECTLY with the
+--    real RPC, in this same outer transaction, with no SAVEPOINT needed --
+--    now that admin_purge_incident explicitly turns the flag back off on
+--    its own successful path, it no longer depends on this file's
+--    outer-transaction boundary to clear it.
 -- =====================================================================
 do $$
 begin
@@ -655,6 +663,93 @@ select pg_temp.check_result(
   '7b: authenticated has EXECUTE on admin_purge_incident (the function body enforces system_admin-only, not the grant)',
   has_function_privilege('authenticated', 'public.admin_purge_incident(uuid)', 'EXECUTE')
 );
+
+-- =====================================================================
+-- 8. Regression: the bypass closes itself explicitly on the successful
+--    path -- it does not depend on end-of-transaction/PostgREST-per-
+--    request semantics to clear. Uses its own dedicated, minimal terminal
+--    incident so it is fully self-contained, independent of every earlier
+--    section's own purge calls.
+--
+--    This is exactly the scenario section 2's own comment describes as
+--    untestable via the real RPC in this single-transaction harness
+--    BEFORE this fix: calling admin_purge_incident successfully and then
+--    immediately checking the flag, still inside this file's one outer
+--    transaction, with no SAVEPOINT. Before the explicit
+--    set_config(..., 'off', true) reset (added right after the last
+--    guarded delete, before write_audit()), this exact sequence would
+--    have found the flag still 'on' after the call returned -- exactly
+--    the leak observed during implementation -- and the direct DELETE in
+--    8d below would have wrongly succeeded instead of being rejected.
+-- =====================================================================
+do $$
+declare
+  v_id uuid := gen_random_uuid();
+begin
+  insert into incidents (
+    id, number, system_id, location_id, description, severity, status, operational_impact,
+    owner_user_id, discovered_at, created_by, updated_by, next_update_due, no_deadline_reason,
+    closed_at, closed_by, root_cause, resolution, readiness_at_close
+  ) values (
+    v_id, 'GUC-RESET-OK', '00000000-0000-0000-0000-000000059101', '00000000-0000-0000-0000-000000059102',
+    'dedicated fixture for the successful-path GUC reset regression', 'low', 'closed', 'impact',
+    '00000000-0000-0000-0000-000000059007', now(), '00000000-0000-0000-0000-000000059003',
+    '00000000-0000-0000-0000-000000059003', null, 'closed',
+    now(), '00000000-0000-0000-0000-000000059003', 'rc', 'res', 'full'
+  );
+
+  perform pg_temp.check_result(
+    '8a: the bypass flag is not ''on'' immediately before this call',
+    current_setting('avaria.incident_purge_in_progress', true) is distinct from 'on'
+  );
+
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000059001'); -- system_admin
+  set local role authenticated;
+  perform admin_purge_incident(v_id);
+  reset role;
+
+  perform pg_temp.check_result(
+    '8b: the purge actually succeeded (the dedicated fixture is gone)',
+    not exists (select 1 from incidents where id = v_id)
+  );
+  perform pg_temp.check_result(
+    '8c: immediately after admin_purge_incident returns -- still inside this same outer transaction, no SAVEPOINT -- the bypass flag is no longer ''on'' (proves the explicit successful-path reset, not merely end-of-transaction clearing)',
+    current_setting('avaria.incident_purge_in_progress', true) is distinct from 'on'
+  );
+
+  begin
+    -- OTHER (059202): unrelated, never purged by any earlier section,
+    -- still exists at this point -- a genuine reject_mutation-protected
+    -- row, in the SAME transaction, right after the purge above.
+    delete from incidents where id = '00000000-0000-0000-0000-000000059202';
+    perform pg_temp.check_result(
+      '8d: an unrelated direct DELETE, in the same transaction immediately after the purge, is still rejected',
+      false, 'succeeded'
+    );
+  exception when others then
+    perform pg_temp.check_result(
+      '8d: an unrelated direct DELETE, in the same transaction immediately after the purge, is still rejected',
+      sqlerrm like 'append_only:%', sqlerrm
+    );
+  end;
+
+  begin
+    -- OTHER's own handover_items row (059...93a2): confirmed still present
+    -- by check 6p above (only TGT's own item was removed by TGT's purge in
+    -- section 6) -- a genuine, still-existing reject_mutation-protected
+    -- row for the UPDATE side of this regression.
+    update handover_items set note = 'tampered' where id = '00000000-0000-0000-0000-0000000593a2';
+    perform pg_temp.check_result(
+      '8e: an unrelated direct UPDATE, in the same transaction immediately after the purge, is still rejected',
+      false, 'succeeded'
+    );
+  exception when others then
+    perform pg_temp.check_result(
+      '8e: an unrelated direct UPDATE, in the same transaction immediately after the purge, is still rejected',
+      sqlerrm like 'append_only:%', sqlerrm
+    );
+  end;
+end $$;
 
 select * from results order by id;
 select case when count(*) filter (where result <> 'PASS') = 0
