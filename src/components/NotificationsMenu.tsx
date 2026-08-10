@@ -187,7 +187,7 @@ export function NotificationsMenu() {
                   setSettingsOpen(true);
                 }}
               >
-                <IconSettings className="size-4" />
+                <IconSettings className="size-5" />
               </button>
             )}
             {unread > 0 && (

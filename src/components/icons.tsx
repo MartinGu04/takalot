@@ -313,12 +313,23 @@ export function IconLightbulb(props: IconProps) {
   );
 }
 
-/** Gear/settings icon -- used for the notification-center's system_admin-only "הגדרות התראות" trigger. */
+const GEAR_TOOTH_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
+
+/** Gear/settings icon -- used for the notification-center's "הגדרות התראות"
+ *  trigger (visible to every operational role as of v1.6.0, not
+ *  system_admin-only -- see OperationalNotificationPreferences), and for
+ *  the analytics page's "התאמת התצוגה" personalization trigger. A
+ *  conventional cog silhouette (rim + 8 outer teeth + a center hole), not
+ *  a radial-spoke glyph -- that previous shape read as a sun/brightness
+ *  icon (compare IconSun above) rather than a settings gear. */
 export function IconSettings(props: IconProps) {
   return (
     <svg {...base(props)}>
-      <circle cx="10" cy="10" r="2.6" />
-      <path d="M10 3.2v1.7M10 15.1v1.7M16.8 10h-1.7M4.9 10H3.2M14.8 5.2l-1.2 1.2M6.4 13.4l-1.2 1.2M14.8 14.8l-1.2-1.2M6.4 6.6 5.2 5.4" />
+      <circle cx="10" cy="10" r="4.6" />
+      <circle cx="10" cy="10" r="1.8" />
+      {GEAR_TOOTH_ANGLES.map((angle) => (
+        <rect key={angle} x="8.7" y="3.2" width="2.6" height="2.2" transform={`rotate(${angle} 10 10)`} />
+      ))}
     </svg>
   );
 }
