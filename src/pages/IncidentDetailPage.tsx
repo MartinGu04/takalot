@@ -464,6 +464,15 @@ export default function IncidentDetailPage() {
             <dd>{formatDateTime(incident.lastUpdateAt)}</dd>
           </div>
           <div>
+            <dt className="text-xs text-muted">דווח למבצעים</dt>
+            <dd>
+              {reportedToOpsLabels[incident.reportedToOps]}
+              {incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient && (
+                <span className="font-normal text-secondary"> — {incident.reportedToOpsRecipient}</span>
+              )}
+            </dd>
+          </div>
+          <div>
             <dt className="text-xs text-muted">תקשוב למבצעים</dt>
             <dd>
               {incident.reportedToComms ? 'כן' : 'לא'}
@@ -478,15 +487,6 @@ export default function IncidentDetailPage() {
               {incident.wisdomReported ? 'כן' : 'לא'}
               {incident.wisdomReported && incident.wisdomIncidentNumber && (
                 <span className="font-normal text-secondary"> — מספר תקלה: {incident.wisdomIncidentNumber}</span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted">דווח למבצעים</dt>
-            <dd>
-              {reportedToOpsLabels[incident.reportedToOps]}
-              {incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient && (
-                <span className="font-normal text-secondary"> — {incident.reportedToOpsRecipient}</span>
               )}
             </dd>
           </div>
