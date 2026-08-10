@@ -428,6 +428,10 @@ export default function IncidentDetailPage() {
       <div className="surface mt-4 p-4 [&_dd]:font-medium [&_dd]:text-text-primary">
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
+            <dt className="text-xs text-muted">תיאור</dt>
+            <dd className="whitespace-pre-wrap break-words">{incident.description}</dd>
+          </div>
+          <div>
             <dt className="text-xs text-muted">בעל אחריות פנימי</dt>
             <dd className="font-medium">{ownerDisplay(incident, profiles)}</dd>
           </div>
@@ -460,15 +464,6 @@ export default function IncidentDetailPage() {
             <dd>{formatDateTime(incident.lastUpdateAt)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-muted">דווח למבצעים</dt>
-            <dd>
-              {reportedToOpsLabels[incident.reportedToOps]}
-              {incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient && (
-                <span className="font-normal text-secondary"> — {incident.reportedToOpsRecipient}</span>
-              )}
-            </dd>
-          </div>
-          <div>
             <dt className="text-xs text-muted">תקשוב למבצעים</dt>
             <dd>
               {incident.reportedToComms ? 'כן' : 'לא'}
@@ -487,8 +482,13 @@ export default function IncidentDetailPage() {
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-muted">תיאור</dt>
-            <dd className="whitespace-pre-wrap break-words">{incident.description}</dd>
+            <dt className="text-xs text-muted">דווח למבצעים</dt>
+            <dd>
+              {reportedToOpsLabels[incident.reportedToOps]}
+              {incident.reportedToOps === 'yes' && incident.reportedToOpsRecipient && (
+                <span className="font-normal text-secondary"> — {incident.reportedToOpsRecipient}</span>
+              )}
+            </dd>
           </div>
         </dl>
       </div>
