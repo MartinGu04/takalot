@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   useIncident,
   useIncidentEvents,
@@ -38,6 +38,7 @@ import { AssignDialog } from '../components/dialogs/AssignDialog';
 import { CloseDialog } from '../components/dialogs/CloseDialog';
 import { CancelDialog } from '../components/dialogs/CancelDialog';
 import { ReopenDialog } from '../components/dialogs/ReopenDialog';
+import { DeleteIncidentDialog } from '../components/dialogs/DeleteIncidentDialog';
 import { CorrectionDialog, FollowUpDialog } from '../components/dialogs/SimpleTextDialogs';
 import { NotificationCopyDialog } from '../components/dialogs/NotificationCopyDialog';
 import { buildIncidentPdf, incidentPdfFilename } from '../exports/incidentPdf';
@@ -57,13 +58,17 @@ import type {
 function IncidentMoreActions({
   canExport,
   canCancel,
+  canDelete,
   onExport,
   onCancel,
+  onDelete,
 }: {
   canExport: boolean;
   canCancel: boolean;
+  canDelete: boolean;
   onExport: () => void;
   onCancel: () => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -153,7 +158,7 @@ function IncidentMoreActions({
     }
   };
 
-  if (!canExport && !canCancel) return null;
+  if (!canExport && !canCancel && !canDelete) return null;
 
   return (
     <div className="relative w-full sm:ms-auto sm:w-auto">
@@ -205,6 +210,19 @@ function IncidentMoreActions({
                 </button>
               </div>
             )}
+            {canDelete && (
+              <div className={canExport ? 'mt-1 border-t border-hairline pt-1' : undefined}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  onClick={() => selectAction(onDelete)}
+                  className="flex min-h-10 w-full items-center rounded-lg px-3 py-2 text-right text-sm font-medium text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/50"
+                >
+                  מחיקה לצמיתות
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -215,6 +233,7 @@ function IncidentMoreActions({
 export default function IncidentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const justCreated = (location.state as { justCreated?: boolean } | null)?.justCreated;
   const { user } = useAuth();
   const session = useSession();
@@ -240,6 +259,7 @@ export default function IncidentDetailPage() {
     | 'cancel'
     | 'reopen'
     | 'followup'
+    | 'delete'
     | { correction: { refId: string; label: string } }
   >(null);
   const [closedNotification, setClosedNotification] = useState<Incident | null>(null);
@@ -304,6 +324,21 @@ export default function IncidentDetailPage() {
     (note: string) => repo().completeFollowUp(session, id!, note),
     { successText: 'פעולות ההמשך סומנו כהושלמו.', onSuccess: () => setDialog(null) },
   );
+  const deleteMutation = useAppMutation(
+    () => repo().permanentlyDeleteIncident(session, id!),
+    {
+      successText: 'התקלה נמחקה לצמיתות.',
+      // The incident no longer exists -- leave its own detail page for the
+      // Archive it was deleted from, rather than staying on a route whose
+      // data is now gone. Default invalidation (['incidents']/['incident'])
+      // already covers refetching the Archive list and this now-missing
+      // incident's own query with no extra wiring.
+      onSuccess: () => {
+        setDialog(null);
+        navigate('/archive');
+      },
+    },
+  );
 
   if (isLoading) return <Spinner label="טוען תקלה…" />;
   if (isError) return <ErrorState message="שגיאה בטעינת התקלה." onRetry={() => refetch()} />;
@@ -327,6 +362,7 @@ export default function IncidentDetailPage() {
   const canClose = hasCapability(user.role, 'close_incident') && !isTerminal;
   const canCancel = hasCapability(user.role, 'cancel_incident') && !isTerminal;
   const canReopen = hasCapability(user.role, 'reopen_incident') && isClosed;
+  const canDelete = hasCapability(user.role, 'permanently_delete_incident') && isTerminal;
   const canAck = hasCapability(user.role, 'acknowledge_incident') && incident.status === 'new';
   const canCompleteFollowUp =
     hasCapability(user.role, 'complete_follow_up') &&
@@ -342,6 +378,7 @@ export default function IncidentDetailPage() {
     canCancel ||
     canReopen ||
     canCompleteFollowUp ||
+    canDelete ||
     Boolean(canExport);
 
   const exportPdf = async () => {
@@ -599,8 +636,10 @@ export default function IncidentDetailPage() {
           <IncidentMoreActions
             canExport={Boolean(canExport)}
             canCancel={canCancel}
+            canDelete={canDelete}
             onExport={() => void exportPdf()}
             onCancel={() => setDialog('cancel')}
+            onDelete={() => setDialog('delete')}
           />
         </section>
       )}
@@ -680,6 +719,12 @@ export default function IncidentDetailPage() {
         onClose={() => setDialog(null)}
         submitting={followUpMutation.isPending}
         onSubmit={(note) => followUpMutation.mutate(note)}
+      />
+      <DeleteIncidentDialog
+        incident={dialog === 'delete' ? incident : null}
+        onClose={() => setDialog(null)}
+        submitting={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate(undefined)}
       />
       {typeof dialog === 'object' && dialog?.correction && (
         <CorrectionDialog

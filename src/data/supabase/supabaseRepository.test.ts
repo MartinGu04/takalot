@@ -688,3 +688,43 @@ describe('SupabaseRepository push subscriptions (migration 0053)', () => {
     await expect(repo.countPushSubscriptions(session)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
+
+describe('SupabaseRepository.permanentlyDeleteIncident (AVARIA v1.7.0)', () => {
+  it('calls admin_purge_incident with only the incident id -- no user id, no reason', async () => {
+    let calledFn = '';
+    let calledArgs: Record<string, unknown> = {};
+    const fakeClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        calledFn = fn;
+        calledArgs = args;
+        return { data: null, error: null };
+      },
+    };
+    const repo = new SupabaseRepository(fakeClient as unknown as ConstructorParameters<typeof SupabaseRepository>[0]);
+    await repo.permanentlyDeleteIncident(session, 'inc-1');
+
+    expect(calledFn).toBe('admin_purge_incident');
+    expect(calledArgs).toEqual({ p_incident_id: 'inc-1' });
+  });
+
+  it('maps a permission: prefixed rejection (non-system_admin caller) to a controlled AppError', async () => {
+    const repo = repoWithRpcError('permission: פעולה זו מוגבלת למנהלי מערכת בלבד');
+    await expect(repo.permanentlyDeleteIncident(session, 'inc-1')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  it('maps a not_found: prefixed rejection to a controlled AppError', async () => {
+    const repo = repoWithRpcError('not_found: התקלה לא נמצאה');
+    await expect(repo.permanentlyDeleteIncident(session, 'inc-1')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'התקלה לא נמצאה',
+    });
+  });
+
+  it('maps an invalid_transition: prefixed rejection (non-terminal incident) to a controlled AppError', async () => {
+    const repo = repoWithRpcError('invalid_transition: ניתן למחוק לצמיתות רק תקלה סגורה או מבוטלת (בארכיון)');
+    await expect(repo.permanentlyDeleteIncident(session, 'inc-1')).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+      message: 'ניתן למחוק לצמיתות רק תקלה סגורה או מבוטלת (בארכיון)',
+    });
+  });
+});

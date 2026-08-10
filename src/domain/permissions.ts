@@ -57,7 +57,17 @@ export type Capability =
    *  set_my_operational_notification_preference; this only controls
    *  whether the "עדכונים תפעוליים" section renders in the notification
    *  settings dialog. */
-  | 'manage_operational_notification_preferences';
+  | 'manage_operational_notification_preferences'
+  /** Permanently, irreversibly delete an archived (closed/cancelled)
+   *  incident and its entire live operational footprint from the database
+   *  (AVARIA v1.7.0, migration 0059) -- system_admin ONLY, unlike every
+   *  other capability above (all shared by at least two roles). A
+   *  deliberately destructive, exceptional purge action, never a lifecycle
+   *  action -- see admin_purge_incident. Real enforcement is entirely the
+   *  database RPC's own independent auth.uid()/active/role check; this
+   *  only controls whether the "מחיקה לצמיתות" item renders in
+   *  IncidentDetailPage's "פעולות נוספות" menu. */
+  | 'permanently_delete_incident';
 
 /**
  * Backend policy flags. In demo mode these mirror what would be secure
@@ -95,6 +105,7 @@ const matrix: Record<Role, Capability[]> = {
     'manage_incident_relations',
     'personalize_analytics',
     'manage_operational_notification_preferences',
+    'permanently_delete_incident',
   ],
   professional_manager: [
     'view_all_incidents',

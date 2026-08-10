@@ -3024,6 +3024,156 @@ describe('closed-incident count (countClosedIncidents)', () => {
   });
 });
 
+// AVARIA v1.7.0: permanent incident deletion. Mirrors admin_purge_incident
+// (migration 0059) as closely as LocalDemoRepository's own modeled tables
+// allow -- see permanentlyDeleteIncident's own doc comment for exactly what
+// is (and deliberately is not) modeled here.
+describe('permanent incident deletion (mirrors admin_purge_incident / migration 0059)', () => {
+  let repo: LocalDemoRepository;
+  beforeEach(() => {
+    repo = newRepo({ now: FIXED_NOW });
+  });
+
+  async function closeInc1() {
+    const incident = await repo.getIncident(supervisor1, 'inc-1');
+    return repo.closeIncident(supervisor1, 'inc-1', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      rootCause: 'תקלת חומרה',
+      resolution: 'הוחלף רכיב',
+      readiness: 'full',
+      confirmedCause: 'equipment',
+      treatmentOutcome: 'permanent_resolution',
+      resolutionAttribution: 'no_action_taken',
+      followUpNotes: '',
+      reportedToOps: 'no',
+      resolutionActionIds: [],
+      newTreatmentActions: [],
+    } as unknown as CloseIncidentInput);
+  }
+
+  it('rejects every non-system_admin role with FORBIDDEN, and touches nothing', async () => {
+    for (const s of [supervisor1, manager, tech1, viewer]) {
+      await expect(repo.permanentlyDeleteIncident(s, 'inc-5')).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    }
+    expect(await repo.getIncident(admin, 'inc-5')).not.toBeNull();
+  });
+
+  it('rejects a nonexistent incident for an authorized system_admin with NOT_FOUND', async () => {
+    await expect(repo.permanentlyDeleteIncident(admin, 'no-such-incident')).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('rejects a non-terminal (open) incident, even for a system_admin', async () => {
+    await expect(repo.permanentlyDeleteIncident(admin, 'inc-1')).rejects.toMatchObject({
+      code: 'INVALID_TRANSITION',
+    });
+    expect(await repo.getIncident(admin, 'inc-1')).not.toBeNull();
+  });
+
+  it('accepts an already-closed incident (seeded inc-5)', async () => {
+    await repo.permanentlyDeleteIncident(admin, 'inc-5');
+    expect(await repo.getIncident(admin, 'inc-5')).toBeNull();
+  });
+
+  it('accepts a cancelled incident', async () => {
+    const incident = await repo.getIncident(supervisor1, 'inc-2');
+    await repo.cancelIncident(supervisor1, 'inc-2', {
+      expectedVersion: incident!.version,
+      eventTime: FIXED_NOW.toISOString(),
+      cancellationReason: 'נפתחה בטעות',
+    });
+    await repo.permanentlyDeleteIncident(admin, 'inc-2');
+    expect(await repo.getIncident(admin, 'inc-2')).toBeNull();
+  });
+
+  it(
+    'purges the full dependency graph LocalDemoRepository models, removes a bidirectional relation from ' +
+      'both sides, leaves an unrelated incident and its notifications untouched, never rewinds the ' +
+      'incident-number sequence, preserves historical audit rows, and writes exactly one minimal tombstone',
+    async () => {
+      // Close inc-1 -- seeded with updates (upd-1a/upd-1b), a cause
+      // assessment (ca-1-1), treatment actions (ta-1-1/ta-1-2), and a
+      // relation to inc-4 (rel-1-4); closing it also generates operational
+      // notifications. A fully loaded dependency graph to purge.
+      await closeInc1();
+
+      expect((await repo.getIncidentUpdates(admin, 'inc-1')).length).toBeGreaterThan(0);
+      expect((await repo.getIncidentCauseAssessments(admin, 'inc-1')).length).toBeGreaterThan(0);
+      expect((await repo.getIncidentTreatmentActions(admin, 'inc-1')).length).toBeGreaterThan(0);
+      expect((await repo.getIncidentClosures(admin, 'inc-1')).length).toBeGreaterThan(0);
+      expect((await repo.getIncidentRelations(admin, 'inc-1')).length).toBeGreaterThan(0); // rel-1-4
+      expect((await repo.getIncidentRelations(admin, 'inc-4')).length).toBeGreaterThan(0); // same relation, other side
+
+      // At least one recipient must have gotten an incident_closed
+      // notification for inc-1 specifically.
+      const allSessions = [admin, supervisor1, supervisor2, manager, tech1, tech2, viewer];
+      const inc1NotificationsBefore = (
+        await Promise.all(allSessions.map((s) => repo.listNotifications(s)))
+      ).flat().filter((n) => n.incidentId === 'inc-1');
+      expect(inc1NotificationsBefore.length).toBeGreaterThan(0);
+
+      // A pre-existing notification tied to a DIFFERENT incident (seeded
+      // ntf-2, inc-7) must survive the purge untouched.
+      const inc7NotificationBefore = (await repo.listNotifications(tech1)).find((n) => n.id === 'ntf-2');
+      expect(inc7NotificationBefore).toBeDefined();
+
+      const auditCountBefore = (await repo.listAuditLogs(admin, {}, 1, 100)).total;
+
+      // Captures the sequence's current position from both sides of the
+      // purge (rather than reading the private counter directly) -- if the
+      // purge ever rewound or reused inc-1's freed number, the "after"
+      // creation's own number would collide with or fall behind this one.
+      const control = await repo.createIncident(admin, baseCreateInput({ description: 'בקרת רצף לפני המחיקה' }));
+
+      await repo.permanentlyDeleteIncident(admin, 'inc-1');
+
+      expect(await repo.getIncident(admin, 'inc-1')).toBeNull();
+      expect(await repo.getIncidentUpdates(admin, 'inc-1')).toEqual([]);
+      expect(await repo.getIncidentEvents(admin, 'inc-1')).toEqual([]);
+      expect(await repo.getIncidentCauseAssessments(admin, 'inc-1')).toEqual([]);
+      expect(await repo.getIncidentTreatmentActions(admin, 'inc-1')).toEqual([]);
+      expect(await repo.getIncidentClosures(admin, 'inc-1')).toEqual([]);
+      // The relation is gone from BOTH sides -- inc-4's own relation list no
+      // longer references the deleted incident (and, since getIncidentRelations
+      // would throw NOT_FOUND for a relation dangling on a missing incident,
+      // this call succeeding at all is itself proof the relation row is gone).
+      expect(await repo.getIncidentRelations(admin, 'inc-4')).toEqual([]);
+
+      const inc1NotificationsAfter = (
+        await Promise.all(allSessions.map((s) => repo.listNotifications(s)))
+      ).flat().filter((n) => n.incidentId === 'inc-1');
+      expect(inc1NotificationsAfter).toEqual([]);
+      // The unrelated inc-7 notification is untouched.
+      expect((await repo.listNotifications(tech1)).find((n) => n.id === 'ntf-2')).toEqual(inc7NotificationBefore);
+
+      // incidentSequences was never rewound: the next allocated number picks
+      // up strictly after the control incident's number, never reusing or
+      // colliding with inc-1's freed one.
+      const after = await repo.createIncident(admin, baseCreateInput({ description: 'בקרת רצף אחרי המחיקה' }));
+      const seqOf = (n: string) => Number(n.split('-')[1]);
+      expect(seqOf(after.number)).toBe(seqOf(control.number) + 1);
+
+      // Historical audit rows are fully preserved (nothing deleted), plus
+      // exactly one new minimal tombstone -- no operational payload.
+      const auditPage = await repo.listAuditLogs(admin, {}, 1, 100);
+      expect(auditPage.total).toBe(auditCountBefore + 3); // +2 for the two createIncident calls above, +1 tombstone
+      const tombstones = auditPage.items.filter((a) => a.action === 'incident_permanently_deleted');
+      expect(tombstones).toHaveLength(1);
+      const tombstone = tombstones[0];
+      expect(tombstone.entityType).toBe('incident');
+      expect(tombstone.entityId).toBe('inc-1');
+      expect(tombstone.incidentNumber).toBe('2026-001');
+      expect(tombstone.entityLabel).toBe('2026-001');
+      expect(tombstone.before).toBeNull();
+      expect(tombstone.after).toBeNull();
+      expect(tombstone.metadata).toBeNull();
+      expect(tombstone.summary).toBeNull();
+    },
+  );
+});
+
 describe('incident_events.operationId grouping (mirrors migrations 0025/0026)', () => {
   let repo: LocalDemoRepository;
   beforeEach(() => {
