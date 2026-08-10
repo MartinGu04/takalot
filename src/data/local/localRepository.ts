@@ -2931,6 +2931,62 @@ export class LocalDemoRepository implements Repository {
     return { ...incident };
   }
 
+  /**
+   * Permanently, irreversibly deletes an archived (closed/cancelled)
+   * incident and everything LocalDemoRepository actually models for it --
+   * mirrors admin_purge_incident (migration 0059) as closely as the two
+   * languages allow. system_admin only; every other role is rejected by
+   * requireCap exactly like every other capability-gated method here.
+   *
+   * Deliberately does NOT model handovers/handover_items,
+   * incident_status_checks, incident_report_events, or
+   * incident_severity_assessments -- LocalDemoRepository has never modeled
+   * any of those DB tables (no array for them exists in DemoDatabase),
+   * so there is nothing for this method to clean up there; inventing
+   * demo-only structures for tables this repository doesn't otherwise
+   * model would be new scope, not parity.
+   *
+   * incidentSequences is never read or written here either, matching the
+   * SQL RPC exactly -- the deleted number is never reused.
+   *
+   * Historical auditLogs entries for this incident are left completely
+   * untouched; exactly one minimal tombstone row (actor, incident
+   * id/number, timestamp, action type -- no operational payload) is added
+   * on success, mirroring write_audit()'s minimal call in the SQL RPC.
+   */
+  async permanentlyDeleteIncident(session: Session, incidentId: string): Promise<void> {
+    const actor = this.requireCap(session, 'permanently_delete_incident');
+    const incident = this.getIncidentOrThrow(incidentId);
+    if (isOpen(incident.status)) {
+      throw new AppError('INVALID_TRANSITION', 'ניתן למחוק לצמיתות רק תקלה סגורה או מבוטלת (בארכיון).');
+    }
+
+    this.db.incidentUpdates = this.db.incidentUpdates.filter((u) => u.incidentId !== incidentId);
+    this.db.incidentEvents = this.db.incidentEvents.filter((e) => e.incidentId !== incidentId);
+    if (this.db.incidentCauseAssessments) {
+      this.db.incidentCauseAssessments = this.db.incidentCauseAssessments.filter((a) => a.incidentId !== incidentId);
+    }
+    if (this.db.incidentTreatmentActions) {
+      this.db.incidentTreatmentActions = this.db.incidentTreatmentActions.filter((a) => a.incidentId !== incidentId);
+    }
+    if (this.db.incidentClosures) {
+      this.db.incidentClosures = this.db.incidentClosures.filter((c) => c.incidentId !== incidentId);
+    }
+    if (this.db.incidentRelations) {
+      this.db.incidentRelations = this.db.incidentRelations.filter(
+        (r) => r.incidentAId !== incidentId && r.incidentBId !== incidentId,
+      );
+    }
+    this.db.notifications = this.db.notifications.filter((n) => n.incidentId !== incidentId);
+    this.db.incidents = this.db.incidents.filter((i) => i.id !== incidentId);
+
+    this.audit(actor.id, 'incident_permanently_deleted', 'incident', incidentId, {
+      incidentNumber: incident.number,
+      entityLabel: incident.number,
+    });
+    this.persist();
+  }
+
   // --- related incidents ---
   // Mirrors supabase/migrations/0050's four RPCs as closely as the two
   // languages allow -- see domain/similarity.ts for the shared scoring

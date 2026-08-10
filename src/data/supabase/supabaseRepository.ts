@@ -1049,6 +1049,10 @@ export class SupabaseRepository implements Repository {
     return mapIncident(data);
   }
 
+  async permanentlyDeleteIncident(_s: Session, incidentId: string): Promise<void> {
+    await this.rpc<null>('admin_purge_incident', { p_incident_id: incidentId });
+  }
+
   async suggestSimilarIncidents(
     _s: Session,
     query: { systemId: string; locationId: string | null; reportedDomain: IncidentDomain | null; description: string },

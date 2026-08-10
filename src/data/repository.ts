@@ -438,6 +438,21 @@ export interface Repository {
   reopenIncident(session: Session, incidentId: string, input: ReopenIncidentInput): Promise<Incident>;
   addCorrection(session: Session, incidentId: string, input: CorrectionInput): Promise<void>;
   completeFollowUp(session: Session, incidentId: string, note: string): Promise<Incident>;
+  /**
+   * Permanently, irreversibly deletes an archived (closed/cancelled)
+   * incident and its entire live operational footprint (updates, events,
+   * classification/severity/report/status-check history, notifications,
+   * handover items scoped to it, related-incident links) -- system_admin
+   * only. Not a lifecycle action: the incident's number is never reused
+   * (incident_sequences is never touched), and pre-existing audit_logs
+   * history is preserved untouched; exactly one minimal tombstone row
+   * (actor, incident id/number, timestamp, action type -- no operational
+   * content) is added on success. The database RPC is the real
+   * authorization boundary; the frontend only hides the action when it
+   * already knows it would be rejected (wrong role, or a non-terminal
+   * incident).
+   */
+  permanentlyDeleteIncident(session: Session, incidentId: string): Promise<void>;
 
   // --- related incidents ---
   /**

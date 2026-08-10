@@ -670,6 +670,164 @@ describe('incident cancellation: dialog and submission', () => {
   });
 });
 
+// AVARIA v1.7.0: permanent incident deletion (system_admin only, terminal
+// incidents only), reachable from IncidentDetailPage's existing "פעולות
+// נוספות" menu -- never from ArchivePage's own cards. Real app, real demo
+// repository, mirroring the cancellation tests' approach above. inc-5
+// (seed.ts) is a pre-seeded closed incident, reached via ארכיון (mirrors
+// ArchivePage.test.tsx's own navigation, since IncidentsPage's own list
+// does not surface terminal incidents).
+const INC5_TEXT = /מערכת בטא הושבתה לחלוטין למשך הטיפול/; // inc-5: seeded closed
+
+async function openInc5DetailAs(loginTestId: string) {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByTestId(loginTestId));
+  const sidebarNav = screen.getByRole('navigation', { name: 'ניווט ראשי' });
+  await user.click(within(sidebarNav).getByRole('link', { name: 'ארכיון' }));
+  await within(main()).findByRole('heading', { name: /ארכיון/ });
+  const card = await within(main()).findByText(INC5_TEXT);
+  await user.click(card.closest('a.incident-card') as HTMLElement);
+  await within(main()).findByText('סיכום סגירה'); // confirms we landed on the closed incident's detail page
+  return user;
+}
+
+async function openDeleteDialogAsAdmin() {
+  const user = await openInc5DetailAs('login-u-admin');
+  const menu = await openMoreActions(user);
+  await user.click(within(menu).getByRole('menuitem', { name: 'מחיקה לצמיתות' }));
+  const dialog = await screen.findByRole('dialog', { name: 'מחיקת תקלה לצמיתות' });
+  const input = within(dialog).getByLabelText(/^להמשך, יש להקליד את מספר התקלה המדויק/) as HTMLInputElement;
+  const incidentNumber = input.placeholder;
+  return { user, dialog, input, incidentNumber };
+}
+
+describe('permanent incident deletion: visibility', () => {
+  it('offers מחיקה לצמיתות to a system_admin on a terminal (closed) incident, styled as destructive', async () => {
+    const user = await openInc5DetailAs('login-u-admin');
+    const menu = await openMoreActions(user);
+    const item = within(menu).getByRole('menuitem', { name: 'מחיקה לצמיתות' });
+    expect(item).toBeInTheDocument();
+    expect(item).toHaveClass('text-red-700');
+  });
+
+  it('does not offer מחיקה לצמיתות to a professional_manager (no permanently_delete_incident capability)', async () => {
+    const user = await openInc5DetailAs('login-u-manager');
+    const menu = await openMoreActions(user); // still has export_data, so the overflow trigger exists
+    expect(within(menu).queryByRole('menuitem', { name: 'מחיקה לצמיתות' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer מחיקה לצמיתות to a shift_supervisor (no permanently_delete_incident capability)', async () => {
+    const user = await openInc5DetailAs('login-u-supervisor-1');
+    const menu = await openMoreActions(user);
+    expect(within(menu).queryByRole('menuitem', { name: 'מחיקה לצמיתות' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer מחיקה לצמיתות to a technician, who has no overflow menu at all on this incident', async () => {
+    await openInc5DetailAs('login-u-tech-1');
+    expect(screen.queryByRole('button', { name: 'פעולות נוספות' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer מחיקה לצמיתות to a viewer, who has no overflow menu at all on this incident', async () => {
+    await openInc5DetailAs('login-u-viewer');
+    expect(screen.queryByRole('button', { name: 'פעולות נוספות' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer מחיקה לצמיתות on a non-terminal (open) incident, even for a system_admin', async () => {
+    const user = await openIncidentDetailAsAdmin(); // inc-1, open
+    const menu = await openMoreActions(user);
+    expect(within(menu).queryByRole('menuitem', { name: 'מחיקה לצמיתות' })).not.toBeInTheDocument();
+  });
+});
+
+describe('permanent incident deletion: dialog and submission', () => {
+  it('keeps the confirm button disabled until the exact incident number is typed, and clears/re-arms on reopen', async () => {
+    const { user, dialog, input, incidentNumber } = await openDeleteDialogAsAdmin();
+    const confirmButton = within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' });
+    expect(confirmButton).toBeDisabled();
+
+    await user.type(input, 'מספר שגוי');
+    expect(confirmButton).toBeDisabled();
+
+    await user.clear(input);
+    await user.type(input, incidentNumber.slice(0, -1)); // partial match
+    expect(confirmButton).toBeDisabled();
+
+    await user.type(input, incidentNumber.slice(-1));
+    expect(confirmButton).not.toBeDisabled();
+
+    // Closing and reopening must not leave the typed text (or the armed
+    // confirm button) behind for the next attempt.
+    await user.click(within(dialog).getByRole('button', { name: 'ביטול' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת תקלה לצמיתות' })).not.toBeInTheDocument());
+    const menu = await openMoreActions(user);
+    await user.click(within(menu).getByRole('menuitem', { name: 'מחיקה לצמיתות' }));
+    const reopenedDialog = await screen.findByRole('dialog', { name: 'מחיקת תקלה לצמיתות' });
+    expect(within(reopenedDialog).getByRole('button', { name: 'מחיקה לצמיתות' })).toBeDisabled();
+    expect(
+      (within(reopenedDialog).getByLabelText(/^להמשך, יש להקליד את מספר התקלה המדויק/) as HTMLInputElement).value,
+    ).toBe('');
+  });
+
+  it('requires a second, explicit confirmation before the repository is ever called', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const spy = vi.spyOn(LocalDemoRepository.prototype, 'permanentlyDeleteIncident');
+
+    const { user, dialog, input, incidentNumber } = await openDeleteDialogAsAdmin();
+    await user.type(input, incidentNumber);
+    await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+    // Typing the exact number and pressing the destructive button only
+    // opens the final ConfirmDialog -- it must not call the repository yet.
+    const confirmDialog = await screen.findByRole('dialog', { name: 'מחיקת תקלה לצמיתות' });
+    expect(within(confirmDialog).getByText(new RegExp(`למחוק לצמיתות את תקלה ${incidentNumber}\\?`))).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+
+    // Cancelling the final confirmation does nothing: no call, dialog
+    // returns to the typed-number step (still open), nothing navigated.
+    await user.click(within(confirmDialog).getByRole('button', { name: 'ביטול' }));
+    expect(spy).not.toHaveBeenCalled();
+    await within(main()).findByText('סיכום סגירה'); // still on inc-5's own detail page
+
+    spy.mockRestore();
+  });
+
+  it('permanently deletes the incident end to end: navigates to /archive, and the incident is gone from the archive list', async () => {
+    const { user, dialog, input, incidentNumber } = await openDeleteDialogAsAdmin();
+    await user.type(input, incidentNumber);
+    await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+    const confirmDialog = await screen.findByRole('dialog', { name: 'מחיקת תקלה לצמיתות' });
+    await user.click(within(confirmDialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+    expect(await screen.findByText('התקלה נמחקה לצמיתות.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'מחיקת תקלה לצמיתות' })).not.toBeInTheDocument());
+
+    // Navigated to /archive, and its list no longer includes the deleted incident.
+    await within(main()).findByRole('heading', { name: /ארכיון/ });
+    await waitFor(() => expect(within(main()).queryByText(INC5_TEXT)).not.toBeInTheDocument());
+  });
+
+  it('on failure, stays on the incident page, shows the error, and never navigates away', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const { AppError } = await import('../data/repository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype, 'permanentlyDeleteIncident')
+      .mockRejectedValueOnce(new AppError('CONFLICT', 'לא ניתן למחוק את התקלה כעת. יש לרענן את הדף ולנסות שוב.'));
+
+    const { user, dialog, input, incidentNumber } = await openDeleteDialogAsAdmin();
+    await user.type(input, incidentNumber);
+    await user.click(within(dialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+    const confirmDialog = await screen.findByRole('dialog', { name: 'מחיקת תקלה לצמיתות' });
+    await user.click(within(confirmDialog).getByRole('button', { name: 'מחיקה לצמיתות' }));
+
+    expect(await screen.findByText('לא ניתן למחוק את התקלה כעת. יש לרענן את הדף ולנסות שוב.')).toBeInTheDocument();
+    await within(main()).findByText('סיכום סגירה'); // still on inc-5's own detail page, never navigated to /archive
+    expect(window.location.pathname).not.toBe('/archive');
+
+    spy.mockRestore();
+  });
+});
+
 // Migration 0021 (incident-opening completion): תקשוב למבצעים / WISDOM must
 // render correctly both for a freshly created incident (already covered end
 // to end in IncidentCreatePage.test.tsx) and for PRE-EXISTING seeded
