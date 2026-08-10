@@ -9,6 +9,7 @@ import type {
   IncidentTreatmentAction,
   IncidentUpdate,
   LocationRecord,
+  OperationalNotificationEventType,
   PendingPersonnel,
   Profile,
   SystemRecord,
@@ -84,6 +85,18 @@ export interface DemoDatabase {
    *  this feature existed) means "use the role default," exactly like the
    *  hosted table's "no row" state -- see src/domain/analyticsPreferences.ts. */
   analyticsPreferences?: Record<string, AnalyticsModuleKey[]>;
+  /** Per-user, per-event operational notification preference override
+   *  (AVARIA v1.6.0, migration 0058) -- mirrors operational_notification_preferences
+   *  exactly: keyed by userId, then by OperationalNotificationEventType.
+   *  Absence of a userId key, or of a specific event type within it, means
+   *  "use the fixed v1.6 default matrix" (see
+   *  OPERATIONAL_NOTIFICATION_DEFAULTS in localRepository.ts) -- same "no
+   *  row = default" sparse-override shape as analyticsPreferences above.
+   *  Optional for databases persisted before this feature existed. */
+  operationalNotificationPreferences?: Record<
+    string,
+    Partial<Record<OperationalNotificationEventType, { inAppEnabled: boolean; pushEnabled: boolean }>>
+  >;
   sequences: Record<string, number>; // year -> last allocated number
   policy: PolicyFlags;
   /** Optional for databases persisted before this feature existed --
@@ -110,6 +123,7 @@ export function emptyDatabase(): DemoDatabase {
     auditLogs: [],
     pendingPersonnel: [],
     analyticsPreferences: {},
+    operationalNotificationPreferences: {},
     sequences: {},
     policy: { allowSupervisorReopen: false, viewerExportUserIds: [] },
     pushSubscriptions: [],

@@ -46,7 +46,18 @@ export type Capability =
    *  overloading an unrelated one). Real enforcement is the database's own
    *  RLS + set_my_analytics_visible_modules role check; this only controls
    *  whether the "התאמת התצוגה" affordance renders. */
-  | 'personalize_analytics';
+  | 'personalize_analytics'
+  /** Personalize per-event operational notification preferences (bell +
+   *  Push) -- shift_supervisor and above, matching the database's own
+   *  is_operational_role() exactly (migration 0058, AVARIA v1.6.0), the
+   *  same role set as personalize_analytics but a distinct concept (this
+   *  one is about notification delivery, not analytics page layout).
+   *  Real enforcement is the database's own RLS + is_operational_role()
+   *  check inside get_my_operational_notification_preferences /
+   *  set_my_operational_notification_preference; this only controls
+   *  whether the "עדכונים תפעוליים" section renders in the notification
+   *  settings dialog. */
+  | 'manage_operational_notification_preferences';
 
 /**
  * Backend policy flags. In demo mode these mirror what would be secure
@@ -83,6 +94,7 @@ const matrix: Record<Role, Capability[]> = {
     'complete_follow_up',
     'manage_incident_relations',
     'personalize_analytics',
+    'manage_operational_notification_preferences',
   ],
   professional_manager: [
     'view_all_incidents',
@@ -100,6 +112,7 @@ const matrix: Record<Role, Capability[]> = {
     'complete_follow_up',
     'manage_incident_relations',
     'personalize_analytics',
+    'manage_operational_notification_preferences',
   ],
   shift_supervisor: [
     'view_all_incidents',
@@ -115,6 +128,7 @@ const matrix: Record<Role, Capability[]> = {
     'complete_follow_up',
     'manage_incident_relations',
     'personalize_analytics',
+    'manage_operational_notification_preferences',
     // 'reopen_incident' is granted only via PolicyFlags.allowSupervisorReopen
   ],
   technician: ['view_all_incidents', 'technical_update', 'create_incident', 'close_incident', 'assign_incident'],

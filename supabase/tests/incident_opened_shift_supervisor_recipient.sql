@@ -1,10 +1,24 @@
--- Focused verification for migration 0057: active shift_supervisor users
--- now receive the canonical incident_opened operational broadcast, exactly
--- like active professional_manager users already do -- while every other
--- notify_operational_recipients()-driven broadcast type (incident_updated,
--- incident_closed, incident_cancelled, incident_reopened) keeps its exact
--- existing recipient set. Runs in one transaction that rolls back at the
--- end; leaves the database unchanged.
+-- Focused verification for shift_supervisor's recipient status across
+-- notify_operational_recipients()-driven broadcasts.
+--
+-- HISTORY: migration 0057 originally added active shift_supervisor users as
+-- recipients of ONLY the incident_opened broadcast, deliberately scoped
+-- narrow (see that migration's own header) -- every other broadcast type
+-- (incident_updated/closed/cancelled/reopened) explicitly excluded
+-- shift_supervisor at the time.
+--
+-- SUPERSEDED by migration 0058 (AVARIA v1.6.0, per-user operational
+-- notification preferences): shift_supervisor is now a full eligible
+-- operational recipient for ALL FIVE broadcast types, exactly like
+-- professional_manager and system_admin, gated by each recipient's
+-- resolved per-event in-app preference (default: on, for all five --
+-- see operational_notification_preferences.sql). Section 4 below,
+-- previously asserting "still receives nothing" for the four non-opened
+-- types, now asserts the opposite -- this is the intentional widening
+-- 0058's own header documents, not a regression.
+--
+-- Runs in one transaction that rolls back at the end; leaves the database
+-- unchanged.
 \pset pager off
 begin;
 
@@ -28,9 +42,11 @@ grant execute on function pg_temp.as_user(uuid) to authenticated;
 -- Fixtures: one actor (creates the incidents), one active
 -- shift_supervisor recipient, one active professional_manager recipient
 -- (regression control -- must keep receiving exactly as before), one
--- active system_admin with operational_notifications_enabled=true
--- (regression control), one INACTIVE shift_supervisor (must receive
--- nothing), and one active technician (never a recipient of this
+-- active system_admin (regression control -- receives via the new v1.6
+-- default matrix regardless of the now-inert legacy
+-- operational_notifications_enabled column, kept true here only to prove
+-- it no longer matters either way), one INACTIVE shift_supervisor (must
+-- receive nothing), and one active technician (never a recipient of this
 -- broadcast, regardless of role changes here).
 -- =====================================================================
 insert into auth.users (id, email, email_confirmed_at) values
@@ -151,9 +167,13 @@ end $$;
 
 -- =====================================================================
 -- 4. Routine broadcast types (incident_updated, incident_closed,
---    incident_cancelled, incident_reopened) are COMPLETELY UNCHANGED --
---    an active shift_supervisor still receives NONE of them, exactly as
---    before this migration.
+--    incident_cancelled, incident_reopened) -- v1.6.0 (migration 0058)
+--    WIDENING: an active shift_supervisor now receives all four of these
+--    too, by default, exactly like professional_manager/system_admin
+--    (each recipient's default_in_app_enabled = true for every one of the
+--    five event types -- see operational_notification_defaults). This is
+--    the intentional, product-approved behavior change from 0057's
+--    original narrow scope, not a regression.
 -- =====================================================================
 do $$
 declare
@@ -171,28 +191,28 @@ begin
   perform notify_operational_recipients('incident_updated', 'update', v_incident_id, 'x', v_op_id, '{}'::uuid[]);
   select exists(select 1 from notifications where incident_id = v_incident_id and type = 'incident_updated'
     and user_id = '00000000-0000-0000-0000-000000006702') into v_has_supervisor;
-  perform pg_temp.check_result('4a: incident_updated -- shift_supervisor still receives nothing (unchanged)', not v_has_supervisor);
+  perform pg_temp.check_result('4a: incident_updated -- shift_supervisor now receives it by default (v1.6.0 widening)', v_has_supervisor);
 
   v_op_id := gen_random_uuid();
   perform notify_operational_recipients('incident_closed', 'update', v_incident_id, 'x', v_op_id, '{}'::uuid[]);
   select exists(select 1 from notifications where incident_id = v_incident_id and type = 'incident_closed'
     and user_id = '00000000-0000-0000-0000-000000006702') into v_has_supervisor;
-  perform pg_temp.check_result('4b: incident_closed -- shift_supervisor still receives nothing (unchanged)', not v_has_supervisor);
+  perform pg_temp.check_result('4b: incident_closed -- shift_supervisor now receives it by default (v1.6.0 widening)', v_has_supervisor);
 
   v_op_id := gen_random_uuid();
   perform notify_operational_recipients('incident_cancelled', 'update', v_incident_id, 'x', v_op_id, '{}'::uuid[]);
   select exists(select 1 from notifications where incident_id = v_incident_id and type = 'incident_cancelled'
     and user_id = '00000000-0000-0000-0000-000000006702') into v_has_supervisor;
-  perform pg_temp.check_result('4c: incident_cancelled -- shift_supervisor still receives nothing (unchanged)', not v_has_supervisor);
+  perform pg_temp.check_result('4c: incident_cancelled -- shift_supervisor now receives it by default (v1.6.0 widening)', v_has_supervisor);
 
   v_op_id := gen_random_uuid();
   perform notify_operational_recipients('incident_reopened', 'update', v_incident_id, 'x', v_op_id, '{}'::uuid[]);
   select exists(select 1 from notifications where incident_id = v_incident_id and type = 'incident_reopened'
     and user_id = '00000000-0000-0000-0000-000000006702') into v_has_supervisor;
-  perform pg_temp.check_result('4d: incident_reopened (broadcast) -- shift_supervisor still receives nothing (unchanged)', not v_has_supervisor);
+  perform pg_temp.check_result('4d: incident_reopened (broadcast) -- shift_supervisor now receives it by default (v1.6.0 widening)', v_has_supervisor);
 
-  -- Regression control: professional_manager and enabled system_admin
-  -- still receive these routine broadcasts exactly as before.
+  -- Regression control: professional_manager and system_admin still
+  -- receive these routine broadcasts exactly as before.
   select exists(select 1 from notifications where incident_id = v_incident_id and type = 'incident_reopened'
     and user_id = '00000000-0000-0000-0000-000000006703') into v_has_supervisor;
   perform pg_temp.check_result('4e: incident_reopened (broadcast) -- professional_manager still receives it (regression)', v_has_supervisor);

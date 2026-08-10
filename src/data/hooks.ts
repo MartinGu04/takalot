@@ -11,7 +11,7 @@ import {
   type IncidentFilters,
   type IncidentSort,
 } from './repository';
-import type { IncidentDomain } from '../domain/types';
+import type { IncidentDomain, OperationalNotificationEventType } from '../domain/types';
 import { canonicalizeAnalyticsFilters } from '../domain/analyticsSummary';
 import { normalizeAnalyticsModules } from '../domain/analyticsPreferences';
 import { useAuth, useSession } from '../auth/AuthContext';
@@ -148,6 +148,38 @@ export function useSetAnalyticsPreferences() {
   return useAppMutation((modules: AnalyticsModuleKey[] | null) => repo().setAnalyticsVisibleModules(session, modules), {
     invalidate: [['analyticsPreferences', session.userId]],
   });
+}
+
+/** The caller's own EFFECTIVE per-event operational notification
+ *  preferences ("עדכונים תפעוליים", AVARIA v1.6.0) -- always exactly five
+ *  rows, each already merged with the fixed default matrix server-side
+ *  (see repository.ts's getMyOperationalNotificationPreferences doc).
+ *  Eligibility-gated server-side (migration 0058): a non-operational
+ *  role's call rejects with a controlled FORBIDDEN error, so this hook
+ *  should only be mounted behind a hasCapability('manage_operational_notification_preferences')
+ *  check, mirroring useAnalyticsPreferences' own sibling gate. */
+export function useOperationalNotificationPreferences() {
+  const session = useSession();
+  return useQuery({
+    queryKey: ['operationalNotificationPreferences', session.userId],
+    queryFn: () => repo().getMyOperationalNotificationPreferences(session),
+  });
+}
+
+/** Sets ONE per-event preference override. Self-only and eligibility-gated
+ *  server-side, exactly like useSetAnalyticsPreferences. Returns (and
+ *  caches) the caller's full, freshly-resolved five-row effective set on
+ *  success. */
+export function useSetOperationalNotificationPreference() {
+  const session = useSession();
+  return useAppMutation(
+    (input: { eventType: OperationalNotificationEventType; inAppEnabled: boolean; pushEnabled: boolean }) =>
+      repo().setMyOperationalNotificationPreference(session, input.eventType, {
+        inAppEnabled: input.inAppEnabled,
+        pushEnabled: input.pushEnabled,
+      }),
+    { invalidate: [['operationalNotificationPreferences', session.userId]] },
+  );
 }
 
 /** Bounded, on-demand incident summaries for exactly ONE trend-chart bucket

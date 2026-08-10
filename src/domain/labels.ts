@@ -8,6 +8,7 @@ import type {
   EventType,
   NotificationType,
   NotificationCategory,
+  OperationalNotificationEventType,
   SystemCategory,
   LocationCategory,
   IncidentDomain,
@@ -264,6 +265,29 @@ export const notificationTypeLabels: Record<NotificationType, string> = {
   incident_closed: 'תקלה נסגרה',
   incident_cancelled: 'תקלה בוטלה',
 };
+
+/** Row labels for the "עדכונים תפעוליים" preference settings (AVARIA
+ *  v1.6.0) -- deliberately distinct wording from notificationTypeLabels
+ *  above: these name the EVENT being subscribed to (nominal, "פתיחת
+ *  תקלה"), not a specific past notification instance (sentence-form, "תקלה
+ *  נפתחה"). Fixed display order, matching the product spec exactly. */
+export const operationalNotificationEventLabels: Record<OperationalNotificationEventType, string> = {
+  incident_opened: 'פתיחת תקלה',
+  incident_updated: 'עדכון תקלה',
+  incident_closed: 'סגירת תקלה',
+  incident_cancelled: 'ביטול תקלה',
+  incident_reopened: 'פתיחה מחדש',
+};
+
+/** Fixed display order for the operational notification preference rows --
+ *  product-defined, matching the spec's table order exactly. */
+export const OPERATIONAL_NOTIFICATION_EVENT_ORDER: OperationalNotificationEventType[] = [
+  'incident_opened',
+  'incident_updated',
+  'incident_closed',
+  'incident_cancelled',
+  'incident_reopened',
+];
 
 /** Bell notification-center filters: 'all' plus the two durable categories. */
 export type NotificationFilter = 'all' | NotificationCategory;

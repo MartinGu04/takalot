@@ -16,18 +16,43 @@ import type {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Approved v1.5 send policy -- MUST mirror migration 0054's trigger WHEN
- *  clause exactly. Re-checked here as defense in depth: this function must
- *  never trust that only qualifying rows can reach it (e.g. a manually
- *  reinvoked webhook, a future trigger edit that loosens the WHEN clause). */
+/** Approved v1.6 send policy (migration 0058) -- MUST mirror migration
+ *  0058's trg_notifications_push_dispatch trigger WHEN clause exactly.
+ *  Re-checked here as defense in depth: this function must never trust
+ *  that only qualifying rows can reach it (e.g. a manually reinvoked
+ *  webhook, a future trigger edit that loosens the WHEN clause).
+ *
+ *  push_eligible (migration 0058) replaces the old hardcoded
+ *  `type === "incident_opened"` rule -- for an "update"-category row it
+ *  carries the RECIPIENT's own resolved per-event Push preference,
+ *  stamped once at INSERT time by notify_operational_recipients(), so
+ *  this check stays a plain, per-row policy exactly like before; only
+ *  what decides push_eligible's value changed, not how it's consumed
+ *  here. */
 export function qualifiesForPush(
-  row: Pick<NotificationRow, "category" | "type">,
+  row: Pick<NotificationRow, "category" | "push_eligible">,
 ): boolean {
   return row.category === "action_required" ||
-    (row.category === "update" && row.type === "incident_opened");
+    (row.category === "update" && row.push_eligible === true);
 }
 
 const TITLE = "AVARIA";
+
+/** Approved fixed lock-screen copy for the four "update"-category
+ *  operational broadcast types that were NEVER push-eligible before
+ *  migration 0058 (only incident_opened was) -- v1.6 lets a user opt into
+ *  Push for any of the five operational event types, so every one of them
+ *  now needs approved copy or an eligible row would silently degrade to
+ *  the Edge Function's "no_payload" skip. Mirrors the short, verb-first
+ *  style of the existing incident_opened copy; never notifications.text or
+ *  any other operational field. */
+const UPDATE_COPY: Partial<Record<NotificationRow["type"], string>> = {
+  incident_opened: "נפתחה תקלה חדשה",
+  incident_updated: "עודכנה תקלה",
+  incident_closed: "נסגרה תקלה",
+  incident_cancelled: "בוטלה תקלה",
+  incident_reopened: "תקלה נפתחה מחדש",
+};
 
 /**
  * Approved fixed lock-screen copy (never notifications.text, never any
@@ -50,8 +75,9 @@ export function buildPushBody(
   const suffix = actorName && actorName.trim().length > 0
     ? ` · ע״י ${actorName.trim()}`
     : "";
-  if (row.category === "update" && row.type === "incident_opened") {
-    return "נפתחה תקלה חדשה" + suffix;
+  if (row.category === "update") {
+    const copy = UPDATE_COPY[row.type];
+    return copy ? copy + suffix : null;
   }
   if (row.category === "action_required" && row.type === "incident_reopened") {
     return "תקלה שבאחריותך נפתחה מחדש" + suffix;

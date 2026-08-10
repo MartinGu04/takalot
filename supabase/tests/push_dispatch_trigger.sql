@@ -1,7 +1,9 @@
 -- Focused verification for migration 0054 (AVARIA v1.5.0 Phase 5A: server
--- Push dispatch trigger): trigger existence/definition, the v1.5 send
--- policy's include/exclude boundary, fail-safe behavior with missing/blank
--- Vault configuration, no client EXECUTE/table access, and that no
+-- Push dispatch trigger): trigger existence/definition, the send policy's
+-- include/exclude boundary (updated by migration 0058/v1.6.0 to key off
+-- notifications.push_eligible instead of a hardcoded type comparison --
+-- see section B/C below), fail-safe behavior with missing/blank Vault
+-- configuration, no client EXECUTE/table access, and that no
 -- secret/project-specific value is embedded anywhere reachable from SQL.
 -- Runs only against the local scratch database created by tests/run.sh
 -- (net.http_request_queue and vault.* here are this harness's own LOCAL
@@ -92,39 +94,70 @@ begin
     v_after = v_before + 1
   );
 
-  -- C: category = 'update' AND type = 'incident_opened' -- included.
+  -- C (v1.6, migration 0058): category = 'update' AND push_eligible = true
+  -- -- included, REGARDLESS of type. push_eligible is what
+  -- notify_operational_recipients() now stamps per-recipient at insert
+  -- time (see operational_notification_preferences.sql for that
+  -- resolution logic); this trigger-level test exercises the WHEN clause
+  -- directly via raw inserts, exactly as it always has, just keyed to the
+  -- new column instead of a hardcoded type comparison.
+  select count(*) into v_before from net.http_request_queue;
+  insert into notifications (user_id, type, text, category, push_eligible)
+    values ('00000000-0000-0000-0000-000000006501', 'incident_opened', 'x', 'update', true);
+  select count(*) into v_after from net.http_request_queue;
+  perform pg_temp.check_result(
+    'C: category=update AND push_eligible=true (incident_opened) queues a dispatch', v_after = v_before + 1
+  );
+
+  select count(*) into v_before from net.http_request_queue;
+  insert into notifications (user_id, type, text, category, push_eligible)
+    values ('00000000-0000-0000-0000-000000006501', 'incident_updated', 'x', 'update', true);
+  select count(*) into v_after from net.http_request_queue;
+  perform pg_temp.check_result(
+    'C: category=update AND push_eligible=true (incident_updated -- a non-opened type with an explicit Push preference on) queues a dispatch',
+    v_after = v_before + 1
+  );
+
+  -- B: category='update' AND push_eligible=false (the column's own
+  -- default) -- excluded, never reach the trigger function at all (the
+  -- WHEN clause itself blocks them, not the function body). Proves the
+  -- v1.6 policy is driven by push_eligible, not type: even
+  -- incident_opened (the one type that was UNCONDITIONALLY included under
+  -- the old v1.5 hardcoded policy) is now excluded once its resolved
+  -- per-recipient Push preference was off at creation time.
   select count(*) into v_before from net.http_request_queue;
   insert into notifications (user_id, type, text, category)
     values ('00000000-0000-0000-0000-000000006501', 'incident_opened', 'x', 'update');
   select count(*) into v_after from net.http_request_queue;
-  perform pg_temp.check_result('C: category=update AND type=incident_opened queues a dispatch', v_after = v_before + 1);
+  perform pg_temp.check_result(
+    'B: category=update AND push_eligible=false (incident_opened) is excluded -- v1.6 no longer hardcodes this type as always-on',
+    v_after = v_before
+  );
 
-  -- B: routine 'update' rows -- excluded, never reach the trigger function
-  -- at all (the WHEN clause itself blocks them, not the function body).
   select count(*) into v_before from net.http_request_queue;
   insert into notifications (user_id, type, text, category)
     values ('00000000-0000-0000-0000-000000006501', 'incident_updated', 'x', 'update');
   select count(*) into v_after from net.http_request_queue;
-  perform pg_temp.check_result('B: category=update AND type=incident_updated is excluded', v_after = v_before);
+  perform pg_temp.check_result('B: category=update AND push_eligible=false (incident_updated) is excluded', v_after = v_before);
 
   select count(*) into v_before from net.http_request_queue;
   insert into notifications (user_id, type, text, category)
     values ('00000000-0000-0000-0000-000000006501', 'incident_closed', 'x', 'update');
   select count(*) into v_after from net.http_request_queue;
-  perform pg_temp.check_result('B: category=update AND type=incident_closed is excluded', v_after = v_before);
+  perform pg_temp.check_result('B: category=update AND push_eligible=false (incident_closed) is excluded', v_after = v_before);
 
   select count(*) into v_before from net.http_request_queue;
   insert into notifications (user_id, type, text, category)
     values ('00000000-0000-0000-0000-000000006501', 'incident_cancelled', 'x', 'update');
   select count(*) into v_after from net.http_request_queue;
-  perform pg_temp.check_result('B: category=update AND type=incident_cancelled is excluded', v_after = v_before);
+  perform pg_temp.check_result('B: category=update AND push_eligible=false (incident_cancelled) is excluded', v_after = v_before);
 
   select count(*) into v_before from net.http_request_queue;
   insert into notifications (user_id, type, text, category)
     values ('00000000-0000-0000-0000-000000006501', 'incident_reopened', 'x', 'update');
   select count(*) into v_after from net.http_request_queue;
   perform pg_temp.check_result(
-    'B: category=update AND type=incident_reopened (the broadcast half, not the personal notification) is excluded',
+    'B: category=update AND push_eligible=false (incident_reopened, the broadcast half, not the personal notification) is excluded',
     v_after = v_before
   );
 end $$;
