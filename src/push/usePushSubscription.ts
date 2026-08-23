@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '../auth/AuthContext';
 import { repo } from '../data/hooks';
+import type { Session } from '../data/repository';
 import { useToast } from '../components/ui';
 import { usePwaUpdate } from '../pwa/usePwaUpdate';
 import {
@@ -12,6 +13,7 @@ import {
   isPushApiSupported,
   isStandaloneDisplayMode,
 } from './pushCapabilities';
+import { clearPushWanted, isPushWanted, rememberPushWanted } from './pushDevicePreference';
 import { getConfiguredVapidPublicKey, isValidVapidPublicKey, urlBase64ToUint8Array } from './vapidKey';
 
 export type PushSubscriptionState =
@@ -50,6 +52,72 @@ const UPDATE_REQUIRED_MESSAGE = 'יש לעדכן את המערכת לפני הפ
 const ENABLED_MESSAGE = 'התראות הופעלו במכשיר זה';
 const DISABLED_MESSAGE = 'התראות כובו במכשיר זה';
 const DISCONNECTED_ALL_MESSAGE = 'כל המכשירים נותקו';
+
+type SubscribeAndPersistResult =
+  | { ok: true }
+  | { ok: false; reason: 'permission-not-granted' | 'permission-denied' | 'save-failed' };
+
+/**
+ * The one place that turns a browser PushSubscription into a server-saved
+ * one -- shared by enable() (explicit, user-gestured) and the silent
+ * auto-restore effect below (background, on login). Both go through the
+ * exact same ownership/save call (Repository.savePushSubscription, tied to
+ * auth.uid()), so auto-restore can never attach a shared-browser endpoint to
+ * the wrong account any differently than a manual enable() already would.
+ *
+ * `allowPermissionPrompt: false` (auto-restore) never calls
+ * Notification.requestPermission() -- if permission somehow is not already
+ * 'granted' by the time this runs, it fails closed instead of prompting.
+ */
+async function subscribeAndPersist(
+  session: Session,
+  vapidKey: string,
+  options: { allowPermissionPrompt: boolean },
+): Promise<SubscribeAndPersistResult> {
+  const registration = await navigator.serviceWorker.ready;
+  let permission: NotificationPermission = Notification.permission;
+  if (permission === 'default') {
+    if (!options.allowPermissionPrompt) {
+      return { ok: false, reason: 'permission-not-granted' };
+    }
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== 'granted') {
+    return { ok: false, reason: permission === 'denied' ? 'permission-denied' : 'permission-not-granted' };
+  }
+  let subscription = await registration.pushManager.getSubscription();
+  // Tracks whether THIS call created the subscription, so a later
+  // server-save failure only rolls back what this action itself did -- a
+  // pre-existing subscription (e.g. a shared-browser endpoint from a
+  // previous account) is never torn down just because the transfer failed;
+  // it is left for the next attempt or disable/disconnect flow to resolve.
+  let createdNew = false;
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    });
+    createdNew = true;
+  }
+  const keys = subscription.toJSON().keys;
+  if (!keys?.p256dh || !keys.auth) {
+    throw new Error('push subscription missing encryption keys');
+  }
+  try {
+    await repo().savePushSubscription(session, subscription.endpoint, { p256dh: keys.p256dh, auth: keys.auth });
+  } catch {
+    if (createdNew) {
+      try {
+        await subscription.unsubscribe();
+      } catch {
+        // Best-effort rollback -- the caller must not report success either
+        // way; evaluate() reflects whatever is actually true afterward.
+      }
+    }
+    return { ok: false, reason: 'save-failed' };
+  }
+  return { ok: true };
+}
 
 export function usePushSubscription(): UsePushSubscriptionResult {
   const session = useSession();
@@ -152,50 +220,25 @@ export function usePushSubscription(): UsePushSubscriptionResult {
     }
     setState('loading');
     try {
-      const registration = await navigator.serviceWorker.ready;
-      let permission: NotificationPermission = Notification.permission;
-      if (permission === 'default') {
-        permission = await Notification.requestPermission();
-      }
-      if (permission !== 'granted') {
-        setState(permission === 'denied' ? 'permission-denied' : 'permission-default');
-        return;
-      }
-      let subscription = await registration.pushManager.getSubscription();
-      // Tracks whether THIS call created the subscription, so a later
-      // server-save failure only rolls back what this action itself did --
-      // a pre-existing subscription (e.g. a shared-browser endpoint from a
-      // previous account) is never torn down just because the transfer
-      // failed; it is left for the next enable attempt or disable/disconnect
-      // flow to resolve.
-      let createdNew = false;
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidKey),
-        });
-        createdNew = true;
-      }
-      const keys = subscription.toJSON().keys;
-      if (!keys?.p256dh || !keys.auth) {
-        throw new Error('push subscription missing encryption keys');
-      }
-      try {
-        await repo().savePushSubscription(session, subscription.endpoint, { p256dh: keys.p256dh, auth: keys.auth });
-      } catch {
-        if (createdNew) {
-          try {
-            await subscription.unsubscribe();
-          } catch {
-            // Best-effort rollback -- the UI must not report success either
-            // way; evaluate() below will reflect whatever is actually true.
-          }
+      const outcome = await subscribeAndPersist(session, vapidKey, { allowPermissionPrompt: true });
+      if (!mountedRef.current) return;
+      if (!outcome.ok) {
+        if (outcome.reason === 'permission-denied') {
+          setState('permission-denied');
+          return;
         }
-        if (!mountedRef.current) return;
+        if (outcome.reason === 'permission-not-granted') {
+          setState('permission-default');
+          return;
+        }
         setState('error');
         toast(SAVE_FAILED_MESSAGE, 'error');
         return;
       }
+      // Only remember the device intent AFTER the server actually accepted
+      // the subscription -- never optimistically before that (see
+      // pushDevicePreference.ts).
+      rememberPushWanted(session.userId);
       await evaluate();
       toast(ENABLED_MESSAGE, 'success');
     } catch {
@@ -226,6 +269,10 @@ export function usePushSubscription(): UsePushSubscriptionResult {
           // evaluate() will show 'not-subscribed' next time regardless.
         }
       }
+      // A real preference change -- unlike logout, which only detaches the
+      // subscription (see pushLogoutCleanup.ts), this must stop AVARIA from
+      // silently re-subscribing this user on this device on a future login.
+      clearPushWanted(session.userId);
       await evaluate();
       toast(DISABLED_MESSAGE, 'success');
     } catch {
@@ -239,6 +286,11 @@ export function usePushSubscription(): UsePushSubscriptionResult {
     setState('loading');
     try {
       await repo().deleteAllPushSubscriptions(session);
+      // Same reasoning as disable() above: an explicit disconnect must also
+      // stop this device from silently re-subscribing this user later. Only
+      // ever touches THIS device's local preference -- it cannot reach the
+      // preference remembered on another physical device.
+      clearPushWanted(session.userId);
       // Best-effort local cleanup only -- this can never reach a
       // PushSubscription living in another device's browser; deleting the
       // server rows is what actually stops AVARIA from sending to them.
@@ -257,6 +309,42 @@ export function usePushSubscription(): UsePushSubscriptionResult {
       toast(DISCONNECT_ALL_FAILED_MESSAGE, 'error');
     }
   }, [session, evaluate, toast]);
+
+  // Silent, best-effort auto-restore: once evaluate() lands on
+  // 'not-subscribed' for a user who previously enabled Push on THIS device
+  // (see pushDevicePreference.ts), and every other gate below is already
+  // satisfied, quietly recreate the subscription through the exact same
+  // ownership/save path enable() uses -- no permission prompt, no toast, and
+  // a failure here never surfaces as an 'error' state: it is simply left
+  // 'not-subscribed' for the next explicit attempt or the next login. This
+  // is what makes logout -> login for the SAME user restore Push without any
+  // button press, while a different user (or a user who never opted in on
+  // this device) never gets auto-subscribed.
+  useEffect(() => {
+    if (state !== 'not-subscribed') return;
+    if (needRefresh) return;
+    if (Notification.permission !== 'granted') return;
+    if (!isPushWanted(session.userId)) return;
+    const vapidKey = getConfiguredVapidPublicKey();
+    if (!vapidKey || !isValidVapidPublicKey(vapidKey)) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const outcome = await subscribeAndPersist(session, vapidKey, { allowPermissionPrompt: false });
+        if (cancelled || !mountedRef.current) return;
+        if (outcome.ok) {
+          await evaluate();
+        }
+      } catch {
+        // Best-effort -- never break login/auth on a background restore
+        // failure; the UI stays exactly as evaluate() last resolved it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state, session, needRefresh, evaluate]);
 
   return { state, otherDeviceCount, updatePending: needRefresh, enable, disable, disconnectAll };
 }
