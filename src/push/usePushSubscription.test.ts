@@ -580,3 +580,212 @@ describe('usePushSubscription: silent auto-restore on login (per-user, per-devic
     );
   });
 });
+
+describe('usePushSubscription: auto-restore logout race safety', () => {
+  it('AB. logout mid-flight: a subscription saved AFTER the hook has already unmounted is immediately detached again, never left live', async () => {
+    rememberPushWanted(session.userId);
+    const subscription = createSubscription();
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: subscription });
+    mockRepo.deletePushSubscription.mockResolvedValue(undefined);
+
+    // Freeze the server save mid-flight so the test can unmount (simulating
+    // an explicit logout tearing down the whole authenticated tree) BEFORE
+    // the network round trip that would otherwise complete the restore.
+    let resolveSave!: () => void;
+    mockRepo.savePushSubscription.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const { result, unmount } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('not-subscribed'));
+    // Auto-restore has started and is now blocked inside the (deferred) save.
+    await waitFor(() => expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1));
+
+    // Explicit logout: the authenticated tree -- and with it this hook
+    // instance -- unmounts, exactly as AuthContext's status flip to
+    // 'signed_out' does today. runLogoutPushCleanup (untouched by this fix)
+    // would see NO browser subscription yet at this exact moment, since
+    // auto-restore has not created/saved one -- that is precisely the race.
+    unmount();
+
+    // The delayed save now finally resolves, AFTER logout already happened.
+    resolveSave();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The subscription must not survive the logout that happened while it
+    // was still being created: a best-effort server-side detach was
+    // attempted with the same (captured) session...
+    expect(mockRepo.deletePushSubscription).toHaveBeenCalledWith(session, subscription.endpoint);
+    // ...and the browser endpoint itself was torn down regardless, so no
+    // future push can ever reach it even if the server-side delete above
+    // had failed (e.g. because the JWT that authorized it is already gone).
+    expect(subscription.unsubscribe).toHaveBeenCalled();
+  });
+
+  it('AC. logout mid-flight never blocks on a hung save -- the compensating cleanup is itself best-effort', async () => {
+    rememberPushWanted(session.userId);
+    const subscription = createSubscription();
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: subscription });
+    mockRepo.savePushSubscription.mockImplementation(() => new Promise<void>(() => {})); // never resolves
+
+    const { result, unmount } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('not-subscribed'));
+    await waitFor(() => expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1));
+
+    // Unmounting (logout) must complete immediately and never throw, even
+    // though the auto-restore chain it is racing against is stuck forever.
+    expect(() => unmount()).not.toThrow();
+  });
+
+  it('AD. after a logout-race rollback, the SAME user logging back in still restores Push normally (the rollback does not poison future restores)', async () => {
+    rememberPushWanted(session.userId);
+    const staleSubscription = createSubscription({ endpoint: 'https://push.example.com/stale' });
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: staleSubscription });
+    mockRepo.deletePushSubscription.mockResolvedValue(undefined);
+
+    let resolveStaleSave!: () => void;
+    mockRepo.savePushSubscription.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStaleSave = resolve;
+        }),
+    );
+
+    const render1 = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(render1.result.current.state).toBe('not-subscribed'));
+    await waitFor(() => expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1));
+
+    render1.unmount();
+    resolveStaleSave();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(staleSubscription.unsubscribe).toHaveBeenCalled();
+
+    // The SAME user opens AVARIA again on this device -- the browser has no
+    // subscription left (the rollback above unsubscribed it), and the
+    // remembered preference is still true, so auto-restore must run again
+    // and succeed normally.
+    const freshSubscription = createSubscription({ endpoint: 'https://push.example.com/fresh' });
+    const registration2 = installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: freshSubscription });
+    registration2.pushManager.getSubscription.mockResolvedValueOnce(null).mockResolvedValue(freshSubscription);
+    mockRepo.isMyPushSubscription.mockResolvedValue(true);
+    mockRepo.countPushSubscriptions.mockResolvedValue(1);
+    mockRepo.savePushSubscription.mockReset();
+    mockRepo.savePushSubscription.mockResolvedValue(undefined);
+
+    const render2 = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(render2.result.current.state).toBe('subscribed'));
+    expect(mockRepo.savePushSubscription).toHaveBeenCalledWith(session, freshSubscription.endpoint, {
+      p256dh: 'p256dh-key',
+      auth: 'auth-key',
+    });
+  });
+
+  it('AE. a different user logging in after a logout-race rollback never inherits the rolled-back subscription', async () => {
+    session = { userId: 'user-a', role: 'technician' };
+    rememberPushWanted('user-a');
+    const staleSubscription = createSubscription({ endpoint: 'https://push.example.com/stale' });
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: staleSubscription });
+    mockRepo.deletePushSubscription.mockResolvedValue(undefined);
+
+    let resolveStaleSave!: () => void;
+    mockRepo.savePushSubscription.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStaleSave = resolve;
+        }),
+    );
+
+    const renderA = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(renderA.result.current.state).toBe('not-subscribed'));
+    await waitFor(() => expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1));
+
+    renderA.unmount();
+    resolveStaleSave();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(staleSubscription.unsubscribe).toHaveBeenCalled();
+
+    // User B logs in on the same device -- the browser has no subscription
+    // (unsubscribed by the rollback above), and B never opted in.
+    session = { userId: 'user-b', role: 'technician' };
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: null });
+    mockRepo.savePushSubscription.mockClear();
+
+    const renderB = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(renderB.result.current.state).toBe('not-subscribed'));
+    expect(mockRepo.savePushSubscription).not.toHaveBeenCalled();
+  });
+
+  it('AF. an explicit enable() while auto-restore is still mid-flight shares the SAME subscribe/save call instead of racing a duplicate one', async () => {
+    rememberPushWanted(session.userId);
+    const subscription = createSubscription();
+    const registration = installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: subscription });
+    mockRepo.isMyPushSubscription.mockResolvedValue(true);
+    mockRepo.countPushSubscriptions.mockResolvedValue(1);
+
+    let resolveSave!: () => void;
+    mockRepo.savePushSubscription.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('not-subscribed'));
+    // Auto-restore has already created the browser subscription and is
+    // blocked inside the (deferred) server save. From here on, the browser
+    // reports the newly-created subscription as present -- matching a real
+    // browser post-subscribe() -- so the closing evaluate() (once the save
+    // finally resolves) correctly lands on 'subscribed' instead of spuriously
+    // re-triggering ANOTHER auto-restore attempt.
+    await waitFor(() => expect(registration.pushManager.subscribe).toHaveBeenCalledTimes(1));
+    registration.pushManager.getSubscription.mockResolvedValue(subscription);
+    await waitFor(() => expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1));
+
+    // The user opens Push settings and presses enable() while that restore
+    // is still pending -- this must NOT start a second, independent
+    // subscribe()/save call.
+    let enableResolved = false;
+    let enablePromise!: Promise<void>;
+    await act(async () => {
+      enablePromise = result.current.enable().then(() => {
+        enableResolved = true;
+      });
+      // Give enable() a chance to run its synchronous prelude and reach
+      // runSubscribeAndPersist -- it must find (and reuse) the existing
+      // in-flight operation rather than starting its own.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(enableResolved).toBe(false); // still waiting on the SAME save
+    expect(registration.pushManager.subscribe).toHaveBeenCalledTimes(1);
+    expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1);
+
+    resolveSave();
+    await act(async () => {
+      await enablePromise;
+    });
+
+    // Only ONE underlying browser subscribe() / server save call was ever
+    // made, even though two independent triggers (auto-restore + enable())
+    // both wanted to subscribe around the same time.
+    expect(registration.pushManager.subscribe).toHaveBeenCalledTimes(1);
+    expect(mockRepo.savePushSubscription).toHaveBeenCalledTimes(1);
+    expect(result.current.state).toBe('subscribed');
+  });
+});
