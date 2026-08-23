@@ -789,3 +789,131 @@ describe('usePushSubscription: auto-restore logout race safety', () => {
     expect(result.current.state).toBe('subscribed');
   });
 });
+
+describe('usePushSubscription: pre-existing subscription backfill (pre-release compatibility)', () => {
+  it('AG. an existing, server-owned subscription from before this preference existed is backfilled into isPushWanted on the very first evaluate()', async () => {
+    // No rememberPushWanted() call anywhere -- this simulates a user who
+    // enabled Push under the OLD version, before this local preference
+    // existed at all.
+    const subscription = createSubscription();
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: subscription });
+    mockRepo.isMyPushSubscription.mockResolvedValue(true);
+    mockRepo.countPushSubscriptions.mockResolvedValue(1);
+
+    const { result } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('subscribed'));
+
+    expect(isPushWanted(session.userId)).toBe(true);
+  });
+
+  it('AH. a browser subscription that does NOT belong to the current user is never backfilled', async () => {
+    const subscription = createSubscription();
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: subscription });
+    mockRepo.isMyPushSubscription.mockResolvedValue(false); // shared-browser / foreign endpoint
+
+    const { result } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('not-subscribed'));
+
+    expect(isPushWanted(session.userId)).toBe(false);
+  });
+
+  it('AI. Notification permission being granted, by itself, never backfills anything', async () => {
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: null });
+
+    const { result } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('not-subscribed'));
+
+    // No browser subscription at all -- the ownership check is never even
+    // reached, so there is nothing that could justify a backfill.
+    expect(mockRepo.isMyPushSubscription).not.toHaveBeenCalled();
+    expect(isPushWanted(session.userId)).toBe(false);
+  });
+
+  it('AJ. after the backfill, a later logout -> login cycle restores Push automatically with no manual enable() click', async () => {
+    // Phase 1: a pre-existing subscribed user, with no local preference yet
+    // -- the initial evaluate() backfills it.
+    const staleSubscription = createSubscription({ endpoint: 'https://push.example.com/old' });
+    installPushGlobals({ permission: 'granted', getSubscriptionResult: staleSubscription });
+    mockRepo.isMyPushSubscription.mockResolvedValue(true);
+    mockRepo.countPushSubscriptions.mockResolvedValue(1);
+
+    const render1 = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(render1.result.current.state).toBe('subscribed'));
+    expect(isPushWanted(session.userId)).toBe(true);
+
+    // Logout detaches the subscription (browser now has none) but -- as
+    // established earlier -- leaves the (just-backfilled) preference
+    // intact. Simulate the post-logout device state directly.
+    render1.unmount();
+    clearPushGlobals();
+
+    // Phase 2: the SAME user opens AVARIA again. No browser subscription
+    // exists, but the backfilled preference is still there, so auto-restore
+    // must recreate Push on its own -- enable() is never called here.
+    const freshSubscription = createSubscription({ endpoint: 'https://push.example.com/fresh' });
+    const registration2 = installPushGlobals({ permission: 'granted', getSubscriptionResult: null, subscribeResult: freshSubscription });
+    registration2.pushManager.getSubscription.mockResolvedValueOnce(null).mockResolvedValue(freshSubscription);
+    mockRepo.savePushSubscription.mockResolvedValue(undefined);
+
+    const render2 = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(render2.result.current.state).toBe('subscribed'));
+    expect(mockRepo.savePushSubscription).toHaveBeenCalledWith(session, freshSubscription.endpoint, {
+      p256dh: 'p256dh-key',
+      auth: 'auth-key',
+    });
+  });
+
+  it('AK. an explicit disable() still clears the preference, and it is not immediately re-created by the backfill logic', async () => {
+    const subscription = createSubscription();
+    const registration = installPushGlobals({ permission: 'granted', getSubscriptionResult: subscription });
+    mockRepo.isMyPushSubscription.mockResolvedValue(true);
+    mockRepo.countPushSubscriptions.mockResolvedValue(1);
+    mockRepo.deletePushSubscription.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('subscribed'));
+    // Backfilled on mount, exactly like AG above.
+    expect(isPushWanted(session.userId)).toBe(true);
+
+    registration.pushManager.getSubscription.mockResolvedValueOnce(subscription).mockResolvedValue(null);
+    await act(async () => {
+      await result.current.disable();
+    });
+    expect(result.current.state).toBe('not-subscribed');
+    expect(isPushWanted(session.userId)).toBe(false);
+
+    // A later evaluate() (e.g. the next time this device opens AVARIA) must
+    // not resurrect the preference: the browser subscription is gone, so
+    // the ownership check that gates the backfill is never even reached.
+    mockRepo.isMyPushSubscription.mockClear();
+    const render2 = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(render2.result.current.state).toBe('not-subscribed'));
+    expect(mockRepo.isMyPushSubscription).not.toHaveBeenCalled();
+    expect(isPushWanted(session.userId)).toBe(false);
+  });
+
+  it('AL. an explicit disconnectAll() still clears the preference, and it is not immediately re-created by the backfill logic', async () => {
+    const subscription = createSubscription();
+    const registration = installPushGlobals({ permission: 'granted', getSubscriptionResult: subscription });
+    mockRepo.isMyPushSubscription.mockResolvedValue(true);
+    mockRepo.countPushSubscriptions.mockResolvedValue(1);
+    mockRepo.deleteAllPushSubscriptions.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(result.current.state).toBe('subscribed'));
+    expect(isPushWanted(session.userId)).toBe(true);
+
+    registration.pushManager.getSubscription.mockResolvedValueOnce(subscription).mockResolvedValue(null);
+    await act(async () => {
+      await result.current.disconnectAll();
+    });
+    expect(result.current.state).toBe('not-subscribed');
+    expect(isPushWanted(session.userId)).toBe(false);
+
+    mockRepo.isMyPushSubscription.mockClear();
+    const render2 = renderHook(() => usePushSubscription());
+    await waitFor(() => expect(render2.result.current.state).toBe('not-subscribed'));
+    expect(mockRepo.isMyPushSubscription).not.toHaveBeenCalled();
+    expect(isPushWanted(session.userId)).toBe(false);
+  });
+});

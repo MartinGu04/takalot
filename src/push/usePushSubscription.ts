@@ -264,6 +264,17 @@ export function usePushSubscription(): UsePushSubscriptionResult {
         setOtherDeviceCount(0);
         return;
       }
+      // Backfill for users who already had a working, server-confirmed
+      // subscription on this device from BEFORE this preference existed
+      // (pre-release users) -- a positively-owned subscription right now is
+      // exactly the same evidence enable() itself would have recorded, so
+      // treat it identically. This can never fire from permission alone, an
+      // unowned/foreign endpoint, or a subscription whose server ownership
+      // an explicit disable/disconnect already removed (isMyPushSubscription
+      // would be false in all of those cases and this line is unreached) --
+      // so it can never resurrect a preference an explicit action just
+      // cleared. Idempotent: a no-op once the preference is already set.
+      rememberPushWanted(session.userId);
       const count = await repo().countPushSubscriptions(session);
       if (!mountedRef.current) return;
       setState('subscribed');
