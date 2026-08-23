@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, useSession } from '../auth/AuthContext';
 import { useNotifications, useAppMutation, repo } from '../data/hooks';
+import { usePushSubscription } from '../push/usePushSubscription';
 import { notificationTypeLabels, notificationFilterLabels, type NotificationFilter } from '../domain/labels';
 import type { AppNotification, NotificationType } from '../domain/types';
 import { hasCapability } from '../domain/permissions';
@@ -94,6 +95,11 @@ export function NotificationsMenu() {
   const { user } = useAuth();
   const session = useSession();
   const navigate = useNavigate();
+  // Mounted here (rather than inside PushSubscriptionSettings, which only
+  // exists while the settings dialog is open) so its silent auto-restore
+  // effect runs as soon as the user is authenticated -- not only after they
+  // manually open "הגדרות התראות". See usePushSubscription's module comment.
+  const push = usePushSubscription();
   const anchorRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -241,7 +247,7 @@ export function NotificationsMenu() {
       {user && (
         <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} title="הגדרות התראות">
           <div className="flex flex-col gap-4">
-            <PushSubscriptionSettings />
+            <PushSubscriptionSettings push={push} />
             {hasCapability(user.role, 'manage_operational_notification_preferences') && (
               <div className="border-t border-hairline pt-4">
                 <OperationalNotificationPreferences />

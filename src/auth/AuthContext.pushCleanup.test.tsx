@@ -8,6 +8,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './AuthContext';
+import { isPushWanted, rememberPushWanted } from '../push/pushDevicePreference';
 
 type AuthListener = (event: string, session: unknown) => void;
 
@@ -134,6 +135,22 @@ describe('explicit logout() runs Push cleanup before signOut()', () => {
 
     await waitFor(() => expect(mockAuth.signOut).toHaveBeenCalled(), { timeout: 5000 });
   }, 8000);
+});
+
+describe('explicit logout() detaches the subscription but never clears the remembered device Push preference', () => {
+  it('leaves isPushWanted(userId) true after logout -- logout is a security detach, not a preference change', async () => {
+    localStorage.clear();
+    rememberPushWanted('auth-user-1');
+    const user = userEvent.setup();
+    renderHarness();
+    await waitFor(() => expect(screen.getByTestId('user-id')).toHaveTextContent('auth-user-1'));
+
+    await user.click(screen.getByText('do-logout'));
+
+    await waitFor(() => expect(deletePushSubscription).toHaveBeenCalled());
+    await waitFor(() => expect(mockAuth.signOut).toHaveBeenCalled());
+    expect(isPushWanted('auth-user-1')).toBe(true);
+  });
 });
 
 describe('passive markSessionExpired() never runs Push cleanup', () => {

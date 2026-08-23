@@ -6,7 +6,7 @@
 // Push API / repository method directly. No technical terms (PushManager,
 // VAPID, Service Worker, endpoint) ever reach this copy -- see the hook for
 // where those concepts actually live.
-import { usePushSubscription } from '../push/usePushSubscription';
+import type { UsePushSubscriptionResult } from '../push/usePushSubscription';
 import { getConfiguredVapidPublicKey, isValidVapidPublicKey } from '../push/vapidKey';
 import { Button } from './ui';
 
@@ -39,13 +39,20 @@ function InfoRow({ title, subtitle }: { title: string; subtitle: string }) {
  * runtime -- this gate only addresses the expected, known-absent case for
  * the current rollout window, before that inner state machine ever mounts.
  */
-export function PushSubscriptionSettings() {
+/**
+ * `push` is a single usePushSubscription() instance owned by the caller
+ * (NotificationsMenu) rather than called from here directly -- that hook
+ * must stay mounted for as long as the user is signed in (not just while
+ * this dialog happens to be open) so its silent login-time auto-restore
+ * effect can actually run. See usePushSubscription's own module comment.
+ */
+export function PushSubscriptionSettings({ push }: { push: UsePushSubscriptionResult }) {
   if (!isValidVapidPublicKey(getConfiguredVapidPublicKey())) return null;
-  return <PushSubscriptionControls />;
+  return <PushSubscriptionControls push={push} />;
 }
 
-function PushSubscriptionControls() {
-  const { state, otherDeviceCount, updatePending, enable, disable, disconnectAll } = usePushSubscription();
+function PushSubscriptionControls({ push }: { push: UsePushSubscriptionResult }) {
+  const { state, otherDeviceCount, updatePending, enable, disable, disconnectAll } = push;
 
   if (state === 'unsupported') {
     return <InfoRow title={TITLE} subtitle="התראות דחיפה אינן נתמכות בדפדפן זה." />;
