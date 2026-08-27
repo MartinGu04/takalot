@@ -11,7 +11,7 @@ import { useSession } from '../auth/AuthContext';
 import { repo, useAppMutation } from '../data/hooks';
 import { allowedAssignRoles, allowedManageRoles } from '../domain/permissions';
 import { personnelRoleLabels, personnelStatusLabels } from '../domain/labels';
-import type { PersonnelEntry, Role } from '../domain/types';
+import type { InvitationSendOutcome, PersonnelEntry, Role } from '../domain/types';
 import type { PendingPersonnelInput } from '../domain/schemas';
 import { Avatar, Badge, Button, EmptyState, ErrorState, Input, Select, Spinner, useToast } from '../components/ui';
 import { PersonnelFormDialog } from '../components/dialogs/PersonnelFormDialog';
@@ -81,12 +81,57 @@ export default function PersonnelPage() {
   // (that ceiling excludes a caller's own peer rank).
   const isPersonnelManager = manageRoles.length > 0;
 
-  const createMutation = useAppMutation((input: PendingPersonnelInput) => repo().createPendingPersonnel(session, input), {
-    invalidate: [['personnel']],
-    successText:
-      'איש הצוות נוסף וממתין להתחברות הראשונה עם חשבון Google שהוגדר. אין צורך בקישור מיוחד — יש להיכנס לכתובת הרגילה של AVARIA.',
-    onSuccess: () => setAddOpen(false),
-  });
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
+  // Sending the invitation is chained INSIDE this one mutationFn -- a
+  // single explicit, user-triggered submit -- rather than as a second,
+  // separately-fired call from onSuccess: React Query only ever invokes a
+  // mutationFn once per mutate() call (never on rerenders or cache
+  // refetches), so this can never double-send an invitation the way a
+  // render-triggered effect could. A failed SEND never rolls back the
+  // already-created person: sendPersonnelInvitation reports a failed send
+  // as data ({outcome:'failed'}), and even a thrown request-level failure
+  // (network, unauthorized) is caught here and folded into the same shape
+  // -- createPendingPersonnel having already resolved is what matters for
+  // "was the person created", never the invitation's own outcome.
+  const createMutation = useAppMutation(
+    async (input: PendingPersonnelInput) => {
+      const entry = await repo().createPendingPersonnel(session, input);
+      let invitation: InvitationSendOutcome;
+      try {
+        invitation = await repo().sendPersonnelInvitation(session, entry.id, window.location.origin);
+      } catch {
+        invitation = { outcome: 'failed' };
+      }
+      return { entry, invitation };
+    },
+    {
+      invalidate: [['personnel']],
+      onSuccess: ({ entry, invitation }) => {
+        toast(
+          invitation.outcome === 'sent'
+            ? `המשתמש נוסף בהצלחה והזמנה נשלחה ל-${entry.email}`
+            : 'המשתמש נוסף בהצלחה, אך שליחת ההזמנה נכשלה. ניתן לשלוח שוב מתוך התפריט של הרישום.',
+          invitation.outcome === 'sent' ? 'success' : 'error',
+        );
+        setAddOpen(false);
+      },
+    },
+  );
+
+  const resendInvitationMutation = useAppMutation(
+    (id: string) => repo().sendPersonnelInvitation(session, id, window.location.origin),
+    {
+      invalidate: [['personnel']],
+      onSuccess: (outcome) => {
+        toast(
+          outcome.outcome === 'sent' ? 'ההזמנה נשלחה מחדש.' : 'שליחת ההזמנה נכשלה. ניתן לנסות שוב.',
+          outcome.outcome === 'sent' ? 'success' : 'error',
+        );
+      },
+    },
+  );
 
   const updateMutation = useAppMutation(
     (vars: { id: string; input: PendingPersonnelInput }) => repo().updatePendingPersonnel(session, vars.id, vars.input),
@@ -133,8 +178,6 @@ export default function PersonnelPage() {
     },
   });
 
-  const queryClient = useQueryClient();
-  const toast = useToast();
   const deleteMutation = useAppMutation((id: string) => repo().deleteUser(session, id), {
     invalidate: [['personnel'], ['profiles']],
     successText: 'המשתמש נמחק לצמיתות. חשבון ההתחברות הוסר.',
@@ -265,11 +308,18 @@ export default function PersonnelPage() {
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Badge color="orange">{personnelStatusLabels.pending}</Badge>
+            {entry.invitationStatus === 'failed' && <Badge color="red">שליחת ההזמנה נכשלה</Badge>}
+            {entry.invitationStatus === 'sent' && <Badge color="green">הוזמן</Badge>}
             {canManage && (
               <ActionMenu
                 label={`פעולות עבור ${entry.fullName}`}
                 items={[
                   { label: 'עריכה', onSelect: () => setEditingEntry(entry) },
+                  {
+                    label: resendInvitationMutation.isPending ? 'שולח…' : 'שליחת הזמנה מחדש',
+                    disabled: resendInvitationMutation.isPending,
+                    onSelect: () => resendInvitationMutation.mutate(entry.id),
+                  },
                   { label: 'שינוי שם', onSelect: () => setRenamingEntry(entry) },
                   // A pending entry is cancelled, not deleted -- it has no
                   // account to remove yet. The label stays "ביטול" so the

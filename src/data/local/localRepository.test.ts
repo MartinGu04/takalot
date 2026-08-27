@@ -2222,6 +2222,60 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
       );
     });
   });
+
+  describe('invitation email (mirrors migration 0060 rules)', () => {
+    it('a fresh entry starts as not_sent', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      expect(entry.invitationStatus).toBe('not_sent');
+      expect(entry.invitationSentAt).toBeNull();
+    });
+
+    it('sendPersonnelInvitation records a successful send', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      const outcome = await repo.sendPersonnelInvitation(supervisor1, entry.id, null);
+      expect(outcome).toEqual({ outcome: 'sent' });
+      const list = await repo.listPersonnel(supervisor1);
+      expect(list.find((e) => e.kind === 'pending' && e.id === entry.id)).toMatchObject({ invitationStatus: 'sent' });
+    });
+
+    it('the SAME role ceiling as creation applies to sending/resending an invitation', async () => {
+      const entry = await repo.createPendingPersonnel(admin, input({ role: 'professional_manager' }));
+      await expect(repo.sendPersonnelInvitation(supervisor1, entry.id, null)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(repo.sendPersonnelInvitation(manager, entry.id, null)).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await expect(repo.sendPersonnelInvitation(admin, entry.id, null)).resolves.toEqual({ outcome: 'sent' });
+    });
+
+    it('technicians and viewers cannot invoke it at all', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await expect(repo.sendPersonnelInvitation(tech1, entry.id, null)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.sendPersonnelInvitation(viewer, entry.id, null)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('rejects a non-pending (cancelled) entry -- there is nothing left to invite', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.cancelPendingPersonnel(supervisor1, entry.id);
+      await expect(repo.sendPersonnelInvitation(supervisor1, entry.id, null)).rejects.toMatchObject({
+        code: 'VALIDATION',
+      });
+    });
+
+    it('rejects an unknown id', async () => {
+      await expect(repo.sendPersonnelInvitation(supervisor1, 'no-such-id', null)).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+
+    it('a successful send is audited as personnel_invitation_sent', async () => {
+      const entry = await repo.createPendingPersonnel(supervisor1, input());
+      await repo.sendPersonnelInvitation(supervisor1, entry.id, null);
+      const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
+      expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['personnel_invitation_sent']));
+    });
+  });
 });
 
 describe('linked-personnel management (mirrors migration 0010 rules)', () => {

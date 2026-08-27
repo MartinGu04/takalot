@@ -184,7 +184,7 @@ describe('page structure and terminology', () => {
 });
 
 describe('adding personnel', () => {
-  it('a shift_supervisor can add a technician; role options are limited to their ceiling; success shows the normal-login message', async () => {
+  it('a shift_supervisor can add a technician; role options are limited to their ceiling; success shows the invitation-sent message', async () => {
     const user = await openPersonnel('login-u-supervisor-1');
     await user.click(screen.getByRole('button', { name: 'הוספת איש צוות' }));
 
@@ -201,12 +201,13 @@ describe('adding personnel', () => {
     await user.click(within(dialog).getByRole('button', { name: 'הוספה' }));
 
     expect(
-      await screen.findByText(
-        'איש הצוות נוסף וממתין להתחברות הראשונה עם חשבון Google שהוגדר. אין צורך בקישור מיוחד — יש להיכנס לכתובת הרגילה של AVARIA.',
-      ),
+      await screen.findByText('המשתמש נוסף בהצלחה והזמנה נשלחה ל-new.tech@example.com'),
     ).toBeInTheDocument();
     expect(await within(main()).findByText('טכנאי חדש')).toBeInTheDocument();
     expect(within(main()).getByText('new.tech@example.com')).toBeInTheDocument();
+    // The invitation-sent badge reflects the outcome recorded by
+    // sendPersonnelInvitation, not just a static creation message.
+    expect(within(rowFor('טכנאי חדש')).getByText('הוזמן')).toBeInTheDocument();
   });
 
   it('a professional_manager sees shift_supervisor, technician and viewer as role options -- never a peer professional_manager', async () => {
@@ -283,6 +284,50 @@ describe('the add-personnel form resets only after a confirmed successful creati
       spy.mockRestore();
     }
   });
+});
+
+describe('invitation email', () => {
+  it('a failed SEND does not undo the already-created person, and shows a distinct, truthful message', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype as unknown as { simulateEmailSend: () => Promise<unknown> }, 'simulateEmailSend')
+      .mockResolvedValue({ outcome: 'failed', message: 'שגיאת ספק' });
+    try {
+      const user = await openPersonnel('login-u-admin');
+      await addPending(user);
+
+      // The person exists -- access was granted regardless of the email outcome.
+      expect(within(main()).getByText('ממתין לבדיקה')).toBeInTheDocument();
+      expect(
+        await screen.findByText('המשתמש נוסף בהצלחה, אך שליחת ההזמנה נכשלה. ניתן לשלוח שוב מתוך התפריט של הרישום.'),
+      ).toBeInTheDocument();
+      expect(within(rowFor('ממתין לבדיקה')).getByText('שליחת ההזמנה נכשלה')).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('an admin can resend a failed invitation, and a successful resend clears the failed badge', async () => {
+    const { LocalDemoRepository } = await import('../data/local/localRepository');
+    const spy = vi
+      .spyOn(LocalDemoRepository.prototype as unknown as { simulateEmailSend: () => Promise<unknown> }, 'simulateEmailSend')
+      .mockResolvedValueOnce({ outcome: 'failed', message: 'שגיאת ספק' });
+    try {
+      const user = await openPersonnel('login-u-admin');
+      await addPending(user);
+      expect(within(rowFor('ממתין לבדיקה')).getByText('שליחת ההזמנה נכשלה')).toBeInTheDocument();
+
+      // The mock's default (real) implementation takes over on the next call.
+      await clickRowAction(user, 'ממתין לבדיקה', 'שליחת הזמנה מחדש');
+
+      expect(await screen.findByText('ההזמנה נשלחה מחדש.')).toBeInTheDocument();
+      expect(within(rowFor('ממתין לבדיקה')).getByText('הוזמן')).toBeInTheDocument();
+      expect(within(rowFor('ממתין לבדיקה')).queryByText('שליחת ההזמנה נכשלה')).not.toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
 });
 
 describe('editing and cancelling a pending entry', () => {
@@ -575,6 +620,7 @@ describe('renaming personnel', () => {
         state: 'active',
         createdAt: '2026-01-01T00:00:00.000Z',
         avatarUrl: 'https://example.test/avatar.png',
+        invitationStatus: null,
       },
       {
         kind: 'linked',
@@ -585,6 +631,7 @@ describe('renaming personnel', () => {
         state: 'active',
         createdAt: '2026-01-01T00:00:00.000Z',
         avatarUrl: null,
+        invitationStatus: null,
       },
     ]);
     try {

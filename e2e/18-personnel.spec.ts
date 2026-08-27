@@ -30,9 +30,13 @@ test.describe('desktop', () => {
     await dialog.getByLabel('כתובת חשבון Google', { exact: false }).fill('e2e.tech@example.com');
     await dialog.getByRole('button', { name: 'הוספה' }).click();
 
-    await expect(page.getByText(/איש הצוות נוסף וממתין להתחברות הראשונה/)).toBeVisible();
-    await expect(page.getByText('טכנאי E2E')).toBeVisible();
-    await expect(page.getByText('e2e.tech@example.com')).toBeVisible();
+    await expect(page.getByText(/המשתמש נוסף בהצלחה והזמנה נשלחה ל-/)).toBeVisible();
+    // Scoped to the new row, not a page-wide text search: the success
+    // toast itself now also contains the email as a substring (see the
+    // assertion above), so an unscoped getByText(email) would match both.
+    const row = page.locator('[data-personnel-row]', { hasText: 'טכנאי E2E' });
+    await expect(row).toBeVisible();
+    await expect(row.getByText('e2e.tech@example.com')).toBeVisible();
   });
 
   test('a pending row matches the active/inactive row layout: initials avatar, prominent name, email below, no inline role label', async ({ page }) => {

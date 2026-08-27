@@ -166,6 +166,12 @@ export interface Profile {
 
 export type PendingPersonnelStatus = 'pending' | 'claimed' | 'cancelled' | 'expired';
 
+/** Outcome of the most recent invitation-email attempt for a pending
+ *  entry -- purely informational, never an authorization signal (see
+ *  claim_pending_personnel, which authorizes solely by verified Google
+ *  email match, regardless of this value). */
+export type PendingPersonnelInvitationStatus = 'not_sent' | 'sent' | 'failed';
+
 /** A pre-provisioned personnel entry: created by an authorized role BEFORE
  *  the person's first Google sign-in, and claimed automatically (server-
  *  side, against the verified email) on their first authenticated session. */
@@ -184,6 +190,20 @@ export interface PendingPersonnel {
   claimedAt: string | null;
   cancelledBy: string | null;
   cancelledAt: string | null;
+  invitationStatus: PendingPersonnelInvitationStatus;
+  /** Set only after the most recent SUCCESSFUL send; never cleared by a
+   *  later failed resend attempt. */
+  invitationSentAt: string | null;
+  /** Safe, human-readable explanation of the most recent FAILED attempt;
+   *  null whenever invitationStatus is not 'failed'. */
+  invitationLastError: string | null;
+}
+
+/** Outcome of a single sendPersonnelInvitation() call -- a failed SEND is
+ *  reported here, not thrown (see Repository.sendPersonnelInvitation). */
+export interface InvitationSendOutcome {
+  outcome: 'sent' | 'failed';
+  message?: string;
 }
 
 /** One row of the unified, management-safe personnel listing: a live
@@ -206,6 +226,9 @@ export interface PersonnelEntry {
   /** Stored Google avatar image URL for a linked profile; always null for
    *  a pending entry (it has no auth identity yet). */
   avatarUrl: string | null;
+  /** Invitation-email outcome for a pending entry; always null for a
+   *  linked profile (a real account needs no invitation). */
+  invitationStatus: PendingPersonnelInvitationStatus | null;
 }
 
 /** Fixed, product-defined categories -- not administratively configurable.
