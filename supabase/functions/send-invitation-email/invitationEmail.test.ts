@@ -32,6 +32,25 @@ Deno.test("buildInvitationEmail: links to <appUrl>/login and embeds the logo fro
   assert.ok(content.html.includes("https://avaria.example.com/branding/avaria-compact-micro-mark.png"));
 });
 
+Deno.test("buildInvitationEmail: the CTA renders as כניסה ל־AVARIA (Hebrew maqaf, not an ASCII hyphen) with explicit RTL isolation", () => {
+  const content = buildInvitationEmail(RECIPIENT, "https://avaria.example.com");
+  // The literal button text, in the intended logical (and only correct)
+  // order: Hebrew phrase, maqaf, then the Latin brand name -- not the
+  // ASCII-hyphen form that a bidi-unaware client can reorder to
+  // "AVARIA-כניסה ל".
+  assert.ok(content.html.includes("כניסה ל־AVARIA"));
+  assert.ok(!content.html.includes("כניסה ל-AVARIA"));
+  assert.ok(content.text.includes("כניסה ל־AVARIA:"));
+  // The <a> itself carries an explicit RTL attribute/style, independent
+  // of the ambient <html dir="rtl"> -- a client that resolves this
+  // element's own direction separately (as Gmail's sanitizer can) still
+  // renders it correctly.
+  const ctaMatch = content.html.match(/<a href="[^"]*\/login"[^>]*>/);
+  assert.ok(ctaMatch, "expected to find the CTA <a> tag");
+  assert.ok(ctaMatch![0].includes('dir="rtl"'));
+  assert.ok(ctaMatch![0].includes("direction:rtl"));
+});
+
 Deno.test("buildInvitationEmail: the CTA link is always built from appUrl, never any other source", () => {
   const content = buildInvitationEmail(RECIPIENT, "https://trusted-server-configured.example");
   // Only one href appears anywhere in the email, and it is exactly appUrl/login.
