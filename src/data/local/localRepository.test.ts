@@ -2232,7 +2232,7 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
 
     it('sendPersonnelInvitation records a successful send', async () => {
       const entry = await repo.createPendingPersonnel(supervisor1, input());
-      const outcome = await repo.sendPersonnelInvitation(supervisor1, entry.id, null);
+      const outcome = await repo.sendPersonnelInvitation(supervisor1, entry.id);
       expect(outcome).toEqual({ outcome: 'sent' });
       const list = await repo.listPersonnel(supervisor1);
       expect(list.find((e) => e.kind === 'pending' && e.id === entry.id)).toMatchObject({ invitationStatus: 'sent' });
@@ -2240,38 +2240,38 @@ describe('pre-provisioned personnel (mirrors migration 0008 rules)', () => {
 
     it('the SAME role ceiling as creation applies to sending/resending an invitation', async () => {
       const entry = await repo.createPendingPersonnel(admin, input({ role: 'professional_manager' }));
-      await expect(repo.sendPersonnelInvitation(supervisor1, entry.id, null)).rejects.toMatchObject({
+      await expect(repo.sendPersonnelInvitation(supervisor1, entry.id)).rejects.toMatchObject({
         code: 'FORBIDDEN',
       });
-      await expect(repo.sendPersonnelInvitation(manager, entry.id, null)).rejects.toMatchObject({
+      await expect(repo.sendPersonnelInvitation(manager, entry.id)).rejects.toMatchObject({
         code: 'FORBIDDEN',
       });
-      await expect(repo.sendPersonnelInvitation(admin, entry.id, null)).resolves.toEqual({ outcome: 'sent' });
+      await expect(repo.sendPersonnelInvitation(admin, entry.id)).resolves.toEqual({ outcome: 'sent' });
     });
 
     it('technicians and viewers cannot invoke it at all', async () => {
       const entry = await repo.createPendingPersonnel(supervisor1, input());
-      await expect(repo.sendPersonnelInvitation(tech1, entry.id, null)).rejects.toMatchObject({ code: 'FORBIDDEN' });
-      await expect(repo.sendPersonnelInvitation(viewer, entry.id, null)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.sendPersonnelInvitation(tech1, entry.id)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(repo.sendPersonnelInvitation(viewer, entry.id)).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('rejects a non-pending (cancelled) entry -- there is nothing left to invite', async () => {
       const entry = await repo.createPendingPersonnel(supervisor1, input());
       await repo.cancelPendingPersonnel(supervisor1, entry.id);
-      await expect(repo.sendPersonnelInvitation(supervisor1, entry.id, null)).rejects.toMatchObject({
+      await expect(repo.sendPersonnelInvitation(supervisor1, entry.id)).rejects.toMatchObject({
         code: 'VALIDATION',
       });
     });
 
     it('rejects an unknown id', async () => {
-      await expect(repo.sendPersonnelInvitation(supervisor1, 'no-such-id', null)).rejects.toMatchObject({
+      await expect(repo.sendPersonnelInvitation(supervisor1, 'no-such-id')).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
     });
 
     it('a successful send is audited as personnel_invitation_sent', async () => {
       const entry = await repo.createPendingPersonnel(supervisor1, input());
-      await repo.sendPersonnelInvitation(supervisor1, entry.id, null);
+      await repo.sendPersonnelInvitation(supervisor1, entry.id);
       const logs = (await repo.listAuditLogs(admin, {}, 1, 200)).items;
       expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['personnel_invitation_sent']));
     });

@@ -27,8 +27,8 @@
 // hosted credentials this environment does not have, same as delete-user
 // and send-push-notification.
 import { createClient } from "@supabase/supabase-js";
+import { resolveAppUrl } from "./appUrlConfig.ts";
 import { buildInvitationEmail } from "./invitationEmail.ts";
-import { sanitizeAppOrigin } from "./originValidation.ts";
 import { createResendSender } from "./resendSender.ts";
 import type { InvitationRecipient } from "./types.ts";
 
@@ -87,6 +87,10 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const anonKey = resolveKey("SUPABASE_PUBLISHABLE_KEYS", "SUPABASE_ANON_KEY");
 const resendApiKey = Deno.env.get("RESEND_API_KEY");
 const resendFromAddress = Deno.env.get("RESEND_FROM_EMAIL");
+// The ONLY source of the AVARIA URL embedded in an invitation email's CTA
+// link and logo image -- a server-only secret, resolved once here, never
+// read from the request. See appUrlConfig.ts.
+const appUrl = resolveAppUrl((name) => Deno.env.get(name));
 
 if (!supabaseUrl || !anonKey) {
   console.error(
@@ -96,6 +100,11 @@ if (!supabaseUrl || !anonKey) {
 if (!resendApiKey || !resendFromAddress) {
   console.error(
     "send-invitation-email: RESEND_API_KEY / RESEND_FROM_EMAIL not configured -- every send will be recorded as failed until this is corrected",
+  );
+}
+if (!appUrl) {
+  console.error(
+    "send-invitation-email: AVARIA_APP_URL is not configured (or is not a valid https URL) -- every send will be recorded as failed until this is corrected",
   );
 }
 
@@ -127,11 +136,11 @@ Deno.serve(async (req: Request) => {
   if (typeof pendingPersonnelId !== "string" || !UUID_RE.test(pendingPersonnelId)) {
     return json(400, { error: "invalid_pending_personnel_id", message: "pendingPersonnelId must be a UUID string." });
   }
-  // The requesting page's own origin -- used only to build the email's
-  // login link/logo image (see originValidation.ts). Absent or malformed
-  // simply degrades the email to a text-only login instruction; it never
-  // fails the request.
-  const appOrigin = sanitizeAppOrigin(record?.origin);
+  // Deliberately: nothing else is read from `record`. The email's CTA
+  // link and logo image come only from the server-side appUrl resolved
+  // above (AVARIA_APP_URL) -- a client-supplied origin/URL is never
+  // accepted, so a caller cannot influence where an AVARIA-branded email
+  // points no matter what the request body contains.
 
   if (!supabaseUrl || !anonKey) {
     console.error("send-invitation-email: rejecting request -- function environment is not configured");
@@ -164,10 +173,17 @@ Deno.serve(async (req: Request) => {
     email: (targetRow as Record<string, unknown>).email as string,
     role: (targetRow as Record<string, unknown>).role as InvitationRecipient["role"],
   };
-  const { subject, html, text } = buildInvitationEmail(recipient, appOrigin);
 
-  const outcome = sendEmail
-    ? await sendEmail({ to: recipient.email, subject, html, text })
+  // Both the provider credentials AND the trusted app URL must be
+  // configured before a real send is even attempted -- buildInvitationEmail
+  // is never called with anything but a confirmed-valid, server-resolved
+  // appUrl (see the module-level appUrl resolution and invitationEmail.ts's
+  // own comment on why it has no degraded/fallback path).
+  const outcome = sendEmail && appUrl
+    ? await sendEmail({
+      to: recipient.email,
+      ...buildInvitationEmail(recipient, appUrl),
+    })
     : { outcome: "failed" as const, message: 'תצורת שליחת הדוא"ל בצד השרת חסרה.' };
 
   // Best-effort recording: a failure to WRITE the outcome must never
@@ -186,5 +202,5 @@ Deno.serve(async (req: Request) => {
     console.error("send-invitation-email: failed to record invitation result:", recordError.message);
   }
 
-  return json(200, outcome);
+  return json(200, { ...outcome });
 });

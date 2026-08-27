@@ -2,7 +2,7 @@
 // (https://api.resend.com/emails) -- a single fetch() call, no SDK
 // dependency, matching this function's other modules' preference for
 // dependency-free implementations over an extra npm import (see
-// originValidation.ts/invitationEmail.ts). RESEND_API_KEY is read once by
+// appUrlConfig.ts/invitationEmail.ts). RESEND_API_KEY is read once by
 // index.ts (module scope, same pattern as VAPID_* in
 // send-push-notification/vapidConfig.ts) and passed in here -- this module
 // never reads Deno.env itself, which is what keeps it unit-testable with a

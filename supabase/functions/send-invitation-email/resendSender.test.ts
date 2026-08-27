@@ -24,7 +24,11 @@ Deno.test("createResendSender: sends the expected request shape", async () => {
   const send = createResendSender(CONFIG, capturingFetch);
   await send(EMAIL);
   assert.ok(captured);
-  const { url, init } = captured!;
+  // An explicit `as` cast here, not a `captured!` non-null assertion --
+  // the combination of a closure-mutated `let` and an await in between
+  // trips a real inference quirk in this Deno/TS version that otherwise
+  // resolves `init` to `never` (verified: `deno check` fails without this).
+  const { url, init } = captured as { url: string; init: RequestInit };
   assert.equal(url, "https://api.resend.com/emails");
   assert.equal(init.method, "POST");
   const headers = init.headers as Record<string, string>;

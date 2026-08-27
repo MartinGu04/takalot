@@ -25,17 +25,18 @@ Deno.test("buildInvitationEmail: html is RTL", () => {
   assert.ok(content.html.includes('dir="rtl"'));
 });
 
-Deno.test("buildInvitationEmail: with an origin, links to <origin>/login", () => {
+Deno.test("buildInvitationEmail: links to <appUrl>/login and embeds the logo from <appUrl>", () => {
   const content = buildInvitationEmail(RECIPIENT, "https://avaria.example.com");
   assert.ok(content.html.includes("https://avaria.example.com/login"));
   assert.ok(content.text.includes("https://avaria.example.com/login"));
+  assert.ok(content.html.includes("https://avaria.example.com/branding/avaria-compact-micro-mark.png"));
 });
 
-Deno.test("buildInvitationEmail: with no origin, falls back to plain instructions and no broken link", () => {
-  const content = buildInvitationEmail(RECIPIENT, null);
-  assert.ok(!content.html.includes("href="));
-  assert.ok(content.html.includes("AVARIA"));
-  assert.ok(content.text.includes("AVARIA"));
+Deno.test("buildInvitationEmail: the CTA link is always built from appUrl, never any other source", () => {
+  const content = buildInvitationEmail(RECIPIENT, "https://trusted-server-configured.example");
+  // Only one href appears anywhere in the email, and it is exactly appUrl/login.
+  const hrefs = [...content.html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs, ["https://trusted-server-configured.example/login"]);
 });
 
 Deno.test("buildInvitationEmail: escapes HTML-significant characters in the name", () => {
@@ -60,6 +61,6 @@ Deno.test("buildInvitationEmail: renders every role label distinctly", () => {
     "technician",
     "viewer",
   ];
-  const labels = roles.map((role) => buildInvitationEmail({ ...RECIPIENT, role }, null).text);
+  const labels = roles.map((role) => buildInvitationEmail({ ...RECIPIENT, role }, "https://avaria.example.com").text);
   assert.equal(new Set(labels).size, roles.length);
 });

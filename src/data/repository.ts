@@ -229,22 +229,20 @@ export interface Repository {
    * entry, via the server-side send-invitation-email Edge Function -- the
    * SAME role-ceiling check create_pending_personnel enforces applies
    * here too (the function forwards the caller's own JWT; no privileged
-   * key is ever handled client-side). `appOrigin` is this page's own
-   * `window.location.origin`, used only to build the email's login link
-   * and logo image (see the Edge Function's originValidation.ts) -- never
-   * an authorization input. A failed SEND (provider error, missing
-   * server configuration) is reported back as `{ outcome: 'failed',
-   * message }`, not thrown -- creating/inviting a person must never look
-   * like a failed mutation just because the email didn't go out; the
-   * caller decides how to surface that (see PersonnelPage.tsx). Thrown
-   * AppErrors are reserved for real request failures: unauthenticated,
-   * unauthorized, or the entry no longer being a valid invitation target.
+   * key is ever handled client-side). Deliberately takes NO url/origin
+   * parameter: the email's login link and logo image are built entirely
+   * server-side from a trusted Edge Function secret (AVARIA_APP_URL, see
+   * appUrlConfig.ts) -- the client has no way to influence, and is never
+   * asked for, where an AVARIA-branded email points. A failed SEND
+   * (provider error, missing server configuration) is reported back as
+   * `{ outcome: 'failed', message }`, not thrown -- creating/inviting a
+   * person must never look like a failed mutation just because the email
+   * didn't go out; the caller decides how to surface that (see
+   * PersonnelPage.tsx). Thrown AppErrors are reserved for real request
+   * failures: unauthenticated, unauthorized, or the entry no longer being
+   * a valid invitation target.
    */
-  sendPersonnelInvitation(
-    session: Session,
-    pendingPersonnelId: string,
-    appOrigin: string | null,
-  ): Promise<InvitationSendOutcome>;
+  sendPersonnelInvitation(session: Session, pendingPersonnelId: string): Promise<InvitationSendOutcome>;
   /**
    * Attempts to claim the authenticated identity's matching pending entry.
    * Takes no identity/email arguments by design: the backend derives

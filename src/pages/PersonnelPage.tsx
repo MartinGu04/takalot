@@ -100,7 +100,7 @@ export default function PersonnelPage() {
       const entry = await repo().createPendingPersonnel(session, input);
       let invitation: InvitationSendOutcome;
       try {
-        invitation = await repo().sendPersonnelInvitation(session, entry.id, window.location.origin);
+        invitation = await repo().sendPersonnelInvitation(session, entry.id);
       } catch {
         invitation = { outcome: 'failed' };
       }
@@ -121,7 +121,7 @@ export default function PersonnelPage() {
   );
 
   const resendInvitationMutation = useAppMutation(
-    (id: string) => repo().sendPersonnelInvitation(session, id, window.location.origin),
+    (id: string) => repo().sendPersonnelInvitation(session, id),
     {
       invalidate: [['personnel']],
       onSuccess: (outcome) => {

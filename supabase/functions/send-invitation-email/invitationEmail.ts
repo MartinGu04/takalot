@@ -1,7 +1,15 @@
-// Pure builder: (recipient, appOrigin) -> { subject, html, text }. No I/O,
-// no Deno/env access -- exactly the dispatch.ts-style split this codebase
+// Pure builder: (recipient, appUrl) -> { subject, html, text }. No I/O, no
+// Deno/env access -- exactly the dispatch.ts-style split this codebase
 // already uses (see send-push-notification/dispatch.ts), so the entire
 // template can be unit tested without a real email provider or database.
+//
+// `appUrl` must be the server-trusted origin resolved by
+// appUrlConfig.resolveAppUrl -- NEVER anything client-supplied. This
+// module has no fallback/degraded path for a missing or untrusted URL by
+// design: the caller (index.ts) only invokes buildInvitationEmail once
+// AVARIA_APP_URL has already been confirmed configured and valid: when it
+// isn't, index.ts records the send as failed and never calls this
+// function at all, rather than emailing a link built from anything else.
 //
 // RTL by construction (dir="rtl" on every text-bearing element, Hebrew
 // copy throughout) and mobile-friendly (a single-column, max-width table
@@ -19,8 +27,6 @@ const ROLE_LABELS: Record<InvitationRecipient["role"], string> = {
 
 const BRAND_PURPLE = "#6d28d9";
 const BRAND_PURPLE_DARK = "#4c1d95";
-const FALLBACK_LOGIN_TEXT =
-  "יש להיכנס לכתובת AVARIA הרגילה ולהתחבר עם חשבון ה-Google שצוין למעלה.";
 
 function escapeHtml(value: string): string {
   return value
@@ -33,35 +39,27 @@ function escapeHtml(value: string): string {
 
 export function buildInvitationEmail(
   recipient: InvitationRecipient,
-  appOrigin: string | null,
+  appUrl: string,
 ): InvitationEmailContent {
   const roleLabel = ROLE_LABELS[recipient.role];
   const displayName = recipient.fullName.trim() || recipient.email;
   const safeName = escapeHtml(displayName);
   const safeEmail = escapeHtml(recipient.email);
   const safeRole = escapeHtml(roleLabel);
-  const loginUrl = appOrigin ? `${appOrigin}/login` : null;
-  const logoUrl = appOrigin
-    ? `${appOrigin}/branding/avaria-compact-micro-mark.png`
-    : null;
+  const loginUrl = `${appUrl}/login`;
+  const logoUrl = `${appUrl}/branding/avaria-compact-micro-mark.png`;
 
   const subject = "הזמנה למערכת AVARIA";
 
-  const ctaHtml = loginUrl
-    ? `<a href="${escapeHtml(loginUrl)}"
+  const ctaHtml = `<a href="${escapeHtml(loginUrl)}"
            style="display:inline-block;background-color:${BRAND_PURPLE};color:#ffffff;
                   font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;
                   text-decoration:none;padding:14px 40px;border-radius:10px;">
           כניסה ל-AVARIA
-        </a>`
-    : `<span style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#3f3f46;">
-        ${escapeHtml(FALLBACK_LOGIN_TEXT)}
-      </span>`;
+        </a>`;
 
-  const logoHtml = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" width="56" height="56" alt="AVARIA"
-            style="display:block;border-radius:14px;" />`
-    : `<span style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:bold;color:${BRAND_PURPLE};">AVARIA</span>`;
+  const logoHtml = `<img src="${escapeHtml(logoUrl)}" width="56" height="56" alt="AVARIA"
+            style="display:block;border-radius:14px;" />`;
 
   const html = `<!doctype html>
 <html dir="rtl" lang="he">
@@ -113,7 +111,7 @@ export function buildInvitationEmail(
     `ניתנה לך גישה למערכת AVARIA, בתפקיד ${roleLabel}.`,
     `ההתחברות היא באמצעות חשבון ה-Google: ${recipient.email}`,
     "",
-    loginUrl ? `כניסה ל-AVARIA: ${loginUrl}` : FALLBACK_LOGIN_TEXT,
+    `כניסה ל-AVARIA: ${loginUrl}`,
     "",
     "אין צורך באישור נוסף — ההרשאה כבר פעילה במערכת.",
   ].join("\n");

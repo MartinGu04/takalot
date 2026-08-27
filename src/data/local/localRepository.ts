@@ -1401,11 +1401,7 @@ export class LocalDemoRepository implements Repository {
     return { outcome: 'sent' };
   }
 
-  async sendPersonnelInvitation(
-    session: Session,
-    pendingPersonnelId: string,
-    _appOrigin: string | null,
-  ): Promise<InvitationSendOutcome> {
+  async sendPersonnelInvitation(session: Session, pendingPersonnelId: string): Promise<InvitationSendOutcome> {
     const actor = this.requirePersonnelManager(session);
     const row = this.pendingRows().find((r) => r.id === pendingPersonnelId);
     if (!row) throw new AppError('NOT_FOUND', 'הרישום לא נמצא.');

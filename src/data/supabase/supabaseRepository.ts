@@ -668,18 +668,18 @@ export class SupabaseRepository implements Repository {
     await this.rpc('cancel_pending_personnel', { p_id: id });
   }
 
-  async sendPersonnelInvitation(
-    _s: Session,
-    pendingPersonnelId: string,
-    appOrigin: string | null,
-  ): Promise<InvitationSendOutcome> {
+  async sendPersonnelInvitation(_s: Session, pendingPersonnelId: string): Promise<InvitationSendOutcome> {
     // The shared client (src/data/supabase/client.ts) attaches the current
     // session's access token automatically -- both RPCs inside the
     // function therefore run as THIS caller, under the exact same
     // role-ceiling check create_pending_personnel enforces. No service-role
-    // or provider secret is ever requested, handled, or sent here.
+    // or provider secret is ever requested, handled, or sent here. The
+    // request body deliberately carries no url/origin -- the email's
+    // login link and logo are built server-side from a trusted Edge
+    // Function secret (see supabase/functions/send-invitation-email/
+    // appUrlConfig.ts); the client has nothing to contribute there.
     const { data, error } = await this.client.functions.invoke('send-invitation-email', {
-      body: { pendingPersonnelId, origin: appOrigin },
+      body: { pendingPersonnelId },
     });
     if (error) throw await mapInvitationError(error);
     return data as InvitationSendOutcome;
