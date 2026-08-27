@@ -13,9 +13,11 @@ import {
   UnauthorizedScreen,
 } from './components/AuthScreens';
 import { getAppMode } from './data/appMode';
+import { isDemoMode } from './data';
 import { hasCapability, type Capability } from './domain/permissions';
 import { sanitizeInternalReturnPath } from './lib/returnPath';
 import LoginPage from './pages/LoginPage';
+import { OnboardingModal } from './onboarding/OnboardingModal';
 import { OfflineBanner } from './pwa/OfflineBanner';
 import { UpdatePrompt } from './pwa/UpdatePrompt';
 
@@ -78,6 +80,18 @@ function AppRoutes() {
 
   return (
     <Layout>
+      {/* Session-scoped, device-derived setup guidance -- only once a real
+          profile exists (never on the login screen itself), and only in
+          real (Supabase) sessions: demo mode has no real admin-invitation
+          flow or persisted Push identity for this to apply to, and is the
+          sanctioned fallback the e2e suite always runs under (see
+          playwright.config.ts) -- gating it out here keeps demo/e2e runs
+          free of a real browser's own install-prompt timing (Chromium's
+          `beforeinstallprompt` can fire mid-test) ever popping this modal
+          open unpredictably during an unrelated flow. Mounted once at this
+          level (not per-route) so it never reopens on ordinary navigation;
+          see OnboardingModal's own "at most once per mount" guard. */}
+      {user && !isDemoMode() && <OnboardingModal />}
       <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/login" element={user ? <Navigate to={postLoginTarget} replace /> : <LoginPage />} />

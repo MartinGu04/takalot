@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2"
+  },
+  "tasks": {
+    "test": "deno test --allow-net --allow-env appUrlConfig.test.ts invitationEmail.test.ts resendSender.test.ts",
+    "check": "deno check index.ts appUrlConfig.ts invitationEmail.ts resendSender.ts types.ts"
+  }
+}

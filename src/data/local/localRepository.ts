@@ -14,6 +14,7 @@ import type {
   IncidentSummary,
   IncidentTreatmentAction,
   IncidentUpdate,
+  InvitationSendOutcome,
   LocationCategory,
   LocationRecord,
   OperationalNotificationEventType,
@@ -1229,6 +1230,7 @@ export class LocalDemoRepository implements Repository {
         state: 'pending' as const,
         createdAt: r.createdAt,
         avatarUrl: null,
+        invitationStatus: r.invitationStatus,
       }));
     const linked: PersonnelEntry[] = this.db.profiles.map((p) => ({
       kind: 'linked' as const,
@@ -1239,6 +1241,7 @@ export class LocalDemoRepository implements Repository {
       state: p.deletedAt ? ('deleted' as const) : p.active ? ('active' as const) : ('inactive' as const),
       createdAt: p.createdAt,
       avatarUrl: p.avatarUrl ?? null,
+      invitationStatus: null,
     }));
     const byCreatedDesc = (a: PersonnelEntry, b: PersonnelEntry) => b.createdAt.localeCompare(a.createdAt);
     return [...linked.sort(byCreatedDesc), ...pending.sort(byCreatedDesc)];
@@ -1283,6 +1286,9 @@ export class LocalDemoRepository implements Repository {
       claimedAt: null,
       cancelledBy: null,
       cancelledAt: null,
+      invitationStatus: 'not_sent',
+      invitationSentAt: null,
+      invitationLastError: null,
     };
     this.pendingRows().push(row);
     this.audit(actor.id, 'personnel_pending_created', 'pending_personnel', row.id, {
@@ -1378,6 +1384,52 @@ export class LocalDemoRepository implements Repository {
       before: JSON.stringify({ email: row.email, role: row.role }),
     });
     this.persist();
+  }
+
+  // Demo mode has no real email provider. Mirrors the Supabase Edge
+  // Function's own two-step shape (see supabase/functions/
+  // send-invitation-email/index.ts): an authorization/validity check
+  // identical to get_pending_personnel_invitation_target, an "attempt the
+  // send" step (simulateEmailSend -- overridable in tests via
+  // vi.spyOn(LocalDemoRepository.prototype, 'simulateEmailSend') to
+  // exercise the failure path), and a persistence step identical to
+  // record_pending_personnel_invitation_result: invitation_sent_at is set
+  // (and any prior error cleared) only on a successful outcome; a failed
+  // outcome records the error but leaves a previous successful sent_at
+  // untouched.
+  protected async simulateEmailSend(): Promise<InvitationSendOutcome> {
+    return { outcome: 'sent' };
+  }
+
+  async sendPersonnelInvitation(session: Session, pendingPersonnelId: string): Promise<InvitationSendOutcome> {
+    const actor = this.requirePersonnelManager(session);
+    const row = this.pendingRows().find((r) => r.id === pendingPersonnelId);
+    if (!row) throw new AppError('NOT_FOUND', 'הרישום לא נמצא.');
+    if (!allowedAssignRoles(actor.role).includes(row.role)) {
+      throw new AppError('FORBIDDEN', 'אין הרשאה לשלוח הזמנה לרישום זה.');
+    }
+    if (row.status !== 'pending') {
+      throw new AppError('VALIDATION', 'ניתן לשלוח הזמנה רק לרישום הממתין להתחברות.');
+    }
+    const outcome = await this.simulateEmailSend();
+    const ts = this.now().toISOString();
+    row.invitationStatus = outcome.outcome;
+    if (outcome.outcome === 'sent') {
+      row.invitationSentAt = ts;
+      row.invitationLastError = null;
+    } else {
+      row.invitationLastError = outcome.message ?? 'שגיאה לא ידועה';
+    }
+    row.updatedAt = ts;
+    this.audit(
+      actor.id,
+      outcome.outcome === 'sent' ? 'personnel_invitation_sent' : 'personnel_invitation_failed',
+      'pending_personnel',
+      row.id,
+      { after: JSON.stringify({ email: row.email, status: outcome.outcome }) },
+    );
+    this.persist();
+    return outcome;
   }
 
   async claimPendingProfile(): Promise<Profile | null> {

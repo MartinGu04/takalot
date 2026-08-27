@@ -15,6 +15,7 @@ import type {
   IncidentSummary,
   IncidentTreatmentAction,
   IncidentUpdate,
+  InvitationSendOutcome,
   LocationCategory,
   LocationRecord,
   OperationalNotificationEventType,
@@ -101,6 +102,39 @@ async function mapDeleteUserError(error: unknown): Promise<AppError> {
     );
   }
   return new AppError('NETWORK', 'אירעה שגיאה בלתי צפויה במחיקת המשתמש. נא לנסות שוב.');
+}
+
+// Maps a failed send-invitation-email Edge Function INVOCATION (missing
+// auth, the caller out of role-ceiling for this entry, the entry no
+// longer a valid invitation target, or the function's own environment
+// being misconfigured) to an AppError -- distinct from the function's
+// normal 200 response, which reports a failed SEND as
+// { outcome: 'failed', message } data, not an error (see
+// sendPersonnelInvitation below). Same status-code-first, safe-body-only
+// mapping as mapDeleteUserError.
+async function mapInvitationError(error: unknown): Promise<AppError> {
+  const context = (error as { context?: unknown } | null | undefined)?.context;
+  let status: number | undefined;
+  let body: { error?: string; message?: string } | undefined;
+  if (context && typeof context === 'object' && 'status' in context) {
+    status = (context as { status?: number }).status;
+    try {
+      body = await (context as Response).json();
+    } catch {
+      // No JSON body available -- fall through to the generic mapping below.
+    }
+  }
+
+  if (status === 403) {
+    return new AppError('FORBIDDEN', 'אין לך הרשאה לשלוח הזמנה לרישום זה.');
+  }
+  if (status === 404) {
+    return new AppError('NOT_FOUND', 'הרישום לא נמצא.');
+  }
+  if (status === 409) {
+    return new AppError('VALIDATION', body?.message || 'ניתן לשלוח הזמנה רק לרישום הממתין להתחברות.');
+  }
+  return new AppError('NETWORK', 'אירעה שגיאה בלתי צפויה בשליחת ההזמנה. נא לנסות שוב.');
 }
 
 function wrap(error: { message: string; code?: string } | null): void {
@@ -320,6 +354,9 @@ const mapPendingPersonnel = (r: Record<string, unknown>): PendingPersonnel => ({
   claimedAt: r.claimed_at as string | null,
   cancelledBy: r.cancelled_by as string | null,
   cancelledAt: r.cancelled_at as string | null,
+  invitationStatus: r.invitation_status as PendingPersonnel['invitationStatus'],
+  invitationSentAt: r.invitation_sent_at as string | null,
+  invitationLastError: r.invitation_last_error as string | null,
 });
 
 export const mapSystem = (r: Record<string, unknown>): SystemRecord => ({
@@ -631,6 +668,23 @@ export class SupabaseRepository implements Repository {
     await this.rpc('cancel_pending_personnel', { p_id: id });
   }
 
+  async sendPersonnelInvitation(_s: Session, pendingPersonnelId: string): Promise<InvitationSendOutcome> {
+    // The shared client (src/data/supabase/client.ts) attaches the current
+    // session's access token automatically -- both RPCs inside the
+    // function therefore run as THIS caller, under the exact same
+    // role-ceiling check create_pending_personnel enforces. No service-role
+    // or provider secret is ever requested, handled, or sent here. The
+    // request body deliberately carries no url/origin -- the email's
+    // login link and logo are built server-side from a trusted Edge
+    // Function secret (see supabase/functions/send-invitation-email/
+    // appUrlConfig.ts); the client has nothing to contribute there.
+    const { data, error } = await this.client.functions.invoke('send-invitation-email', {
+      body: { pendingPersonnelId },
+    });
+    if (error) throw await mapInvitationError(error);
+    return data as InvitationSendOutcome;
+  }
+
   async claimPendingProfile(): Promise<Profile | null> {
     // Deliberately parameterless: the RPC derives auth.uid() itself and
     // reads the verified email from auth.users -- nothing the client sends
@@ -671,6 +725,7 @@ export class SupabaseRepository implements Repository {
       state: r.state as PersonnelEntry['state'],
       createdAt: r.created_at as string,
       avatarUrl: (r.avatar_url as string | null) ?? null,
+      invitationStatus: (r.invitation_status as PersonnelEntry['invitationStatus']) ?? null,
     }));
 
     // list_personnel() predates the tombstone model (migration 0012) and
