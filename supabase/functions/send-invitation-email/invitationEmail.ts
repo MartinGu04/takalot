@@ -51,11 +51,28 @@ export function buildInvitationEmail(
 
   const subject = "הזמנה למערכת AVARIA";
 
-  const ctaHtml = `<a href="${escapeHtml(loginUrl)}"
+  // A plain ASCII hyphen between a Hebrew word and a Latin brand name is a
+  // WEAK/neutral bidi character (Bidi_Class ES/CS) -- inside an <a> whose
+  // own effective direction some clients (Gmail's sanitizer included)
+  // resolve as LTR rather than inheriting the surrounding RTL context, the
+  // Unicode Bidi Algorithm can then lay the two runs out in LOGICAL
+  // left-to-right order ("AVARIA" first, then the Hebrew phrase) instead
+  // of the intended RTL order -- each run still reads correctly on its
+  // own, only their relative order flips. Two independent, redundant
+  // fixes, since no single one is guaranteed to survive every client's
+  // HTML sanitizer: (1) `dir="rtl"` set directly as an HTML ATTRIBUTE on
+  // the <a> itself (attributes tend to survive sanitizers that strip
+  // inline CSS), backed by `direction:rtl;unicode-bidi:isolate` in its
+  // own inline style; (2) the Hebrew maqaf (־, U+05BE) instead of an
+  // ASCII hyphen as the separator -- a STRONG right-to-left character
+  // (Bidi_Class R), so it can never be grouped with the adjacent Latin
+  // run the way a neutral hyphen can.
+  const ctaHtml = `<a href="${escapeHtml(loginUrl)}" dir="rtl"
            style="display:inline-block;background-color:${BRAND_PURPLE};color:#ffffff;
                   font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;
-                  text-decoration:none;padding:14px 40px;border-radius:10px;">
-          כניסה ל-AVARIA
+                  text-decoration:none;padding:14px 40px;border-radius:10px;
+                  direction:rtl;unicode-bidi:isolate;">
+          כניסה ל־AVARIA
         </a>`;
 
   const logoHtml = `<img src="${escapeHtml(logoUrl)}" width="56" height="56" alt="AVARIA"
@@ -111,7 +128,7 @@ export function buildInvitationEmail(
     `ניתנה לך גישה למערכת AVARIA, בתפקיד ${roleLabel}.`,
     `ההתחברות היא באמצעות חשבון ה-Google: ${recipient.email}`,
     "",
-    `כניסה ל-AVARIA: ${loginUrl}`,
+    `כניסה ל־AVARIA: ${loginUrl}`,
     "",
     "אין צורך באישור נוסף — ההרשאה כבר פעילה במערכת.",
   ].join("\n");
