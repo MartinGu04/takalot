@@ -590,20 +590,16 @@ function TimelineEntry({
       );
     }
   } else if (primary.type === 'created') {
-    // The opening description (and, when answered, the opening-time
-    // reporting facts) live in the generated note -- this IS the event's
-    // core "what happened" content, the created-event counterpart of an
-    // update's own actionsTaken, so it stays in the primary summary rather
-    // than behind "פרטים נוספים".
+    // The generated note bundles the free-text opening description with
+    // (when answered) the opening-time comms/WISDOM narrative -- often
+    // several lines, sometimes paragraphs -- so it's verbose secondary
+    // content like an update's findings/next steps, not the always-visible
+    // summary. The structured facts that actually matter for a quick scan
+    // (suspected cause, treatment-action classification, and any
+    // status/reporting deltas recorded in the same operation -- rendered
+    // below as nested compact rows) stay primary on their own.
     summary = (
       <>
-        {primary.note && <p className="whitespace-pre-wrap break-words text-sm">{primary.note}</p>}
-        {primary.userNote && (
-          <p className="text-sm">
-            <span className="font-medium">הערה נוספת: </span>
-            <span className="whitespace-pre-wrap break-words">{primary.userNote}</span>
-          </p>
-        )}
         {initialCause && (
           <p className="text-sm">
             <span className="font-medium">חשד ראשוני: </span>
@@ -617,6 +613,15 @@ function TimelineEntry({
         <TreatmentActionChips actions={groupTreatmentActions} />
       </>
     );
+    if (primary.note) detailItems.push(<p className="whitespace-pre-wrap break-words">{primary.note}</p>);
+    if (primary.userNote) {
+      detailItems.push(
+        <p>
+          <span className="font-medium">הערה נוספת: </span>
+          <span className="whitespace-pre-wrap break-words">{primary.userNote}</span>
+        </p>,
+      );
+    }
   } else if (primary.type === 'correction') {
     summary = (
       <>
@@ -679,7 +684,7 @@ function TimelineEntry({
         <Icon className="size-3.5" />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className={rich ? 'text-base font-bold text-text-primary' : 'text-sm font-semibold text-text-primary'}>{titleText}</span>
           <span className="shrink-0 text-xs font-semibold text-text-secondary">{formatTime(primary.eventTime)}</span>
         </div>
@@ -696,7 +701,7 @@ function TimelineEntry({
         <div className="mt-1.5 flex flex-col gap-1.5">{summary}</div>
         <CorrectionAction event={primary} compact={false} currentUserId={currentUserId} canCorrectAny={canCorrectAny} onCorrect={onCorrect} />
         {subordinates.length > 0 && (
-          <div className="mt-1.5 flex flex-col gap-1 border-t border-hairline pt-1.5">
+          <div className="mt-2 flex flex-col gap-1">
             {subordinates.map((sub) => (
               <div key={sub.id}>
                 <CompactChange event={sub} />

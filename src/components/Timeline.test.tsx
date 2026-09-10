@@ -167,6 +167,33 @@ describe('Timeline: event-type classification (color + icon)', () => {
   });
 });
 
+describe('Timeline: title/time header stay physically adjacent', () => {
+  it('renders the time immediately next to the title, not spread apart in a separate far column', () => {
+    // 2026-01-10T08:00 UTC is 10:00 Asia/Jerusalem (winter, UTC+2).
+    const events = [ev({ id: 'e1', type: 'closed', operationId: 'op-1', newValue: 'full', eventTime: '2026-01-10T08:00:00.000Z' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    const title = screen.getByText('סגירת תקלה');
+    const time = screen.getByText('10:00');
+    const header = title.parentElement as HTMLElement;
+    // Title and time share one non-stretched header row: no space-between
+    // layout pushing the time to the row's far edge.
+    expect(header.className).not.toContain('justify-between');
+    expect(header.contains(time)).toBe(true);
+    // They are adjacent DOM siblings -- nothing rendered between them.
+    expect(title.nextElementSibling).toBe(time);
+  });
+
+  it("does not render a long horizontal divider between a rich entry's summary and its nested compact rows", () => {
+    const events = [
+      ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' }),
+      ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' }),
+    ];
+    const updates = [upd({ id: 'upd-1', actionsTaken: 'תוכן' })];
+    const { container } = render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(container.querySelector('.border-t')).toBeNull();
+  });
+});
+
 describe('Timeline: date grouping', () => {
   it('shows one date separator for multiple events on the same calendar date, each event showing only its time', () => {
     const events = [
@@ -419,7 +446,7 @@ describe('Timeline: "הערה נוספת" (user note)', () => {
     expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
   });
 
-  it('shows the user note on a "created" event immediately, distinct from its own generated note -- both are core, not verbose detail', () => {
+  it('shows the user note on a "created" event, behind "פרטים נוספים", distinct from its own generated note -- both are verbose free text', () => {
     const events = [
       ev({
         id: 'e-created',
@@ -430,11 +457,12 @@ describe('Timeline: "הערה נוספת" (user note)', () => {
       }),
     ];
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    // Nothing verbose is shown before the details are opened.
+    expect(screen.queryByText(/פעולות שבוצעו עד כה: בדיקה ראשונית/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getByText(/פעולות שבוצעו עד כה: בדיקה ראשונית/)).toBeInTheDocument();
     expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
     expect(screen.getByText('התקלה דווחה טלפונית')).toBeInTheDocument();
-    // Nothing verbose left to hide, so no details control appears at all.
-    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
   });
 
   it('shows the user note on a "closed" event, behind "פרטים נוספים", distinct from its own generated note', () => {
@@ -458,6 +486,7 @@ describe('Timeline: "הערה נוספת" (user note)', () => {
   it('omits the "הערה נוספת" line when a created event has a generated note but no separate user note', () => {
     const events = [ev({ id: 'e-created', type: 'created', operationId: 'op-1', note: 'פעולות שבוצעו עד כה: X', userNote: null })];
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getByText(/פעולות שבוצעו עד כה: X/)).toBeInTheDocument();
     expect(screen.queryByText('הערה נוספת:')).not.toBeInTheDocument();
   });
@@ -492,6 +521,43 @@ describe('Timeline: "פרטים נוספים" details disclosure', () => {
     // Now visible, and the summary is still visible too.
     expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
     expect(screen.getByText(/כשירות בסגירה/)).toBeInTheDocument();
+  });
+
+  // Opening an incident directly at a non-"new" status, with an initial
+  // "reported to ops" answer, writes status_change/reported_to_ops_change
+  // rows sharing the 'created' event's own operationId (see migration
+  // 0021) -- these must still render as always-visible nested compact
+  // rows even though the long opening narrative next to them is hidden.
+  it('a "created" event keeps its structured compact deltas visible while its long free-text narrative stays behind "פרטים נוספים"', () => {
+    const events = [
+      ev({
+        id: 'e-created',
+        type: 'created',
+        operationId: 'op-1',
+        note: 'פעולות שבוצעו עד כה: אתחול ראשוני\nתקשוב למבצעים: לא\nWISDOM: לא',
+      }),
+      ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' }),
+      ev({
+        id: 'e-ops',
+        type: 'reported_to_ops_change',
+        operationId: 'op-1',
+        field: 'reported_to_ops_recipient',
+        newValue: 'עמית',
+        note: 'דווח למבצעים: עמית',
+      }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+
+    // Always visible: the compact status and reporting deltas.
+    expect(screen.getByText('סטטוס:')).toBeInTheDocument();
+    expect(screen.getByText('בטיפול')).toBeInTheDocument();
+    expect(screen.getByText('דווח למבצעים:')).toBeInTheDocument();
+    expect(screen.getByText('דווח למבצעים: עמית')).toBeInTheDocument();
+    // Hidden until opened: the long free-text opening narrative.
+    expect(screen.queryByText(/אתחול ראשוני/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
+    expect(screen.getByText(/אתחול ראשוני/)).toBeInTheDocument();
   });
 });
 
