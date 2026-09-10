@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupTimelineEvents, selectPrimaryEvent } from './timelineGrouping';
+import { groupTimelineEvents, groupByCalendarDate, selectPrimaryEvent } from './timelineGrouping';
 import type { IncidentEvent } from './types';
 
 function ev(overrides: Partial<IncidentEvent> & { id: string }): IncidentEvent {
@@ -167,5 +167,45 @@ describe('selectPrimaryEvent: explicit priority + deterministic fallback', () =>
     const b = ev({ id: 'bbb', type: 'reported_to_ops_change' });
     expect(selectPrimaryEvent([b, a]).id).toBe('aaa');
     expect(selectPrimaryEvent([a, b]).id).toBe('aaa');
+  });
+});
+
+describe('groupByCalendarDate', () => {
+  it('puts every group on the same Asia/Jerusalem calendar day into one bucket', () => {
+    const events = [
+      ev({ id: 'e1', type: 'created', operationId: 'op-1', eventTime: '2026-09-10T07:15:00.000Z' }),
+      ev({ id: 'e2', type: 'status_change', operationId: 'op-2', field: 'status', eventTime: '2026-09-10T08:35:00.000Z' }),
+      ev({ id: 'e3', type: 'closed', operationId: 'op-3', eventTime: '2026-09-10T20:59:00.000Z' }),
+    ];
+    const groups = groupTimelineEvents(events);
+    const buckets = groupByCalendarDate(groups);
+    expect(buckets).toHaveLength(1);
+    expect(buckets[0].dateLabel).toBe('10.09.2026');
+    expect(buckets[0].groups).toHaveLength(3);
+  });
+
+  it('starts a new bucket every time the calendar date changes, preserving chronological order', () => {
+    const events = [
+      ev({ id: 'e1', type: 'created', operationId: 'op-1', eventTime: '2026-09-10T07:00:00.000Z' }),
+      ev({ id: 'e2', type: 'update', operationId: 'op-2', refId: 'u1', eventTime: '2026-09-11T07:00:00.000Z' }),
+      ev({ id: 'e3', type: 'closed', operationId: 'op-3', eventTime: '2026-09-12T07:00:00.000Z' }),
+    ];
+    const buckets = groupByCalendarDate(groupTimelineEvents(events));
+    expect(buckets.map((b) => b.dateLabel)).toEqual(['10.09.2026', '11.09.2026', '12.09.2026']);
+    expect(buckets.map((b) => b.groups[0].primary.id)).toEqual(['e1', 'e2', 'e3']);
+  });
+
+  it('starts a fresh bucket when the same calendar date recurs non-contiguously (never silently re-merges)', () => {
+    const events = [
+      ev({ id: 'e1', type: 'created', operationId: 'op-1', eventTime: '2026-09-10T07:00:00.000Z' }),
+      ev({ id: 'e2', type: 'update', operationId: 'op-2', refId: 'u1', eventTime: '2026-09-11T07:00:00.000Z' }),
+      ev({ id: 'e3', type: 'closed', operationId: 'op-3', eventTime: '2026-09-10T20:00:00.000Z' }),
+    ];
+    const buckets = groupByCalendarDate(groupTimelineEvents(events));
+    expect(buckets.map((b) => b.dateLabel)).toEqual(['10.09.2026', '11.09.2026', '10.09.2026']);
+  });
+
+  it('returns an empty list for an empty input', () => {
+    expect(groupByCalendarDate([])).toEqual([]);
   });
 });

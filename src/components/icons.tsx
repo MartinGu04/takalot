@@ -46,6 +46,17 @@ export function IconArrowsExchange(props: IconProps) {
   );
 }
 
+/** Counter-clockwise rotate arrow: reopening something that was previously
+ *  closed. */
+export function IconRotateCcw(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 10a6 6 0 1 1 1.76 4.24" />
+      <path d="M4 14.5V10h4.5" />
+    </svg>
+  );
+}
+
 export function IconArchive(props: IconProps) {
   return (
     <svg {...base(props)}>

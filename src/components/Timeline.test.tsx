@@ -1,8 +1,10 @@
-// Timeline: focused rendering tests for the E2 grouped redesign. Grouping
-// algorithm correctness itself is covered by domain/timelineGrouping.test.ts
-// (pure, no DOM); this file covers what actually reaches the screen.
+// Timeline: focused rendering tests for the compact, scannable redesign.
+// Grouping algorithm correctness itself is covered by
+// domain/timelineGrouping.test.ts (pure, no DOM); event-kind classification
+// by domain/timelineEventKind.test.ts; this file covers what actually
+// reaches the screen.
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { Timeline } from './Timeline';
 import type { IncidentEvent, IncidentUpdate, Profile } from '../domain/types';
 
@@ -51,27 +53,37 @@ const profiles: Profile[] = [
   { id: 'u1', fullName: 'יואב כהן', role: 'shift_supervisor', active: true, createdAt: '2026-01-01T00:00:00.000Z' },
 ];
 
+/** The colored circular marker for an entry -- distinct from the date
+ *  separator's own aria-hidden elements (the vertical line segment and the
+ *  small dot), which never carry `rounded-full`. */
+function roundel(container: HTMLElement): HTMLElement {
+  return container.querySelector('[aria-hidden="true"][class*="rounded-full"]') as HTMLElement;
+}
+
 describe('Timeline: one operation renders as one item', () => {
-  it('a grouped update (3 backing rows, one operationId) renders one title/icon and one שינויים בעדכון section', () => {
+  it('a grouped update (3 backing rows, one operationId) renders one title/icon and its subordinate changes as nested compact rows, never a boxed section', () => {
     const events = [
       ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' }),
       ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'in_progress', newValue: 'monitoring' }),
       ev({ id: 'e-severity', type: 'severity_change', operationId: 'op-1', field: 'severity', oldValue: 'high', newValue: 'medium' }),
     ];
     const updates = [upd({ id: 'upd-1', actionsTaken: 'תוכן העדכון היחיד' })];
-    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    const { container } = render(<Timeline events={events} updates={updates} profiles={profiles} />);
 
-    // The update title/content appear exactly once despite 3 backing rows.
+    // The update title/content appear exactly once despite 3 backing rows,
+    // and it's a single timeline entry (one marker), not three.
     expect(screen.getAllByText('עדכון טיפול')).toHaveLength(1);
     expect(screen.getAllByText('תוכן העדכון היחיד')).toHaveLength(1);
+    expect(container.querySelectorAll('li[id^="timeline-entry-"]')).toHaveLength(1);
 
-    const heading = screen.getByText('שינויים בעדכון');
-    const section = heading.closest('div') as HTMLElement;
-    expect(within(section).getByText('סטטוס:')).toBeInTheDocument();
-    expect(within(section).getByText('חומרה:')).toBeInTheDocument();
-    // Explicit לפני/אחרי labels for every subordinate change, never arrow/color-only.
-    expect(within(section).getAllByText('לפני:').length).toBe(2);
-    expect(within(section).getAllByText('אחרי:').length).toBe(2);
+    // Both subordinate changes render as compact field-label rows, fully
+    // visible without opening any disclosure -- no "שינויים בעדכון" box.
+    expect(screen.queryByText('שינויים בעדכון')).not.toBeInTheDocument();
+    expect(screen.queryByText('שינויים נוספים')).not.toBeInTheDocument();
+    expect(screen.getByText('סטטוס:')).toBeInTheDocument();
+    expect(screen.getByText('חומרה:')).toBeInTheDocument();
+    expect(screen.getByText('בטיפול')).toBeInTheDocument();
+    expect(screen.getByText('במעקב')).toBeInTheDocument();
   });
 
   it('operationId=null rows never merge, even when they share type and eventTime', () => {
@@ -83,45 +95,136 @@ describe('Timeline: one operation renders as one item', () => {
       upd({ id: 'upd-1', actionsTaken: 'עדכון ראשון היסטורי' }),
       upd({ id: 'upd-2', actionsTaken: 'עדכון שני היסטורי' }),
     ];
-    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    const { container } = render(<Timeline events={events} updates={updates} profiles={profiles} />);
 
     expect(screen.getAllByText('עדכון טיפול')).toHaveLength(2);
     expect(screen.getByText('עדכון ראשון היסטורי')).toBeInTheDocument();
     expect(screen.getByText('עדכון שני היסטורי')).toBeInTheDocument();
-    // Two independent items, no שינויים section on either (no subordinates).
-    expect(screen.queryByText('שינויים בעדכון')).not.toBeInTheDocument();
-    expect(screen.queryByText('שינויים נוספים')).not.toBeInTheDocument();
+    // Two independent entries.
+    expect(container.querySelectorAll('li[id^="timeline-entry-"]')).toHaveLength(2);
   });
 });
 
 describe('Timeline: lifecycle emphasis', () => {
-  it('a created group gets the strong lifecycle roundel', () => {
+  it('a created group gets the solid brand (purple) marker', () => {
     const { container } = render(
       <Timeline events={[ev({ id: 'e1', type: 'created', operationId: 'op-1', note: 'פתיחת תקלה' })]} updates={[]} profiles={profiles} />,
     );
-    const roundel = container.querySelector('[aria-hidden="true"]') as HTMLElement;
-    expect(roundel.className).toContain('bg-brand-600');
+    expect(roundel(container).className).toContain('bg-brand-600');
   });
 
-  it('partial-readiness (status_change -> partial_readiness) gets medium emphasis and an explicit "still active" note, never the strong closure roundel', () => {
+  it('partial-readiness (status_change -> partial_readiness) gets a rich card with an explicit "still active" note, never the closure color', () => {
     const events = [
       ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'in_progress', newValue: 'partial_readiness', note: 'סיבת התקלה: X' }),
     ];
     const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
 
-    const roundel = container.querySelector('[aria-hidden="true"]') as HTMLElement;
-    expect(roundel.className).not.toContain('bg-brand-600');
+    expect(roundel(container).className).not.toContain('bg-green-600');
     expect(screen.getByText(/התקלה נותרת פעילה/)).toBeInTheDocument();
     // The generic field diff still shows what actually changed.
     expect(screen.getByText('כשירות חלקית')).toBeInTheDocument();
   });
 
-  it('a full-readiness close gets strong emphasis and does not show the "still active" note', () => {
+  it('a full-readiness close gets the solid green (closure) marker and does not show the "still active" note', () => {
     const events = [ev({ id: 'e-closed', type: 'closed', operationId: 'op-1', newValue: 'full', note: 'סיבת התקלה: X\nהפתרון שבוצע: Y' })];
     const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
-    const roundel = container.querySelector('[aria-hidden="true"]') as HTMLElement;
-    expect(roundel.className).toContain('bg-brand-600');
+    expect(roundel(container).className).toContain('bg-green-600');
     expect(screen.queryByText(/התקלה נותרת פעילה/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Timeline: event-type classification (color + icon)', () => {
+  it('עדכון טיפול gets the solid blue marker', () => {
+    const events = [ev({ id: 'e1', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
+    const { container } = render(<Timeline events={events} updates={[upd({ id: 'upd-1' })]} profiles={profiles} />);
+    expect(roundel(container).className).toContain('bg-blue-600');
+  });
+
+  it('שינוי סטטוס gets a muted amber marker (a compact row, not a rich card)', () => {
+    const events = [ev({ id: 'e1', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(roundel(container).className).toContain('bg-yellow-100');
+    expect(roundel(container).className).not.toContain('bg-yellow-500');
+  });
+
+  it('דיווח למבצעים gets a muted orange marker', () => {
+    const events = [ev({ id: 'e1', type: 'reported_to_ops_change', operationId: 'op-1', note: 'דווח למבצעים: yes' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(roundel(container).className).toContain('bg-orange-100');
+  });
+
+  it('סגירת תקלה gets the solid green marker', () => {
+    const events = [ev({ id: 'e1', type: 'closed', operationId: 'op-1', newValue: 'full' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(roundel(container).className).toContain('bg-green-600');
+  });
+
+  it('פתיחה מחדש gets the solid red marker', () => {
+    const events = [ev({ id: 'e1', type: 'reopened', operationId: 'op-1' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(roundel(container).className).toContain('bg-red-600');
+    expect(screen.getByText('פתיחה מחדש')).toBeInTheDocument();
+  });
+});
+
+describe('Timeline: date grouping', () => {
+  it('shows one date separator for multiple events on the same calendar date, each event showing only its time', () => {
+    const events = [
+      // 2026-09-10 is DST in Asia/Jerusalem (UTC+3).
+      ev({ id: 'e1', type: 'created', operationId: 'op-1', eventTime: '2026-09-10T07:15:00.000Z' }),
+      ev({ id: 'e2', type: 'status_change', operationId: 'op-2', field: 'status', oldValue: 'new', newValue: 'in_progress', eventTime: '2026-09-10T08:35:00.000Z' }),
+      ev({ id: 'e3', type: 'closed', operationId: 'op-3', newValue: 'full', eventTime: '2026-09-10T08:45:00.000Z' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+
+    expect(screen.getAllByText('10.09.2026')).toHaveLength(1);
+    expect(screen.getByText('10:15')).toBeInTheDocument();
+    expect(screen.getByText('11:35')).toBeInTheDocument();
+    expect(screen.getByText('11:45')).toBeInTheDocument();
+    // No event repeats the full date next to its time.
+    expect(screen.queryByText('10.09.2026, 10:15')).not.toBeInTheDocument();
+  });
+
+  it('shows a separate date separator for each calendar date crossed', () => {
+    const events = [
+      ev({ id: 'e1', type: 'created', operationId: 'op-1', eventTime: '2026-09-10T07:00:00.000Z' }),
+      ev({ id: 'e2', type: 'closed', operationId: 'op-2', newValue: 'full', eventTime: '2026-09-11T07:00:00.000Z' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('10.09.2026')).toBeInTheDocument();
+    expect(screen.getByText('11.09.2026')).toBeInTheDocument();
+  });
+});
+
+describe('Timeline: compact field-delta rendering', () => {
+  it('renders a compact status transition inline, with both explicit values and no boxed section', () => {
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('סטטוס:')).toBeInTheDocument();
+    expect(screen.getByText('חדשה')).toBeInTheDocument();
+    expect(screen.getByText('בטיפול')).toBeInTheDocument();
+    expect(screen.queryByText('שינויים נוספים')).not.toBeInTheDocument();
+  });
+
+  it('keeps explicit לפני/אחרי semantics for assistive tech even though the visual row is compact', () => {
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('לפני:')).toBeInTheDocument();
+    expect(screen.getByText('אחרי:')).toBeInTheDocument();
+  });
+
+  it('renders a compact single-line reporting-to-operations summary', () => {
+    const events = [ev({ id: 'e-ops', type: 'reported_to_ops_change', operationId: 'op-1', oldValue: null, newValue: null, note: 'דיווח למבצעים: אסף' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('דווח למבצעים:')).toBeInTheDocument();
+    expect(screen.getByText('דיווח למבצעים: אסף')).toBeInTheDocument();
+  });
+
+  it('shows the previous recipient as "לפני" when a reporting change has one, instead of dropping it', () => {
+    const events = [ev({ id: 'e-ops', type: 'reported_to_ops_change', operationId: 'op-1', oldValue: 'דנה', newValue: null, note: 'דיווח למבצעים: אסף' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('דנה')).toBeInTheDocument();
+    expect(screen.getByText('דיווח למבצעים: אסף')).toBeInTheDocument();
   });
 });
 
@@ -174,7 +277,7 @@ describe('Timeline: reported_to_ops_change consolidation', () => {
 });
 
 describe('Timeline: per-row correction targeting inside a grouped update', () => {
-  it('each subordinate change gets its own compact correction action, wired to its own event id', async () => {
+  it('each correctable row gets its own correction action, wired to its own target id', async () => {
     const onCorrect = vi.fn();
     const events = [
       ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1', actorId: 'u1' }),
@@ -218,13 +321,14 @@ describe('Timeline: per-row correction targeting inside a grouped update', () =>
 });
 
 describe('Timeline: grouped status-check completion', () => {
-  it('completion is primary, the next-scheduled check renders as the sole subordinate', () => {
+  it('completion is primary; the next-scheduled check nests inside the same entry, not a separate one', () => {
     const events = [
       ev({ id: 'e-open', type: 'status_check_changed', operationId: 'op-1', field: 'status_check_due', oldValue: null, newValue: '2026-02-01T00:00:00.000Z' }),
       ev({ id: 'e-close', type: 'status_check_changed', operationId: 'op-1', field: 'status_check_due', oldValue: '2026-01-15T00:00:00.000Z', newValue: null }),
     ];
-    render(<Timeline events={events} updates={[]} profiles={profiles} />);
-    expect(screen.getByText('שינויים נוספים')).toBeInTheDocument();
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(container.querySelectorAll('li[id^="timeline-entry-"]')).toHaveLength(1);
+    expect(screen.getAllByText('עדכון בדיקת סטטוס')).toHaveLength(1);
   });
 });
 
@@ -238,7 +342,7 @@ describe('Timeline: closure event operational duration', () => {
   const CLOSED_AT = '2026-07-19T13:06:00.000Z';
   const RECORDED_AT = '2026-08-02T10:00:00.000Z';
 
-  it('shows "משך התקלה: דקה אחת" in bold for a closure recorded weeks after it actually happened', () => {
+  it('shows "משך התקלה: דקה אחת" in bold, always visible, for a closure recorded weeks after it actually happened', () => {
     const close = ev({
       id: 'e-closed',
       type: 'closed',
@@ -258,6 +362,7 @@ describe('Timeline: closure event operational duration', () => {
       />,
     );
 
+    // Visible immediately, without opening "פרטים נוספים".
     const line = screen.getByText(/משך התקלה: דקה אחת/);
     expect(line).toBeInTheDocument();
     expect(line.className).toContain('font-bold');
@@ -286,24 +391,35 @@ describe('Timeline: closure event operational duration', () => {
 
 // "הערה נוספת" (migration 0038): a distinct, clearly-labeled optional note,
 // separate from the existing generated note text and from any update's own
-// structured fields -- never shown when absent.
+// structured fields -- never shown when absent. Both generated notes and
+// user notes are verbose/secondary content, so they now live behind
+// "פרטים נוספים" -- never removed, just not shown until asked for.
 describe('Timeline: "הערה נוספת" (user note)', () => {
-  it('shows the user note inside a grouped update, labeled, alongside its own structured fields', () => {
+  it('shows the user note inside a grouped update, behind "פרטים נוספים", alongside its own structured fields', () => {
     const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
     const updates = [upd({ id: 'upd-1', actionsTaken: 'תוכן העדכון', userNote: 'הערה נוספת שהוזנה בעדכון' })];
     render(<Timeline events={events} updates={updates} profiles={profiles} />);
+
+    // The core content is visible immediately.
+    expect(screen.getByText('תוכן העדכון')).toBeInTheDocument();
+    expect(screen.queryByText('הערה נוספת:')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
     expect(screen.getByText('הערה נוספת שהוזנה בעדכון')).toBeInTheDocument();
+    // The summary is still visible after opening the details section.
+    expect(screen.getByText('תוכן העדכון')).toBeInTheDocument();
   });
 
-  it('shows no "הערה נוספת" line for an update carrying no user note', () => {
+  it('shows no "הערה נוספת" line -- and no details control at all -- for an update with no user note, findings, or next steps', () => {
     const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
     const updates = [upd({ id: 'upd-1', actionsTaken: 'תוכן העדכון', userNote: null })];
     render(<Timeline events={events} updates={updates} profiles={profiles} />);
     expect(screen.queryByText('הערה נוספת:')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
   });
 
-  it('shows the user note on a "created" event, distinct from and alongside its own generated note', () => {
+  it('shows the user note on a "created" event immediately, distinct from its own generated note -- both are core, not verbose detail', () => {
     const events = [
       ev({
         id: 'e-created',
@@ -314,12 +430,14 @@ describe('Timeline: "הערה נוספת" (user note)', () => {
       }),
     ];
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
-    expect(screen.getByText('פעולות שבוצעו עד כה: בדיקה ראשונית')).toBeInTheDocument();
+    expect(screen.getByText(/פעולות שבוצעו עד כה: בדיקה ראשונית/)).toBeInTheDocument();
     expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
     expect(screen.getByText('התקלה דווחה טלפונית')).toBeInTheDocument();
+    // Nothing verbose left to hide, so no details control appears at all.
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
   });
 
-  it('shows the user note on a "closed" event, distinct from and alongside its own generated note', () => {
+  it('shows the user note on a "closed" event, behind "פרטים נוספים", distinct from its own generated note', () => {
     const events = [
       ev({
         id: 'e-closed',
@@ -331,15 +449,49 @@ describe('Timeline: "הערה נוספת" (user note)', () => {
       }),
     ];
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
     expect(screen.getByText('הערה נוספת:')).toBeInTheDocument();
     expect(screen.getByText('הערה נוספת בעת הסגירה')).toBeInTheDocument();
   });
 
-  it('shows no "הערה נוספת" line for a created/closed event carrying no user note', () => {
+  it('omits the "הערה נוספת" line when a created event has a generated note but no separate user note', () => {
     const events = [ev({ id: 'e-created', type: 'created', operationId: 'op-1', note: 'פעולות שבוצעו עד כה: X', userNote: null })];
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText(/פעולות שבוצעו עד כה: X/)).toBeInTheDocument();
     expect(screen.queryByText('הערה נוספת:')).not.toBeInTheDocument();
+  });
+});
+
+describe('Timeline: "פרטים נוספים" details disclosure', () => {
+  it('shows no details control at all for a created event with neither a note nor a user note', () => {
+    const events = [ev({ id: 'e-created', type: 'created', operationId: 'op-1', note: null, userNote: null })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
+  });
+
+  it('shows no details control for a simple compact field-delta event (nothing verbose to hide)', () => {
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
+  });
+
+  it('reveals verbose content on demand, is accessibly labeled, and never hides the event summary', () => {
+    const events = [ev({ id: 'e1', type: 'closed', operationId: 'op-1', newValue: 'full', note: 'סיבת התקלה: X\nהפתרון שבוצע: Y' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+
+    // Summary visible immediately; verbose narrative starts hidden.
+    expect(screen.getByText(/כשירות בסגירה/)).toBeInTheDocument();
+    expect(screen.queryByText(/סיבת התקלה: X/)).not.toBeInTheDocument();
+
+    const toggle = screen.getByRole('button', { name: 'פרטים נוספים' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // Now visible, and the summary is still visible too.
+    expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
+    expect(screen.getByText(/כשירות בסגירה/)).toBeInTheDocument();
   });
 });
 
@@ -397,12 +549,15 @@ describe('Timeline: record corrections render as distinct audit entries', () => 
     expect(screen.getByText('שעת האירוע היא 21:40')).toBeInTheDocument();
   });
 
-  it("does not repeat the corrected update's own status/actions/findings/next-steps fields", () => {
+  it("does not repeat the corrected update's own actions/findings/next-steps fields", () => {
     const { events, updates } = correctionFixture();
     render(<Timeline events={events} updates={updates} profiles={profiles} />);
-    // These belong to the ORIGINAL entry and must appear exactly once --
-    // never duplicated onto the correction entry beside it.
+    // actionsTaken stays in the primary summary, always visible.
     expect(screen.getAllByText('פעולות שבוצעו במקור')).toHaveLength(1);
+    // findings/nextSteps are verbose detail on the original entry -- open
+    // it and confirm they still appear exactly once, never duplicated onto
+    // the correction entry beside it.
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getAllByText('ממצאים מקוריים')).toHaveLength(1);
     expect(screen.getAllByText('צעדים הבאים במקור')).toHaveLength(1);
   });
@@ -416,11 +571,12 @@ describe('Timeline: record corrections render as distinct audit entries', () => 
   it('leaves the original entry fully intact and adds a small "corrected later" indication to it', () => {
     const { events, updates } = correctionFixture();
     render(<Timeline events={events} updates={updates} profiles={profiles} />);
-    // Original entry: title, actor, and full content all unaffected.
+    // Original entry: title and primary content unaffected.
     expect(screen.getByText('עדכון טיפול')).toBeInTheDocument();
     expect(screen.getByText('פעולות שבוצעו במקור')).toBeInTheDocument();
-    expect(screen.getByText('ממצאים מקוריים')).toBeInTheDocument();
     expect(screen.getByText('רישום זה תוקן בהמשך')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
+    expect(screen.getByText('ממצאים מקוריים')).toBeInTheDocument();
   });
 
   it('does not show the "corrected later" indication on an entry with no correction', () => {
@@ -467,6 +623,7 @@ describe('Timeline: record corrections render as distinct audit entries', () => 
     ];
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
     expect(screen.getByText('סגירת תקלה')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getByText(/סיבת התקלה: X/)).toBeInTheDocument();
   });
 });
