@@ -3,7 +3,7 @@
 // domain/timelineGrouping.test.ts (pure, no DOM); event-kind classification
 // by domain/timelineEventKind.test.ts; this file covers what actually
 // reaches the screen.
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Timeline } from './Timeline';
 import type { IncidentEvent, IncidentUpdate, Profile } from '../domain/types';
@@ -221,6 +221,21 @@ describe('Timeline: date grouping', () => {
     render(<Timeline events={events} updates={[]} profiles={profiles} />);
     expect(screen.getByText('10.09.2026')).toBeInTheDocument();
     expect(screen.getByText('11.09.2026')).toBeInTheDocument();
+  });
+
+  it("gives the date separator a stronger label style than a plain muted line, while staying subtler than an event title", () => {
+    const events = [ev({ id: 'e1', type: 'closed', operationId: 'op-1', newValue: 'full', eventTime: '2026-09-10T07:00:00.000Z' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    const dateLabel = screen.getByText('10.09.2026');
+    const title = screen.getByText('סגירת תקלה');
+    // Bolder / higher-contrast than a plain muted line...
+    expect(dateLabel.className).toContain('font-bold');
+    expect(dateLabel.className).toContain('text-secondary');
+    // ...but never as prominent as the event title itself: no rich event
+    // title carries tracking-wide, and the date's own text stays smaller
+    // (text-xs) than a rich title's text-base.
+    expect(dateLabel.className).toContain('text-xs');
+    expect(title.className).not.toContain('tracking-wide');
   });
 });
 
@@ -649,6 +664,106 @@ describe('Timeline: "פרטים נוספים" details disclosure', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.getByText(/אתחול ראשוני/)).toBeInTheDocument();
+  });
+});
+
+// The update narrative (actionsTaken) is real layout-based line clamping
+// (CSS line-clamp, measured via scrollHeight/clientHeight after mount),
+// never character-count truncation. jsdom does no real layout, so these
+// tests stub scrollHeight/clientHeight on HTMLElement.prototype to
+// simulate "this paragraph overflows its 3-line box" vs. "it fits" --
+// the same mechanism the component itself uses to decide whether to show
+// a "הצג עוד" control at all.
+describe('Timeline: long update narrative clamps with "הצג עוד" / "הצג פחות"', () => {
+  let originalScrollHeight: PropertyDescriptor | undefined;
+  let originalClientHeight: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+    originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+  });
+
+  afterEach(() => {
+    if (originalScrollHeight) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', originalScrollHeight);
+    else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+    if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, 'clientHeight', originalClientHeight);
+    else delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+  });
+
+  function mockOverflow(scrollHeight: number, clientHeight: number) {
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, value: scrollHeight });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: clientHeight });
+  }
+
+  const LONG_TEXT = 'שורה ארוכה מאוד של טקסט חופשי בעברית שמתארת את פעולות הטיפול שבוצעו. '.repeat(10);
+
+  function renderLongUpdate(currentStatusText: string | null = null) {
+    const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
+    const updates = [upd({ id: 'upd-1', actionsTaken: LONG_TEXT, currentStatusText })];
+    return render(<Timeline events={events} updates={updates} profiles={profiles} />);
+  }
+
+  it('shows a collapsed "הצג עוד" control when the narrative genuinely overflows 3 lines', () => {
+    mockOverflow(300, 60); // full content is 5x taller than the clamped box
+    renderLongUpdate();
+    const toggle = screen.getByRole('button', { name: 'הצג עוד' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('expands to the full text and switches to "הצג פחות" on click', () => {
+    mockOverflow(300, 60);
+    renderLongUpdate();
+    fireEvent.click(screen.getByRole('button', { name: 'הצג עוד' }));
+    const toggle = screen.getByRole('button', { name: 'הצג פחות' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // No text was dropped -- the full narrative is present once expanded.
+    expect(screen.getByText(LONG_TEXT.trim(), { exact: false })).toBeInTheDocument();
+  });
+
+  it('collapses again when "הצג פחות" is clicked, without losing the toggle', () => {
+    mockOverflow(300, 60);
+    renderLongUpdate();
+    fireEvent.click(screen.getByRole('button', { name: 'הצג עוד' }));
+    fireEvent.click(screen.getByRole('button', { name: 'הצג פחות' }));
+    const toggle = screen.getByRole('button', { name: 'הצג עוד' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows no "הצג עוד" control for a short update that fits within 3 lines', () => {
+    mockOverflow(60, 60); // content height equals the clamped box -- no overflow
+    const events = [ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' })];
+    const updates = [upd({ id: 'upd-1', actionsTaken: 'עדכון קצר וממוקד.' })];
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+    expect(screen.getByText(/עדכון קצר וממוקד/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'הצג עוד' })).not.toBeInTheDocument();
+  });
+
+  it('keeps structured fields, status text, and chips fully visible while the narrative is collapsed', () => {
+    mockOverflow(300, 60);
+    const events = [
+      ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1' }),
+      ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress' }),
+    ];
+    const updates = [upd({ id: 'upd-1', actionsTaken: LONG_TEXT, currentStatusText: 'הצוות בדרך לאתר' })];
+    render(<Timeline events={events} updates={updates} profiles={profiles} />);
+
+    // Collapsed narrative control is present...
+    expect(screen.getByRole('button', { name: 'הצג עוד' })).toBeInTheDocument();
+    // ...but everything else stays fully visible and unclamped.
+    expect(screen.getByText('עדכון טיפול')).toBeInTheDocument();
+    expect(screen.getByText(/הצוות בדרך לאתר/)).toBeInTheDocument();
+    expect(screen.getByText('סטטוס:')).toBeInTheDocument();
+    expect(screen.getByText('חדשה')).toBeInTheDocument();
+    expect(screen.getByText('בטיפול')).toBeInTheDocument();
+  });
+
+  it('does not clamp a closure event\'s structured summary lines, even when scrollHeight/clientHeight are mocked as overflowing', () => {
+    mockOverflow(300, 60);
+    const events = [ev({ id: 'e-closed', type: 'closed', operationId: 'op-1', newValue: 'full' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    // Closure summary lines never use ClampedText, so no "הצג עוד" appears here.
+    expect(screen.queryByRole('button', { name: 'הצג עוד' })).not.toBeInTheDocument();
+    expect(screen.getByText(/כשירות בסגירה/)).toBeInTheDocument();
   });
 });
 

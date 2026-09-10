@@ -9,7 +9,7 @@
 // other event type (a single field delta) renders as one compact row.
 // Readable on mobile; does not rely on color, arrows, or strikethrough
 // alone -- every value is also present as visible or screen-reader text.
-import { useId, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import type {
   EventType,
   IncidentCauseAssessment,
@@ -355,14 +355,69 @@ function DetailsDisclosure({ items }: { items: ReactNode[] }) {
   );
 }
 
+/**
+ * A single free-text paragraph (a treatment update's own narrative, e.g.
+ * actionsTaken) clamped to ~3 lines by default, with a local "הצג עוד" /
+ * "הצג פחות" toggle -- never truncated by character count (fragile across
+ * Hebrew reshaping/RTL wrapping/fonts), always by real layout: the text is
+ * measured against its own clamped box after mount, and the toggle only
+ * renders at all when the text genuinely overflows that box. A short
+ * paragraph that fits within 3 lines renders exactly as before, with no
+ * control. Expansion is local to this one paragraph/event -- it never
+ * affects any other entry, and never hides the text, only how much of it
+ * shows without an explicit action.
+ */
+function ClampedText({ text, children }: { text: string; children: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  const id = useId();
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Measured once, while still collapsed (clamped) -- the definitive
+    // "does this text actually exceed 3 lines" check, independent of
+    // character count.
+    setOverflowing(el.scrollHeight > el.clientHeight + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+
+  return (
+    <div>
+      <p ref={ref} id={id} className={`text-sm whitespace-pre-wrap break-words ${expanded ? '' : 'line-clamp-3'}`}>
+        {children}
+      </p>
+      {overflowing && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((e) => !e)}
+          className="mt-0.5 text-xs font-medium text-brand-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 dark:text-brand-400"
+        >
+          {expanded ? 'הצג פחות' : 'הצג עוד'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A calendar-day boundary -- a small, subtle label integrated with the
+ *  timeline spine, not a card or badge. Slightly stronger than a plain
+ *  muted line (bolder weight, letter-spacing, a step up in text contrast,
+ *  a marginally bigger marker dot) so a new day is easy to spot while
+ *  scanning, but still clearly secondary to the events themselves: no
+ *  event title uses tracking-wide, and every title is either bigger
+ *  (rich) or a heavier color (text-primary vs. this row's text-secondary). */
 function DateSeparator({ label, showLine }: { label: string; showLine: boolean }) {
   return (
-    <li className="relative flex items-center gap-3 pt-4 pb-2 first:pt-0">
+    <li className="relative flex items-center gap-3 pt-6 pb-3 first:pt-0">
       {showLine && <span aria-hidden className="absolute top-0 right-[11px] bottom-0 w-px bg-hairline" />}
       <span aria-hidden className="relative z-10 flex size-6 shrink-0 items-center justify-center">
-        <span className="size-1.5 rounded-full bg-hairline-strong" />
+        <span className="size-2 rounded-full bg-text-secondary/70" />
       </span>
-      <span className="text-xs font-semibold text-muted">{label}</span>
+      <span className="text-xs font-bold tracking-wide text-secondary">{label}</span>
     </li>
   );
 }
@@ -548,10 +603,10 @@ function TimelineEntry({
             <span className="whitespace-pre-wrap break-words">{update.currentStatusText}</span>
           </p>
         )}
-        <p className="text-sm">
+        <ClampedText text={update.actionsTaken}>
           <span className="font-medium">פעולות שבוצעו: </span>
-          <span className="whitespace-pre-wrap break-words">{update.actionsTaken}</span>
-        </p>
+          {update.actionsTaken}
+        </ClampedText>
         <TreatmentActionChips actions={groupTreatmentActions} />
       </>
     );
