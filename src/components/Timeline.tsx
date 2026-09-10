@@ -21,6 +21,7 @@ import type {
 } from '../domain/types';
 import { groupTimelineEvents, groupByCalendarDate, type TimelineGroup } from '../domain/timelineGrouping';
 import { timelineVisualKind, isRichTimelineEvent, type TimelineVisualKind } from '../domain/timelineEventKind';
+import { isLongFieldDelta } from '../domain/timelineDeltaSummary';
 import {
   eventTypeLabels,
   fieldLabels,
@@ -230,46 +231,105 @@ function TransitionPills({ before, after }: { before: string; after: string }) {
   );
 }
 
+/** Everything needed to render one field-level delta, computed once and
+ *  shared by the compact renderer and the "פרטים נוספים" detail-item
+ *  builder below -- one source of truth for label/before/after, so the
+ *  compact summary and the expanded full values can never disagree. */
+interface FieldDeltaDescriptor {
+  label: string;
+  /** null = no meaningful previous value (rendered as a single value, not
+   *  a transition) -- e.g. a field set for the first time. */
+  before: string | null;
+  after: string;
+  /** True when either side is long enough that showing it inline would
+   *  turn a compact row into a paragraph -- see domain/timelineDeltaSummary. */
+  isLong: boolean;
+}
+
 /**
  * reported_to_ops_change is a special case: old_value/new_value only ever
  * carry the recipient text, while the row's own note carries the fuller
  * "status (recipient)" fact (e.g. "דווח למבצעים: כן (יוסי)"). Rendering the
  * generic field diff AND the note would repeat the recipient and still
- * miss the status on the "after" side, so this renders once: "לפני" = the
- * previous recipient (all that's available) when one exists, "אחרי" = the
- * note (the richer, complete fact) -- no separate note paragraph follows
- * it, here or at the call site.
+ * miss the status on the "after" side, so this uses the note once as the
+ * complete "אחרי" fact -- no separate note paragraph follows it, here or
+ * at the call site.
  *
- * Deliberately never renders event.note for any other type here: a
- * subordinate/compact primary's own note (changeReason etc.) is rendered
- * separately by SubordinateNote right below this, so one place decides
- * whether a note is shown, not two.
+ * Returns null for anything that isn't a field-level delta at all (no
+ * `field` set and not the reported_to_ops_change special case).
  */
-function CompactChange({ event }: { event: IncidentEvent }) {
+function describeFieldDelta(event: IncidentEvent): FieldDeltaDescriptor | null {
   if (event.type === 'reported_to_ops_change') {
-    return (
-      <p className="text-xs leading-5">
-        <span className="font-medium text-secondary">{fieldLabels.reported_to_ops}: </span>
-        {event.oldValue ? (
-          <TransitionPills before={event.oldValue} after={event.note ?? '—'} />
-        ) : (
-          <span className="font-semibold text-text-primary">{event.note ?? '—'}</span>
-        )}
-      </p>
-    );
+    const before = event.oldValue;
+    const after = event.note ?? '—';
+    return { label: fieldLabels.reported_to_ops, before, after, isLong: isLongFieldDelta(before, after) };
   }
   if (!event.field) return null;
   const label = fieldLabels[event.field] ?? event.field;
+  const before = event.oldValue != null ? valueLabel(event.field, event.oldValue) : null;
   const after = valueLabel(event.field, event.newValue);
+  return { label, before, after, isLong: isLongFieldDelta(before, after) };
+}
+
+/**
+ * One field's before/after as a single compact line, always with the
+ * values spelled out (never conveyed by arrow direction or color alone --
+ * the arrow icon is aria-hidden and both values are duplicated as
+ * screen-reader-only "לפני"/"אחרי" text). Used for every field-level delta,
+ * both a compact top-level row and a subordinate nested inside a rich
+ * card's content -- one rendering, two placements.
+ *
+ * When either value is long enough to turn this row into a paragraph
+ * (composed free text like a external-handler snapshot, a long
+ * operational-impact description, ...), this collapses to a compact
+ * "<label>: עודכן" summary instead -- the full values are pushed into the
+ * event's "פרטים נוספים" separately (see buildLongDeltaDetailItem, called
+ * by TimelineEntry wherever this component is used on a field-delta
+ * event). Deliberately never renders event.note for any other type here:
+ * a subordinate/compact primary's own note (changeReason etc.) is
+ * rendered separately by SubordinateNote right below this, so one place
+ * decides whether a note is shown, not two.
+ */
+function CompactChange({ event }: { event: IncidentEvent }) {
+  const delta = describeFieldDelta(event);
+  if (!delta) return null;
   return (
     <p className="text-xs leading-5">
-      <span className="font-medium text-secondary">{label}: </span>
-      {event.oldValue != null ? (
-        <TransitionPills before={valueLabel(event.field, event.oldValue)} after={after} />
+      <span className="font-medium text-secondary">{delta.label}: </span>
+      {delta.isLong ? (
+        <span className="font-semibold text-text-primary">עודכן</span>
+      ) : delta.before != null ? (
+        <TransitionPills before={delta.before} after={delta.after} />
       ) : (
-        <span className="font-semibold text-text-primary">{after}</span>
+        <span className="font-semibold text-text-primary">{delta.after}</span>
       )}
     </p>
+  );
+}
+
+/** The full before/after for a long field delta, moved into "פרטים
+ *  נוספים" -- a light structured block (never another nested card), with
+ *  bidi isolation on each value since composed snapshots routinely mix
+ *  Hebrew, English org/system names, and phone numbers. */
+function LongDeltaDetail({ delta }: { delta: FieldDeltaDescriptor }) {
+  return (
+    <div>
+      <p className="font-medium text-text-primary">{delta.label}</p>
+      {delta.before != null && (
+        <p className="mt-1">
+          <span className="text-xs font-medium text-muted">לפני: </span>
+          <bdi dir="auto" className="whitespace-pre-wrap break-words text-secondary">
+            {delta.before}
+          </bdi>
+        </p>
+      )}
+      <p className="mt-1">
+        <span className="text-xs font-medium text-muted">אחרי: </span>
+        <bdi dir="auto" className="whitespace-pre-wrap break-words font-semibold text-text-primary">
+          {delta.after}
+        </bdi>
+      </p>
+    </div>
   );
 }
 
@@ -699,6 +759,8 @@ function TimelineEntry({
       );
     }
   } else if (primary.type === 'correction') {
+    const primaryDelta = describeFieldDelta(primary);
+    if (primaryDelta?.isLong) detailItems.push(<LongDeltaDetail delta={primaryDelta} />);
     summary = (
       <>
         <CompactChange event={primary} />
@@ -726,8 +788,13 @@ function TimelineEntry({
     // event with no structured record of its own (reopened, cancelled,
     // acknowledged, follow_up_completed, severity_assessed,
     // status_check_changed, cause_assessment_changed, handover_*).
-    // Always short by construction, so it stays fully visible with no
-    // "פרטים נוספים" control at all.
+    // Usually short by construction, so no "פרטים נוספים" control appears
+    // at all -- unless the field's own value is long (see
+    // describeFieldDelta/LongDeltaDetail), in which case the compact
+    // "עודכן" summary above earns its own disclosure holding the full
+    // before/after: a real user-facing fact, not just technical metadata.
+    const primaryDelta = describeFieldDelta(primary);
+    if (primaryDelta?.isLong) detailItems.push(<LongDeltaDetail delta={primaryDelta} />);
     summary = (
       <>
         <CompactChange event={primary} />
@@ -740,6 +807,16 @@ function TimelineEntry({
         )}
       </>
     );
+  }
+
+  // Any subordinate whose own value is long gets the same compact-summary
+  // treatment (see CompactChange/describeFieldDelta) with its full
+  // before/after appended here -- pushed before the תועד במערכת line
+  // below, so meaningful user-facing detail always precedes low-priority
+  // audit metadata.
+  for (const sub of subordinates) {
+    const subDelta = describeFieldDelta(sub);
+    if (subDelta?.isLong) detailItems.push(<LongDeltaDetail delta={subDelta} />);
   }
 
   // Secondary audit metadata, not the primary time users scan by (that's

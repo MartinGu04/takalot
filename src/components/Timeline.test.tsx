@@ -271,6 +271,147 @@ describe('Timeline: compact field-delta rendering', () => {
   });
 });
 
+// Long field-delta values (a composed external-handler snapshot, a long
+// operational-impact description, ...) would otherwise turn a compact row
+// into a paragraph. The rule is generic -- based on the rendered value's
+// length, never the field name -- so it applies identically to any field,
+// not just גורם מטפל חיצוני (see domain/timelineDeltaSummary).
+describe('Timeline: long field-delta values collapse into "עודכן" + "פרטים נוספים"', () => {
+  const LONG_BEFORE = 'אין איש קשר: טוביה · פרטי קשר: 052-577-3926';
+  const LONG_AFTER = 'איש קשר: עילאי שפירא · פרטי קשר: 052-552-3926';
+
+  it('a short external_handler delta still renders inline as before → after, completely unaffected', () => {
+    const events = [
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: 'ללא', newValue: 'אלתא', actorId: 'u1' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('גורם מטפל חיצוני:')).toBeInTheDocument();
+    expect(screen.getByText('ללא')).toBeInTheDocument();
+    expect(screen.getByText('אלתא')).toBeInTheDocument();
+    expect(screen.queryByText('עודכן')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
+  });
+
+  it('a long external_handler delta renders a compact "עודכן" summary instead of the full values', () => {
+    const events = [
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: LONG_BEFORE, newValue: LONG_AFTER, actorId: 'u1' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByText('גורם מטפל חיצוני:')).toBeInTheDocument();
+    expect(screen.getByText('עודכן')).toBeInTheDocument();
+  });
+
+  it('does not expose the long old/new values anywhere in the collapsed timeline', () => {
+    const events = [
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: LONG_BEFORE, newValue: LONG_AFTER, actorId: 'u1' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.queryByText(LONG_BEFORE)).not.toBeInTheDocument();
+    expect(screen.queryByText(LONG_AFTER)).not.toBeInTheDocument();
+  });
+
+  it('expanding "פרטים נוספים" reveals the complete, unmodified old/new values', () => {
+    const events = [
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: LONG_BEFORE, newValue: LONG_AFTER, actorId: 'u1' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
+    expect(screen.getByText(LONG_BEFORE)).toBeInTheDocument();
+    expect(screen.getByText(LONG_AFTER)).toBeInTheDocument();
+  });
+
+  it('a long delta creates its own meaningful "פרטים נוספים" even as a standalone compact event with nothing else to expand', () => {
+    const events = [
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: LONG_BEFORE, newValue: LONG_AFTER, actorId: 'u1' }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.getByRole('button', { name: 'פרטים נוספים' })).toBeInTheDocument();
+  });
+
+  it('"תועד במערכת" still does not create a disclosure by itself when nothing else -- long delta included -- needs expanding', () => {
+    const events = [
+      ev({
+        id: 'e-plain',
+        type: 'status_change',
+        operationId: 'op-plain',
+        field: 'status',
+        oldValue: 'new',
+        newValue: 'in_progress',
+        eventTime: '2026-01-10T08:00:00.000Z',
+        serverTime: '2026-01-10T10:00:00.000Z',
+      }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/תועד במערכת:/)).not.toBeInTheDocument();
+  });
+
+  it('a long delta\'s detail appears before an already-existing "תועד במערכת" line, in that order', () => {
+    const events = [
+      ev({
+        id: 'e-ext',
+        type: 'assignment_change',
+        operationId: 'op-1',
+        field: 'external_handler',
+        oldValue: LONG_BEFORE,
+        newValue: LONG_AFTER,
+        actorId: 'u1',
+        eventTime: '2026-01-10T08:00:00.000Z',
+        serverTime: '2026-01-10T10:00:00.000Z',
+      }),
+    ];
+    render(<Timeline events={events} updates={[]} profiles={profiles} />);
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
+    const before = screen.getByText(LONG_BEFORE);
+    const recordedAt = screen.getByText(/תועד במערכת:/);
+    expect(before.compareDocumentPosition(recordedAt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('the correction action for a long, "עודכן"-summarized delta stays available and targets the correct record', () => {
+    const onCorrect = vi.fn();
+    const events = [
+      ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1', actorId: 'u1' }),
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: LONG_BEFORE, newValue: LONG_AFTER, actorId: 'u1' }),
+    ];
+    render(
+      <Timeline
+        events={events}
+        updates={[upd({ id: 'upd-1' })]}
+        profiles={profiles}
+        currentUserId="u1"
+        onCorrect={onCorrect}
+      />,
+    );
+    const buttons = screen.getAllByRole('button', { name: 'תיקון רישום זה' });
+    expect(buttons).toHaveLength(2); // the primary update + the long-delta subordinate
+    buttons[1].click();
+    expect(onCorrect).toHaveBeenCalledWith('e-ext', expect.stringContaining('שינוי גורם מטפל'));
+  });
+
+  it('multiple long deltas sharing one operation stay clearly separated in "פרטים נוספים"', () => {
+    const IMPACT_BEFORE = 'תיאור השפעה מבצעית ארוך מאוד שמסביר בפירוט את כל מה שקרה ולמה זה משפיע על התפעול השוטף';
+    const IMPACT_AFTER = 'תיאור מעודכן וארוך עוד יותר שמסביר את המצב הנוכחי לאחר הבדיקה המקיפה שבוצעה באתר';
+    const events = [
+      ev({ id: 'e-update', type: 'update', operationId: 'op-1', refId: 'upd-1', actorId: 'u1' }),
+      ev({ id: 'e-ext', type: 'assignment_change', operationId: 'op-1', field: 'external_handler', oldValue: LONG_BEFORE, newValue: LONG_AFTER, actorId: 'u1' }),
+      ev({ id: 'e-impact', type: 'impact_change', operationId: 'op-1', field: 'operational_impact', oldValue: IMPACT_BEFORE, newValue: IMPACT_AFTER, actorId: 'u1' }),
+    ];
+    render(<Timeline events={events} updates={[upd({ id: 'upd-1' })]} profiles={profiles} />);
+    // Both compact summaries are visible and distinct before expanding.
+    expect(screen.getByText('גורם מטפל חיצוני:')).toBeInTheDocument();
+    expect(screen.getByText('השפעה מבצעית:')).toBeInTheDocument();
+    expect(screen.getAllByText('עודכן')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
+    // Both full transitions are present and each field label appears once
+    // as its own detail heading, not merged into a single blob.
+    expect(screen.getByText(LONG_BEFORE)).toBeInTheDocument();
+    expect(screen.getByText(LONG_AFTER)).toBeInTheDocument();
+    expect(screen.getByText(IMPACT_BEFORE)).toBeInTheDocument();
+    expect(screen.getByText(IMPACT_AFTER)).toBeInTheDocument();
+  });
+});
+
 // "תועד במערכת" (the recorded/system timestamp) is secondary audit
 // metadata, never the always-visible summary's job -- the header time
 // (primary.eventTime) is the one time users scan by. It only ever shows
