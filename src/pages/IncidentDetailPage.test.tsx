@@ -420,6 +420,9 @@ describe('UpdateDialog update-specific reporting (migration 0031)', () => {
     // entry (identified by its distinctive actionsTaken text) so the
     // assertions can't accidentally pass against the older row.
     const entry = (await within(main()).findByText(/דיווח מלא בעדכון זה/)).closest('li') as HTMLElement;
+    // Per-update reporting answers are verbose secondary content in the
+    // redesigned timeline -- open "פרטים נוספים" on this entry to see them.
+    await user.click(within(entry).getByRole('button', { name: 'פרטים נוספים' }));
     expect(within(entry).getByText(/דווח למבצעים בעדכון זה:/)).toBeInTheDocument();
     expect(within(entry).getByText(/יוסי מהמוקד/)).toBeInTheDocument();
     expect(within(entry).getByText(/דווח לתקשוב למבצעים בעדכון זה:/)).toBeInTheDocument();

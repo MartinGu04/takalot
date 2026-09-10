@@ -293,6 +293,9 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
 
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
     expect(within(timeline).getByText('פתיחת תקלה')).toBeInTheDocument();
+    // The generated opening narrative is verbose secondary content, behind
+    // "פרטים נוספים" -- open it to check it and the opening-time answers.
+    await user.click(within(timeline).getByRole('button', { name: 'פרטים נוספים' }));
     expect(within(timeline).getByText(/נבדק ראשונית לצורך הבדיקה/)).toBeInTheDocument();
 
     // Neither opening-time question was touched -- both default to לא, with
@@ -319,6 +322,7 @@ describe('IncidentCreatePage: successful creation end-to-end', () => {
     await screen.findByText(/נפתחה בהצלחה/);
 
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    await user.click(within(timeline).getByRole('button', { name: 'פרטים נוספים' }));
     expect(within(timeline).getByText(/נבדק ראשונית לצורך הבדיקה/)).toBeInTheDocument();
     expect(within(timeline).getByText('הערה נוספת:')).toBeInTheDocument();
     expect(within(timeline).getByText('הערה נוספת לצורך הבדיקה')).toBeInTheDocument();
@@ -407,6 +411,7 @@ describe('IncidentCreatePage: תקשוב למבצעים ו-WISDOM', () => {
     expect(within(wisdomRow).getByText(/WISDOM-7789/)).toBeInTheDocument();
 
     const timeline = (await within(main()).findByText('ציר זמן')).closest('section') as HTMLElement;
+    await user.click(within(timeline).getByRole('button', { name: 'פרטים נוספים' }));
     expect(within(timeline).getByText(/תקשוב למבצעים: כן \(דווח ל: תקשוב מוקד מבצעים\)/)).toBeInTheDocument();
     expect(within(timeline).getByText(/WISDOM: כן \(מספר תקלה: WISDOM-7789\)/)).toBeInTheDocument();
   });

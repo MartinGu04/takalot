@@ -20,6 +20,7 @@
 // event *content* (type, field, values) via an explicit priority table --
 // never by array/DB arrival order.
 import type { EventType, IncidentEvent } from './types';
+import { formatDate } from '../lib/time';
 
 export interface TimelineGroup {
   operationId: string | null;
@@ -150,4 +151,34 @@ export function groupTimelineEvents(events: readonly IncidentEvent[]): TimelineG
       subordinates: orderSubordinates(bucketEvents, primary),
     };
   });
+}
+
+export interface TimelineDateBucket {
+  /** Asia/Jerusalem calendar date, already formatted (dd.mm.yyyy) -- see
+   *  lib/time.ts formatDate, the same formatting used everywhere else in
+   *  the app. */
+  dateLabel: string;
+  groups: TimelineGroup[];
+}
+
+/**
+ * Splits already-chronological timeline groups into calendar-date buckets
+ * so the UI can print one date separator per day instead of repeating the
+ * full date on every entry. Purely a rendering concern layered on top of
+ * groupTimelineEvents -- never re-sorts groups, just starts a new bucket
+ * whenever the next group's primary event falls on a different Asia/
+ * Jerusalem calendar day than the current bucket's.
+ */
+export function groupByCalendarDate(groups: readonly TimelineGroup[]): TimelineDateBucket[] {
+  const buckets: TimelineDateBucket[] = [];
+  for (const group of groups) {
+    const dateLabel = formatDate(group.primary.eventTime);
+    const current = buckets[buckets.length - 1];
+    if (current && current.dateLabel === dateLabel) {
+      current.groups.push(group);
+    } else {
+      buckets.push({ dateLabel, groups: [group] });
+    }
+  }
+  return buckets;
 }

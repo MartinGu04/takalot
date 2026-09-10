@@ -46,6 +46,17 @@ export function IconArrowsExchange(props: IconProps) {
   );
 }
 
+/** Counter-clockwise rotate arrow: reopening something that was previously
+ *  closed. */
+export function IconRotateCcw(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 10a6 6 0 1 1 1.76 4.24" />
+      <path d="M4 14.5V10h4.5" />
+    </svg>
+  );
+}
+
 export function IconArchive(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -260,6 +271,16 @@ export function IconWrench(props: IconProps) {
   return (
     <svg {...base(props)}>
       <path d="M12.5 3.8a3.6 3.6 0 0 0-4.7 4.3L3 12.9v2.6h2.6l4.8-4.8a3.6 3.6 0 0 0 4.3-4.7l-2.4 2.4-1.8-.6-.6-1.8 2.4-2.2Z" />
+    </svg>
+  );
+}
+
+/** Pencil: editing/amending an existing record. */
+export function IconPencil(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12.6 3.9a2.1 2.1 0 0 1 3 3L7 15.5l-3.6.9.9-3.6Z" />
+      <path d="M11.2 5.3 14.2 8.3" />
     </svg>
   );
 }

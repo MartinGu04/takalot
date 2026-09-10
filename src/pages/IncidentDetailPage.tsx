@@ -425,7 +425,7 @@ export default function IncidentDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl pb-16">
+    <div className="mx-auto max-w-4xl pb-16">
       {justCreated && (
         <div
           role="status"
