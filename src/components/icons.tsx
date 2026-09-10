@@ -275,6 +275,16 @@ export function IconWrench(props: IconProps) {
   );
 }
 
+/** Pencil: editing/amending an existing record. */
+export function IconPencil(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12.6 3.9a2.1 2.1 0 0 1 3 3L7 15.5l-3.6.9.9-3.6Z" />
+      <path d="M11.2 5.3 14.2 8.3" />
+    </svg>
+  );
+}
+
 /** Drag-handle grip: two columns of three dots, the universal "draggable"
  *  affordance. Deliberately no outline/frame of its own -- callers provide
  *  the hit target and any hover/focus treatment around it. */

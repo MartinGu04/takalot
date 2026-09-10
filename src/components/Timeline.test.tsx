@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Timeline } from './Timeline';
 import type { IncidentEvent, IncidentUpdate, Profile } from '../domain/types';
+import { formatDateTime } from '../lib/time';
 
 function ev(overrides: Partial<IncidentEvent> & { id: string }): IncidentEvent {
   return {
@@ -255,8 +256,43 @@ describe('Timeline: compact field-delta rendering', () => {
   });
 });
 
-describe('Timeline: server time secondary line', () => {
-  it('shows "תועד במערכת:" only when server time differs from event time by more than 60s', () => {
+// "תועד במערכת" (the recorded/system timestamp) is secondary audit
+// metadata, never the always-visible summary's job -- the header time
+// (primary.eventTime) is the one time users scan by. It only ever shows
+// up inside an ALREADY-existing "פרטים נוספים" section, appended last;
+// it never creates a disclosure by itself.
+describe('Timeline: recorded-at ("תועד במערכת") metadata', () => {
+  it('is not shown in the always-visible summary, even when server time differs from event time by more than 60s', () => {
+    const close = ev({
+      id: 'e1',
+      type: 'closed',
+      operationId: 'op-1',
+      newValue: 'full',
+      note: 'סיבת התקלה: X',
+      eventTime: '2026-01-10T06:00:00.000Z',
+      serverTime: '2026-01-10T08:00:00.000Z',
+    });
+    render(<Timeline events={[close]} updates={[]} profiles={profiles} />);
+    expect(screen.queryByText(/תועד במערכת:/)).not.toBeInTheDocument();
+  });
+
+  it('appears inside "פרטים נוספים" once opened, when the entry already has other verbose content', () => {
+    const close = ev({
+      id: 'e1',
+      type: 'closed',
+      operationId: 'op-1',
+      newValue: 'full',
+      note: 'סיבת התקלה: X',
+      eventTime: '2026-01-10T06:00:00.000Z',
+      serverTime: '2026-01-10T08:00:00.000Z',
+    });
+    render(<Timeline events={[close]} updates={[]} profiles={profiles} />);
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
+    // Uses the same date/time formatting convention as the rest of the app.
+    expect(screen.getByText(`תועד במערכת: ${formatDateTime('2026-01-10T08:00:00.000Z')}`)).toBeInTheDocument();
+  });
+
+  it('does not create a "פרטים נוספים" disclosure solely because the recorded-at timestamp differs -- with no other detail content, it shows nowhere', () => {
     const close = ev({
       id: 'e1',
       type: 'closed',
@@ -266,19 +302,22 @@ describe('Timeline: server time secondary line', () => {
       serverTime: '2026-01-10T08:00:00.000Z',
     });
     render(<Timeline events={[close]} updates={[]} profiles={profiles} />);
-    expect(screen.getByText(/תועד במערכת:/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'פרטים נוספים' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/תועד במערכת:/)).not.toBeInTheDocument();
   });
 
-  it('hides the secondary line when the two timestamps are within 60s', () => {
+  it('never appears at all when the two timestamps are within 60s, regardless of other detail content', () => {
     const close = ev({
       id: 'e1',
       type: 'closed',
       operationId: 'op-1',
       newValue: 'full',
+      note: 'סיבת התקלה: X',
       eventTime: '2026-01-10T08:00:00.000Z',
       serverTime: '2026-01-10T08:00:30.000Z',
     });
     render(<Timeline events={[close]} updates={[]} profiles={profiles} />);
+    fireEvent.click(screen.getByRole('button', { name: 'פרטים נוספים' }));
     expect(screen.queryByText(/תועד במערכת:/)).not.toBeInTheDocument();
   });
 });
@@ -344,6 +383,58 @@ describe('Timeline: per-row correction targeting inside a grouped update', () =>
       />,
     );
     expect(screen.getAllByRole('button', { name: 'תיקון רישום זה' })).toHaveLength(1);
+  });
+});
+
+// The correction control is now a small secondary icon button rather than
+// a prominent text link -- same permissions/behavior/target, presentation
+// only. It must stay discoverable (accessible name + a title tooltip for
+// mouse users), keep a visible keyboard focus state, and never read as
+// the event-type marker.
+describe('Timeline: correction action is a small secondary icon button', () => {
+  it('still renders for an authorized user, with the same accessible name as before', () => {
+    const onCorrect = vi.fn();
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress', actorId: 'u1' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} currentUserId="u1" onCorrect={onCorrect} />);
+    expect(screen.getByRole('button', { name: 'תיקון רישום זה' })).toBeInTheDocument();
+  });
+
+  it('has a discoverable title tooltip for mouse users, in addition to its accessible name', () => {
+    const onCorrect = vi.fn();
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress', actorId: 'u1' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} currentUserId="u1" onCorrect={onCorrect} />);
+    expect(screen.getByRole('button', { name: 'תיקון רישום זה' })).toHaveAttribute('title', 'תיקון רישום זה');
+  });
+
+  it('renders as a muted icon-only button, not a prominent purple text link, and keeps a visible focus-ring class', () => {
+    const onCorrect = vi.fn();
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress', actorId: 'u1' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} currentUserId="u1" onCorrect={onCorrect} />);
+    const button = screen.getByRole('button', { name: 'תיקון רישום זה' });
+    expect(button.textContent).toBe('');
+    expect(button.className).toContain('text-muted');
+    expect(button.className).not.toContain('text-brand-700');
+    expect(button.className).toContain('focus-visible:ring-2');
+  });
+
+  it("sits in the actor/metadata row, never inside the event-type marker or the title", () => {
+    const onCorrect = vi.fn();
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress', actorId: 'u1' })];
+    const { container } = render(<Timeline events={events} updates={[]} profiles={profiles} currentUserId="u1" onCorrect={onCorrect} />);
+    const button = screen.getByRole('button', { name: 'תיקון רישום זה' });
+    const marker = container.querySelector('[aria-hidden="true"][class*="rounded-full"]') as HTMLElement;
+    const title = screen.getByText('שינוי סטטוס');
+    expect(marker.contains(button)).toBe(false);
+    expect(title.contains(button)).toBe(false);
+    expect(title.parentElement?.contains(button)).toBe(false);
+  });
+
+  it('clicking the icon button invokes exactly the same correction flow (target id and label) as before', () => {
+    const onCorrect = vi.fn();
+    const events = [ev({ id: 'e-status', type: 'status_change', operationId: 'op-1', field: 'status', oldValue: 'new', newValue: 'in_progress', actorId: 'u1' })];
+    render(<Timeline events={events} updates={[]} profiles={profiles} currentUserId="u1" onCorrect={onCorrect} />);
+    fireEvent.click(screen.getByRole('button', { name: 'תיקון רישום זה' }));
+    expect(onCorrect).toHaveBeenCalledWith('e-status', expect.stringContaining('שינוי סטטוס'));
   });
 });
 

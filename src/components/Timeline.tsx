@@ -54,6 +54,7 @@ import {
   IconFlag,
   IconChevronLeft,
   IconChevronDown,
+  IconPencil,
 } from './icons';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -280,6 +281,14 @@ function SubordinateNote({ event }: { event: IncidentEvent }) {
   return <p className="whitespace-pre-wrap break-words text-xs text-secondary">{event.note}</p>;
 }
 
+/**
+ * A small, secondary icon button -- deliberately quiet by default (muted
+ * color, no border) so it never competes with the event-type marker/icon
+ * for attention, but still an easy, discoverable tap target: a real
+ * `<button>` sized for touch, with an accessible name, a native title
+ * tooltip for mouse users, and a visible keyboard focus ring. Same
+ * permissions/behavior/target as before -- presentation only.
+ */
 function CorrectionAction({
   event,
   compact,
@@ -298,11 +307,11 @@ function CorrectionAction({
   return (
     <button
       type="button"
-      className={
-        compact
-          ? 'text-[11px] text-brand-700 hover:underline dark:text-brand-400'
-          : 'mt-1 text-xs text-brand-700 hover:underline dark:text-brand-400'
-      }
+      aria-label="תיקון רישום זה"
+      title="תיקון רישום זה"
+      className={`inline-flex shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-active hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${
+        compact ? 'size-6' : 'size-7'
+      }`}
       onClick={() =>
         onCorrect(
           event.type === 'update' && event.refId ? event.refId : event.id,
@@ -310,7 +319,7 @@ function CorrectionAction({
         )
       }
     >
-      תיקון רישום זה
+      <IconPencil aria-hidden className={compact ? 'size-3.5' : 'size-4'} />
     </button>
   );
 }
@@ -358,29 +367,41 @@ function DateSeparator({ label, showLine }: { label: string; showLine: boolean }
   );
 }
 
+/** The actor/metadata row -- also where the correction icon button (when
+ *  offered) lives, immediately after the actor name. Placing it here, away
+ *  from the title/marker, keeps it from ever reading as the event-type
+ *  icon while still sitting in the header/metadata area as a small,
+ *  secondary action -- deliberately NOT justify-between, which would
+ *  spread it across the full card width to the row's far edge instead of
+ *  keeping it physically adjacent to the actor it sits beside. */
 function ActorRow({
   actorId,
   actorLabel,
   profiles,
+  action,
 }: {
   actorId: string | null;
   actorLabel: string | null;
   profiles: Profile[] | undefined;
+  action?: ReactNode;
 }) {
   const isHumanActor = !!actorId && !actorLabel;
   const actorProfile = isHumanActor ? profiles?.find((p) => p.id === actorId) : undefined;
   const name = actorDisplayName(actorId, actorLabel, profiles);
   return (
-    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-secondary">
-      {isHumanActor && (
-        <Avatar
-          aria-hidden
-          src={actorProfile?.avatarUrl}
-          name={name}
-          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
-        />
-      )}
-      <span>{name}</span>
+    <div className="mt-0.5 flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1.5 text-xs text-secondary">
+        {isHumanActor && (
+          <Avatar
+            aria-hidden
+            src={actorProfile?.avatarUrl}
+            name={name}
+            className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-800 dark:bg-brand-950 dark:text-brand-200"
+          />
+        )}
+        <span>{name}</span>
+      </div>
+      {action}
     </div>
   );
 }
@@ -666,6 +687,16 @@ function TimelineEntry({
     );
   }
 
+  // Secondary audit metadata, not the primary time users scan by (that's
+  // the header time above, always primary.eventTime) -- only surfaced at
+  // all when it differs meaningfully from the event time, and only inside
+  // an ALREADY-existing "פרטים נוספים" section. Never creates a disclosure
+  // by itself: an event with nothing else to expand simply doesn't show
+  // this technical timestamp anywhere.
+  if (timesDiffer && detailItems.length > 0) {
+    detailItems.push(<p className="text-xs text-muted">תועד במערכת: {formatDateTime(primary.serverTime)}</p>);
+  }
+
   const titleText = primary.type === 'correction' ? 'תיקון לרישום קודם' : eventTypeLabels[primary.type];
 
   return (
@@ -688,8 +719,12 @@ function TimelineEntry({
           <span className={rich ? 'text-base font-bold text-text-primary' : 'text-sm font-semibold text-text-primary'}>{titleText}</span>
           <span className="shrink-0 text-xs font-semibold text-text-secondary">{formatTime(primary.eventTime)}</span>
         </div>
-        <ActorRow actorId={primary.actorId} actorLabel={primary.actorLabel} profiles={profiles} />
-        {timesDiffer && <p className="mt-0.5 text-[11px] text-muted">תועד במערכת: {formatDateTime(primary.serverTime)}</p>}
+        <ActorRow
+          actorId={primary.actorId}
+          actorLabel={primary.actorLabel}
+          profiles={profiles}
+          action={<CorrectionAction event={primary} compact={false} currentUserId={currentUserId} canCorrectAny={canCorrectAny} onCorrect={onCorrect} />}
+        />
         {primary.type !== 'correction' && laterCorrections.length > 0 && (
           <p className="mt-0.5 text-[11px] text-muted">רישום זה תוקן בהמשך</p>
         )}
@@ -699,13 +734,14 @@ function TimelineEntry({
           </p>
         )}
         <div className="mt-1.5 flex flex-col gap-1.5">{summary}</div>
-        <CorrectionAction event={primary} compact={false} currentUserId={currentUserId} canCorrectAny={canCorrectAny} onCorrect={onCorrect} />
         {subordinates.length > 0 && (
           <div className="mt-2 flex flex-col gap-1">
             {subordinates.map((sub) => (
-              <div key={sub.id}>
-                <CompactChange event={sub} />
-                <SubordinateNote event={sub} />
+              <div key={sub.id} className="flex flex-wrap items-start gap-2">
+                <div className="min-w-0">
+                  <CompactChange event={sub} />
+                  <SubordinateNote event={sub} />
+                </div>
                 <CorrectionAction event={sub} compact currentUserId={currentUserId} canCorrectAny={canCorrectAny} onCorrect={onCorrect} />
               </div>
             ))}
